@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.next/
+**/*.tsbuildinfo
+**/.env*
+!**/.env.example
+**/appsettings.Local.json
+**/TestResults/
+.vs/
+work/

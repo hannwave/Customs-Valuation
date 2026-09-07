@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../Library/SES.Customs.Common/SES.Customs.Common.csproj" />
+    <PackageReference Include="MediatR" Version="12.2.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,31 @@
+{
+  "name": "ses-customs-portal",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.5.24",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "@reduxjs/toolkit": "2.11.2",
+    "react-redux": "9.2.0",
+    "i18next": "25.7.4",
+    "react-i18next": "16.5.3",
+    "@mantine/core": "8.3.12",
+    "@mantine/hooks": "8.3.12"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "22.19.6",
+    "@types/react": "19.2.8",
+    "@types/react-dom": "19.2.3"
+  }
+}
