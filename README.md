@@ -39,6 +39,12 @@ Open `http://localhost:3000`. API liveness: `http://localhost:5080/health/live`.
 
 The frontend defaults to the local API. To change it, copy `portal/.env.example` to `portal/.env.local` and edit the URL, then restart Next.js. No secrets belong in `NEXT_PUBLIC_*` values.
 
+### Temporary frontend access
+
+New visitors are directed to `/register` before seeing the workspace. Registration details can be reviewed, then users continue to `/sign-in`; the sign-in link also works without registration. Any non-empty username and password (for example `demo` / `demo`) opens the demo workspace. Refreshing keeps access in the current browser tab; Sign out clears it. Only a demo flag is stored in session storage; registration details and passwords are not saved or sent.
+
+This is a frontend navigation gate, not authentication or API authorization. Replace `DemoSessionProvider` and `demo-session.ts` with the approved authentication flow when the backend is ready. The existing API token adapter is unchanged. Run the demo session checks from `portal` with `node --test scripts/test-demo-auth.mjs` (Node.js 24).
+
 ## Verification
 
 ```powershell

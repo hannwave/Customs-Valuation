@@ -34,5 +34,61 @@
   "page": "ገጽ",
   "count": "መዝገቦች",
   "backlog": "የትግበራ ወሰን",
-  "language": "ቋንቋ"
+  "language": "ቋንቋ",
+  "registration": {
+    "nav": "መለያ ይጠይቁ",
+    "brand": "SES ጉምሩክ",
+    "portal": "የጉምሩክ ግምት ፖርታል",
+    "back": "ወደ ሥራ ቦታ ተመለስ",
+    "staffAccess": "የሠራተኞች መዳረሻ",
+    "title": "መለያ ይጠይቁ",
+    "intro": "ለጉምሩክ ግምት ፖርታል የመዳረሻ ጥያቄ ለማዘጋጀት የሥራ መረጃዎን ያስገቡ።",
+    "permissions": "ለአሁን የተፈቀደ መለያ ሳይኖርዎት የሙከራ ስርዓቱን ማየት ይችላሉ።",
+    "availabilityTitle": "የሙከራ ምዝገባ",
+    "availability": "መረጃዎን ከልሰው ወደ መግቢያ ገጹ ይቀጥሉ። እውነተኛ መለያ አይፈጠርም፤ መረጃውም አይቀመጥም።",
+    "reviewButton": "መረጃውን ይከልሱ",
+    "reviewTitle": "መረጃዎን ይከልሱ",
+    "reviewIntro": "መረጃዎን አረጋግጠው ወደ ሙከራ መግቢያ ገጹ ይቀጥሉ።",
+    "notSent": "ለሙከራው ዝግጁ ነዎት",
+    "unavailable": "ይህ መረጃ አልተላከም ወይም አልተቀመጠም። በማንኛውም የሙከራ ተጠቃሚ ስም እና የይለፍ ቃል መግባት ይችላሉ።",
+    "edit": "መረጃውን ያስተካክሉ",
+    "footer": "ለሠራተኞች ብቻ · SES ጉምሩክ",
+    "fields": {
+      "fullName": "ሙሉ ስም",
+      "email": "የሥራ ኢሜይል",
+      "employeeId": "የሠራተኛ መለያ ቁጥር",
+      "organization": "ተቋም",
+      "office": "ቢሮ ወይም ክፍል"
+    },
+    "placeholders": {
+      "fullName": "ሙሉ ስምዎን ያስገቡ",
+      "email": "name@organization.gov.et",
+      "employeeId": "የሠራተኛ መለያ ቁጥርዎ",
+      "organization": "የተቋም ስም",
+      "office": "የቢሮ ወይም የክፍል ስም"
+    },
+    "errors": {
+      "required": "ይህ መረጃ ያስፈልጋል።",
+      "invalidEmail": "ትክክለኛ የሥራ ኢሜይል አድራሻ ያስገቡ።"
+    }
+  },
+  "auth": {
+    "opening": "የሠራተኞች መዳረሻ በመክፈት ላይ…",
+    "signIn": "ይግቡ",
+    "signOut": "ውጣ",
+    "register": "ይመዝገቡ",
+    "haveAccount": "መለያ አለዎት?",
+    "needAccount": "ለፖርታሉ አዲስ ነዎት?",
+    "intro": "ወደ ጉምሩክ ግምት የሥራ ቦታ ለመግባት ይግቡ።",
+    "demoTitle": "የሙከራ መዳረሻ",
+    "demoHint": "ማንኛውንም የተጠቃሚ ስም እና የይለፍ ቃል ያስገቡ፤ ለምሳሌ demo / demo። የተፈጠረ የሙከራ መረጃ ይጠቀሙ፤ መለያ አይረጋገጥም፣ የይለፍ ቃልም አይቀመጥም።",
+    "identifier": "ኢሜይል ወይም የተጠቃሚ ስም",
+    "identifierPlaceholder": "ለምሳሌ demo",
+    "password": "የይለፍ ቃል",
+    "passwordPlaceholder": "ማንኛውም የሙከራ የይለፍ ቃል",
+    "togglePassword": "የይለፍ ቃል አሳይ ወይም ደብቅ",
+    "enter": "ወደ ሙከራው ይግቡ",
+    "continue": "ወደ መግቢያ ይቀጥሉ",
+    "demoSession": "የሙከራ መግቢያ · የመግቢያ መረጃ አይረጋገጥም"
+  }
 }

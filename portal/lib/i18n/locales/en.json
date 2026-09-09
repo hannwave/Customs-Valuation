@@ -34,5 +34,61 @@
   "page": "Page",
   "count": "records",
   "backlog": "Implementation scope",
-  "language": "Language"
+  "language": "Language",
+  "registration": {
+    "nav": "Request an account",
+    "brand": "SES Customs",
+    "portal": "Customs Valuation Portal",
+    "back": "Back to workspace",
+    "staffAccess": "Staff access",
+    "title": "Request an account",
+    "intro": "Enter your work details to prepare an access request for the customs valuation portal.",
+    "permissions": "For now, you can explore the demo without an approved account.",
+    "availabilityTitle": "Demo registration",
+    "availability": "Review your details, then continue to sign in. No real account is created and these details are not saved.",
+    "reviewButton": "Review details",
+    "reviewTitle": "Review your details",
+    "reviewIntro": "Check your details, then continue to the demo sign-in page.",
+    "notSent": "Ready to try the demo",
+    "unavailable": "These details have not been sent or saved. You can sign in with any demo username and password.",
+    "edit": "Edit details",
+    "footer": "Staff access only · SES Customs",
+    "fields": {
+      "fullName": "Full name",
+      "email": "Work email",
+      "employeeId": "Employee ID",
+      "organization": "Organization",
+      "office": "Office or department"
+    },
+    "placeholders": {
+      "fullName": "Enter your full name",
+      "email": "name@organization.gov.et",
+      "employeeId": "Your employee ID",
+      "organization": "Organization name",
+      "office": "Office or department name"
+    },
+    "errors": {
+      "required": "This field is required.",
+      "invalidEmail": "Enter a valid work email address."
+    }
+  },
+  "auth": {
+    "opening": "Opening staff access…",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "register": "Register",
+    "haveAccount": "Already have an account?",
+    "needAccount": "New to the portal?",
+    "intro": "Sign in to enter the customs valuation workspace.",
+    "demoTitle": "Demo access",
+    "demoHint": "Enter any username and password, for example demo / demo. Use made-up details; no account is checked and no password is saved.",
+    "identifier": "Email or username",
+    "identifierPlaceholder": "e.g. demo",
+    "password": "Password",
+    "passwordPlaceholder": "Any demo password",
+    "togglePassword": "Show or hide password",
+    "enter": "Sign in to demo",
+    "continue": "Continue to sign in",
+    "demoSession": "Demo sign-in · credentials are not verified"
+  }
 }
