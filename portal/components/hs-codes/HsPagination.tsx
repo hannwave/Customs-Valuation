@@ -1,4 +1,10 @@
-import { Group, Pagination, Text } from "@mantine/core";
+"use client";
+
+import {
+  Group,
+  Pagination,
+  Text,
+} from "@mantine/core";
 import { useTranslation } from "react-i18next";
 
 interface HsPaginationProps {
@@ -18,7 +24,7 @@ export function HsPagination({
 }: HsPaginationProps) {
   const { t } = useTranslation();
 
-  if (totalCount === 0) {
+  if (totalCount === 0 || totalPages <= 1) {
     return null;
   }
 
@@ -27,20 +33,27 @@ export function HsPagination({
       justify="space-between"
       align="center"
       mt="lg"
-      className="hs-pagination"
+      wrap="wrap"
     >
       <Text size="sm" c="dimmed">
-        {t("page", "Page")} {page}{" "}
-        {t("of", "of")} {totalPages}
+        {t(
+          "hsCatalogue.totalResults",
+          "{{count}} results",
+          {
+            count: totalCount,
+          },
+        )}
       </Text>
 
       <Pagination
         value={page}
-        total={totalPages}
         onChange={onChange}
+        total={totalPages}
         disabled={disabled}
         withEdges
+        size="sm"
       />
     </Group>
   );
 }
+

@@ -11,7 +11,7 @@ export function HsLoadingState() {
 
   return (
     <Card
-      withBorder
+      
       radius="md"
       padding="xl"
     >
@@ -24,7 +24,10 @@ export function HsLoadingState() {
         <Loader size="md" />
 
         <Text c="dimmed">
-          {t("loading", "Loading...")}
+          {t(
+            "loading",
+            "Loading...",
+          )}
         </Text>
       </Stack>
     </Card>

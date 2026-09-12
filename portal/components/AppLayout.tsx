@@ -11,7 +11,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { t, i18n } = useTranslation(); const pathname = usePathname();
   useEffect(() => { document.documentElement.lang = i18n.language; }, [i18n.language]);
   return <div className="workspace"><aside><div className="brand">SES <span>CUSTOMS</span></div><p className="nav-label">{t("subtitle")}</p>
-    <nav aria-label={t("title")}>{links.map(([href,key]) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined}>{t(key)}</Link>)}</nav>
+    <nav aria-label={t("title")}>{links.map(([href,key]) => { const isActive = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`); return <Link key={href} href={href} aria-current={isActive ? "page" : undefined} className={isActive ? "active" : undefined}>{t(key)}</Link>; })}</nav>
     <p className="sidebar-note">{t("phase")}</p></aside><div className="content"><header><span>{t("title")}</span>
     <label>{t("language")} <select value={i18n.language} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label></header>
     <div className="demo" role="note">{t("demo")}</div><main>{children}</main></div></div>;

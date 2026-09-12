@@ -1,37 +1,44 @@
+"use client";
+
 import {
   Button,
+  Card,
   Group,
   Select,
+  SimpleGrid,
   Stack,
-  TextInput,
-  Paper,
-  Grid,
   Text,
-  Divider,
-  ActionIcon,
-  Tooltip,
-  rem,
+  TextInput,
 } from "@mantine/core";
-import { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  FiFilter,
+  FiHash,
+  FiRefreshCw,
+  FiSearch,
+  FiTag,
+} from "react-icons/fi";
 
-interface RevisionOption {
+type RevisionOption = {
   value: string;
   label: string;
-}
+};
 
-interface HsSearchFiltersProps {
+type HsSearchFiltersProps = {
   code: string;
   description: string;
   revisionId: string | null;
   revisions: RevisionOption[];
   revisionsLoading?: boolean;
+  hasActiveFilters: boolean;
   onCodeChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
   onRevisionChange: (value: string | null) => void;
   onSearch: () => void;
   onClear: () => void;
-}
+};
+
+const ALL_REVISIONS = "__all__";
 
 export function HsSearchFilters({
   code,
@@ -39,236 +46,252 @@ export function HsSearchFilters({
   revisionId,
   revisions,
   revisionsLoading = false,
+  hasActiveFilters,
   onCodeChange,
   onDescriptionChange,
   onRevisionChange,
   onSearch,
   onClear,
 }: HsSearchFiltersProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
     onSearch();
   };
 
-  const hasFilters =
-    code.trim().length > 0 ||
-    description.trim().length > 0 ||
-    Boolean(revisionId);
+  const revisionOptions = [
+    {
+      value: ALL_REVISIONS,
+      label: t(
+        "hsCatalogue.allRevisions",
+        "All revisions",
+      ),
+    },
+    ...revisions,
+  ];
+
+  const handleRevisionChange = (
+    value: string | null,
+  ) => {
+    if (!value || value === ALL_REVISIONS) {
+      onRevisionChange(null);
+      return;
+    }
+
+    onRevisionChange(value);
+  };
 
   return (
-    <Paper
+    <Card
       withBorder
+      radius="lg"
+      p={{ base: "md", sm: "lg" }}
       shadow="sm"
-      radius="md"
-      p="lg"
       style={{
-        backgroundColor: 'var(--mantine-color-body)',
-        transition: 'box-shadow 0.2s ease',
+        borderColor:
+          "var(--mantine-color-gray-2)",
+        overflow: "visible",
       }}
     >
       <form onSubmit={handleSubmit}>
         <Stack gap="lg">
-          {/* Filter Header */}
-          <Group justify="space-between" align="center">
-            <Group gap="xs">
-              <span style={{ fontSize: '18px' }}>🔍</span>
-              <Text fw={600} size="sm" c="dimmed" tt="uppercase" tracking="0.5px">
-                {t("filters", "Filters")}
-              </Text>
-              {hasFilters && (
-                <Text size="xs" c="blue" fw={500}>
-                  ({t("active", "Active")})
-                </Text>
-              )}
-            </Group>
-            {hasFilters && (
-              <Tooltip label={t("clearAllFilters", "Clear all filters")}>
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  onClick={onClear}
-                  size="sm"
-                  aria-label="Clear all filters"
-                >
-                  <span>✕</span>
-                </ActionIcon>
-              </Tooltip>
-            )}
-          </Group>
-
-          <Divider />
-
-          {/* Filter Grid */}
-          <Grid gutter="md">
-            {/* HS Code Input */}
-            <Grid.Col span={{ base: 12, md: 4 }}>
-              <TextInput
-                label={
-                  <Text size="sm" fw={500}>
-                    📌 {t("hsCodeSearch", "HS Code")}
-                  </Text>
-                }
-                placeholder={t(
-                  "hsCodeSearchPlaceholder",
-                  "Enter HS code..."
-                )}
-                description={
-                  <Text size="xs" c="dimmed">
-                    {t(
-                      "hsCodeSearchHint",
-                      "Example: 8504"
-                    )}
-                  </Text>
-                }
-                value={code}
-                maxLength={100}
-                onChange={(event) =>
-                  onCodeChange(event.currentTarget.value)
-                }
-                size="md"
+          <Group
+            justify="space-between"
+            align="flex-start"
+            gap="md"
+          >
+            <Group gap="sm" align="center">
+              <Card
+                p={8}
                 radius="md"
-                leftSection="🔍"
-                styles={{
-                  input: {
-                    backgroundColor: 'var(--mantine-color-gray-0)',
-                    '&:focus': {
-                      backgroundColor: 'var(--mantine-color-body)',
-                      borderColor: 'var(--mantine-color-blue-5)',
-                    },
-                  },
-                  label: {
-                    marginBottom: rem(6),
-                  },
-                  description: {
-                    marginTop: rem(4),
-                  },
-                }}
-              />
-            </Grid.Col>
-
-            {/* Description Input */}
-            <Grid.Col span={{ base: 12, md: 4 }}>
-              <TextInput
-                label={
-                  <Text size="sm" fw={500}>
-                    📝 {t("descriptionSearch", "Description")}
-                  </Text>
-                }
-                placeholder={t(
-                  "descriptionSearchPlaceholder",
-                  "Enter product description..."
-                )}
-                description={
-                  <Text size="xs" c="dimmed">
-                    {i18n.language === "am"
-                      ? t(
-                          "descriptionSearchHintAm",
-                          "Search using the English or Amharic description."
-                        )
-                      : t(
-                          "descriptionSearchHint",
-                          "Search using the product description."
-                        )}
-                  </Text>
-                }
-                value={description}
-                maxLength={100}
-                onChange={(event) =>
-                  onDescriptionChange(event.currentTarget.value)
-                }
-                size="md"
-                radius="md"
-                leftSection="📝"
-                styles={{
-                  input: {
-                    backgroundColor: 'var(--mantine-color-gray-0)',
-                    '&:focus': {
-                      backgroundColor: 'var(--mantine-color-body)',
-                      borderColor: 'var(--mantine-color-blue-5)',
-                    },
-                  },
-                  label: {
-                    marginBottom: rem(6),
-                  },
-                  description: {
-                    marginTop: rem(4),
-                  },
-                }}
-              />
-            </Grid.Col>
-
-            {/* Revision Select */}
-            <Grid.Col span={{ base: 12, md: 4 }}>
-              <Select
-                label={
-                  <Text size="sm" fw={500}>
-                    📅 {t("revision", "Revision")}
-                  </Text>
-                }
-                placeholder={t(
-                  "selectRevision",
-                  "Select a revision..."
-                )}
-                data={revisions}
-                value={revisionId}
-                onChange={onRevisionChange}
-                searchable
-                clearable
-                disabled={revisionsLoading}
-                nothingFoundMessage={t(
-                  "empty",
-                  "No results found"
-                )}
-                size="md"
-                radius="md"
-                styles={{
-                  input: {
-                    backgroundColor: 'var(--mantine-color-gray-0)',
-                    '&:focus': {
-                      backgroundColor: 'var(--mantine-color-body)',
-                      borderColor: 'var(--mantine-color-blue-5)',
-                    },
-                  },
-                  label: {
-                    marginBottom: rem(6),
-                  },
-                }}
-              />
-            </Grid.Col>
-          </Grid>
-
-          <Divider />
-
-          {/* Action Buttons */}
-          <Group justify="flex-end" gap="sm">
-            {hasFilters && (
-              <Button
-                type="button"
-                variant="light"
-                color="gray"
-                onClick={onClear}
-                disabled={!hasFilters}
-                size="md"
-                radius="md"
-                leftSection={<span>✕</span>}
+                bg="blue.0"
+                withBorder={false}
               >
-                {t("clearFilters", "Clear filters")}
-              </Button>
-            )}
+                <FiFilter
+                  size={19}
+                  strokeWidth={2}
+                  color="var(--mantine-color-blue-6)"
+                />
+              </Card>
 
-            <Button variant="filled" color="teal" radius="lg">Button
-              {t("searchButton", "Search")}
-            </Button>
+              <Stack gap={1}>
+                <Text fw={700} size="md">
+                  {t(
+                    "hsCatalogue.filters",
+                    "Search & filters",
+                  )}
+                </Text>
+
+                <Text size="sm" c="dimmed">
+                  {t(
+                    "hsCatalogue.filterDescription",
+                    "Find HS codes by code, description, or revision.",
+                  )}
+                </Text>
+              </Stack>
+            </Group>
           </Group>
 
-          {/* Keyboard Hint */}
-          <Text size="xs" c="dimmed" ta="center">
-            ⌨️ {t("keyboardHint", "Press Enter to search")}
-          </Text>
+          <SimpleGrid
+            cols={{
+              base: 1,
+              sm: 2,
+              md: 3,
+            }}
+            spacing="md"
+          >
+            <TextInput
+              label={t(
+                "hsCatalogue.codeLabel",
+                "HS code",
+              )}
+              placeholder={t(
+                "hsCatalogue.codePlaceholder",
+                "e.g. 850440",
+              )}
+              description={t(
+                "hsCatalogue.codeDescription",
+                "Search using the HS classification code.",
+              )}
+              value={code}
+              onChange={(event) =>
+                onCodeChange(
+                  event.currentTarget.value,
+                )
+              }
+              leftSection={
+                <FiHash size={17} />
+              }
+              leftSectionPointerEvents="none"
+              maxLength={100}
+              size="md"
+              radius="md"
+            />
+
+            <TextInput
+              label={t(
+                "hsCatalogue.descriptionLabel",
+                "Description",
+              )}
+              placeholder={t(
+                "hsCatalogue.descriptionPlaceholder",
+                "Search by description",
+              )}
+              description={t(
+                "hsCatalogue.descriptionDescription",
+                "Search the HS code description.",
+              )}
+              value={description}
+              onChange={(event) =>
+                onDescriptionChange(
+                  event.currentTarget.value,
+                )
+              }
+              leftSection={
+                <FiTag size={17} />
+              }
+              leftSectionPointerEvents="none"
+              maxLength={100}
+              size="md"
+              radius="md"
+            />
+
+            <Select
+              label={t(
+                "revision",
+                "Revision",
+              )}
+              description={t(
+                "hsCatalogue.revisionDescription",
+                "Filter by HS revision.",
+              )}
+              data={revisionOptions}
+              value={
+                revisionId ?? ALL_REVISIONS
+              }
+              onChange={handleRevisionChange}
+              disabled={revisionsLoading}
+              leftSection={
+                <FiRefreshCw size={17} />
+              }
+              leftSectionPointerEvents="none"
+              allowDeselect={false}
+              searchable={false}
+              checkIconPosition="right"
+              nothingFoundMessage={t(
+                "hsCatalogue.noRevisions",
+                "No revisions found",
+              )}
+              size="md"
+              radius="md"
+              comboboxProps={{
+                withinPortal: true,
+              }}
+              styles={{
+                input: {
+                  cursor: "pointer",
+                },
+                section: {
+                  cursor: "pointer",
+                },
+              }}
+            />
+          </SimpleGrid>
+
+          <Group
+            justify="flex-end"
+            gap="sm"
+            pt="xs"
+            style={{
+              borderTop:
+                "1px solid var(--mantine-color-gray-2)",
+            }}
+          >
+            <Group
+              gap="sm"
+              w={{
+                base: "100%",
+                sm: "auto",
+              }}
+              grow
+            >
+              {hasActiveFilters && (
+                <Button
+                  type="button"
+                  variant="light"
+                  color="red"
+                  size="md"
+                  radius="md"
+                  onClick={onClear}
+                >
+                  {t(
+                    "clearFilters",
+                    "Clear filters",
+                  )}
+                </Button>
+              )}
+
+              <Button
+                type="submit"
+                size="md"
+                color="blue"
+                radius="md"
+                leftSection={
+                  <FiSearch size={17} />
+                }
+              >
+                {t(
+                  "searchButton",
+                  "Search",
+                )}
+              </Button>
+            </Group>
+          </Group>
         </Stack>
       </form>
-    </Paper>
+    </Card>
   );
 }

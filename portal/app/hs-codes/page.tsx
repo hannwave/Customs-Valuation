@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Card,
-  Group,
-  Loader,
+  Box,
+  Container,
   Stack,
-  Text,
 } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+
+import {
+  useGetHsCodesQuery,
+  useGetHsRevisionsQuery,
+} from "@/lib/store/api/hsCodesApi";
 
 import { HsCatalogueHeader } from "@/components/hs-codes/HsCatalogueHeader";
 import { HsSearchFilters } from "@/components/hs-codes/HsSearchFilters";
@@ -18,31 +21,16 @@ import { HsLoadingState } from "@/components/hs-codes/HsLoadingState";
 import { HsEmptyState } from "@/components/hs-codes/HsEmptyState";
 import { HsErrorState } from "@/components/hs-codes/HsErrorState";
 
-import {
-  useGetHsCodesQuery,
-  useGetHsRevisionsQuery,
-} from "@/lib/store/api/hsCodesApi";
-
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
+const FORCE_LOADING = false;
 
 export default function HsCodesPage() {
   const { t } = useTranslation();
 
-  /*
-   * Form values.
-   *
-   * These values change while the user is typing.
-   */
   const [codeInput, setCodeInput] = useState("");
   const [descriptionInput, setDescriptionInput] =
     useState("");
 
-  /*
-   * Applied search values.
-   *
-   * The API only runs with these values after
-   * the user presses Search.
-   */
   const [codeSearch, setCodeSearch] = useState("");
   const [descriptionSearch, setDescriptionSearch] =
     useState("");
@@ -52,23 +40,20 @@ export default function HsCodesPage() {
 
   const [page, setPage] = useState(1);
 
-  /*
-   * The current backend supports one `search`
-   * parameter.
-   *
-   * Combine the two UI search fields into the
-   * single backend search parameter.
-   */
   const combinedSearch = useMemo(() => {
     return [codeSearch, descriptionSearch]
-      .filter((value) => value.trim().length > 0)
+      .filter(
+        (value) => value.trim().length > 0,
+      )
       .join(" ")
       .trim();
   }, [codeSearch, descriptionSearch]);
 
-  /*
-   * HS codes API
-   */
+  const hasActiveFilters =
+    codeSearch.trim().length > 0 ||
+    descriptionSearch.trim().length > 0 ||
+    revisionId !== null;
+
   const {
     data,
     isLoading,
@@ -76,251 +61,230 @@ export default function HsCodesPage() {
     isError,
     refetch,
   } = useGetHsCodesQuery({
-    search: combinedSearch || undefined,
-    revisionId: revisionId || undefined,
+    search:
+      combinedSearch || undefined,
+    revisionId:
+      revisionId || undefined,
     page,
     pageSize: PAGE_SIZE,
   });
 
-  /*
-   * HS revisions API
-   */
   const {
     data: revisions,
     isLoading: revisionsLoading,
+    isFetching: revisionsFetching,
     isError: revisionsError,
     refetch: refetchRevisions,
   } = useGetHsRevisionsQuery();
 
-  /*
-   * Convert API revisions into the format
-   * required by Mantine Select.
-   */
   const revisionOptions = useMemo(
     () =>
-      revisions?.map((revision) => ({
-        value: revision.id,
-        label: revision.name,
-      })) ?? [],
+      (revisions ?? []).map(
+        (revision) => ({
+          value: revision.id,
+          label: revision.name,
+        }),
+      ),
     [revisions],
   );
 
-  /*
-   * Calculate total pages from the API result.
-   */
-  const totalPages = data
-    ? Math.max(
-        1,
-        Math.ceil(data.totalCount / PAGE_SIZE),
-      )
-    : 1;
-
-  /*
-   * Search button.
-   */
   const handleSearch = () => {
     setCodeSearch(codeInput.trim());
-    setDescriptionSearch(descriptionInput.trim());
-
-    /*
-     * Always return to page 1 when search
-     * filters change.
-     */
+    setDescriptionSearch(
+      descriptionInput.trim(),
+    );
     setPage(1);
   };
 
-  /*
-   * Revision change.
-   */
   const handleRevisionChange = (
     value: string | null,
   ) => {
     setRevisionId(value);
-
-    /*
-     * Always return to page 1 when the
-     * revision changes.
-     */
     setPage(1);
   };
 
-  /*
-   * Clear all filters.
-   */
   const handleClear = () => {
     setCodeInput("");
     setDescriptionInput("");
-
     setCodeSearch("");
     setDescriptionSearch("");
-
     setRevisionId(null);
     setPage(1);
   };
 
+  const totalCount =
+    data?.totalCount ?? 0;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(
+      totalCount / PAGE_SIZE,
+    ),
+  );
+
+  useEffect(() => {
+    if (
+      !isFetching &&
+      page > totalPages
+    ) {
+      setPage(totalPages);
+    }
+  }, [
+    page,
+    totalPages,
+    isFetching,
+  ]);
+
+  const handleRetry = () => {
+    refetch();
+    refetchRevisions();
+  };
+
+  const isInitialLoading =
+    FORCE_LOADING ||
+    isLoading ||
+    revisionsLoading;
+
+  const isUpdating =
+    isFetching ||
+    revisionsFetching;
+
+  const items = data?.items ?? [];
+
   return (
-    <main className="hs-catalogue-page">
-      <Stack gap="xl">
-        {/* Page heading */}
-        <HsCatalogueHeader />
+    <Box
+      mih="100%"
+      w="100%"
+      bg="gray.0"
+      py={{
+        base: "md",
+        sm: "xl",
+      }}
+      style={{
+        overflowX: "hidden",
+      }}
+    >
+      <Container
+        size="xl"
+        px={{
+          base: "md",
+          sm: "lg",
+          md: "xl",
+        }}
+        style={{
+          minWidth: 0,
+        }}
+      >
+        <Stack gap="xl">
+          <HsCatalogueHeader />
 
-        {/* Search/filter section */}
-        <Card
-          withBorder
-          radius="md"
-          padding="lg"
-        >
-          <Stack gap="md">
-            <div>
-              <Text fw={600} size="lg">
-                {t(
-                  "searchFilters",
-                  "Search filters",
-                )}
-              </Text>
-
-              <Text
-                size="sm"
-                c="dimmed"
-                mt={4}
-              >
-                {t(
-                  "searchFiltersHint",
-                  "Search by HS code or description and optionally select a revision.",
-                )}
-              </Text>
-            </div>
-
-            <HsSearchFilters
-              code={codeInput}
-              description={descriptionInput}
-              revisionId={revisionId}
-              revisions={revisionOptions}
-              revisionsLoading={revisionsLoading}
-              onCodeChange={setCodeInput}
-              onDescriptionChange={
-                setDescriptionInput
-              }
-              onRevisionChange={
-                handleRevisionChange
-              }
-              onSearch={handleSearch}
-              onClear={handleClear}
-            />
-          </Stack>
-        </Card>
-
-        {/* Revision loading error */}
-        {revisionsError && (
-          <HsErrorState
-            onRetry={refetchRevisions}
-            message={t(
-              "revisionLoadError",
-              "The revision list could not be loaded. Please try again.",
-            )}
+          <HsSearchFilters
+            code={codeInput}
+            description={
+              descriptionInput
+            }
+            revisionId={revisionId}
+            revisions={
+              revisionOptions
+            }
+            revisionsLoading={
+              revisionsLoading ||
+              revisionsFetching
+            }
+            hasActiveFilters={
+              hasActiveFilters
+            }
+            onCodeChange={
+              setCodeInput
+            }
+            onDescriptionChange={
+              setDescriptionInput
+            }
+            onRevisionChange={
+              handleRevisionChange
+            }
+            onSearch={
+              handleSearch
+            }
+            onClear={
+              handleClear
+            }
           />
-        )}
 
-        {/* HS API error */}
-        {isError && (
-          <HsErrorState
-            onRetry={refetch}
-            message={t(
-              "error",
-              "The HS codes could not be loaded. Please try again.",
+          {isInitialLoading && (
+            <HsLoadingState />
+          )}
+
+          {!isInitialLoading &&
+            (
+              isError ||
+              revisionsError
+            ) && (
+              <HsErrorState
+                onRetry={
+                  handleRetry
+                }
+                message={t(
+                  "error",
+                  "The HS codes could not be loaded. Please try again.",
+                )}
+              />
             )}
-          />
-        )}
 
-        {/* Initial loading */}
-        {/* isLoading */ false && <HsLoadingState />}
-
-        {/* Results */}
-        {!isLoading &&
-          !isError &&
-          data && (
-            <Stack gap="md">
-              {/* Result summary */}
-              <Group
-                justify="space-between"
-                align="center"
-              >
-                <div>
-                  <Text
-                    fw={600}
-                    size="lg"
+          {!isInitialLoading &&
+            !isError &&
+            !revisionsError &&
+            data && (
+              <>
+                {items.length === 0 ? (
+                  <HsEmptyState />
+                ) : (
+                  <Box
+                    style={{
+                      position:
+                        "relative",
+                      minWidth: 0,
+                    }}
                   >
-                    {t(
-                      "hsResults",
-                      "HS code results",
-                    )}
-                  </Text>
-
-                  <Text
-                    size="sm"
-                    c="dimmed"
-                  >
-                    {data.totalCount}{" "}
-                    {t(
-                      "count",
-                      "results",
-                    )}
-                  </Text>
-                </div>
-
-                {/* Shows while changing page/filter */}
-                {isFetching && (
-                  <Group gap="xs">
-                    <Loader size="xs" />
-
-                    <Text
-                      size="sm"
-                      c="dimmed"
+                    <Box
+                      style={{
+                        opacity:
+                          isUpdating
+                            ? 0.65
+                            : 1,
+                        transition:
+                          "opacity 150ms ease",
+                      }}
                     >
-                      {t(
-                        "updating",
-                        "Updating...",
-                      )}
-                    </Text>
-                  </Group>
-                )}
-              </Group>
+                      <HsResultsTable
+                        items={items}
+                        revisions={
+                          revisions ?? []
+                        }
+                      />
+                    </Box>
 
-              {/* Empty state */}
-              {data.items.length === 0 ? (
-                <HsEmptyState />
-              ) : (
-                <>
-                  {/* Results table */}
-                  <Card
-                    withBorder
-                    radius="md"
-                    padding={0}
-                    className="hs-table-card"
-                  >
-                    <HsResultsTable
-                      items={data.items}
-                      revisions={
-                        revisions ?? []
+                    <HsPagination
+                      page={page}
+                      totalPages={
+                        totalPages
+                      }
+                      totalCount={
+                        totalCount
+                      }
+                      disabled={
+                        isUpdating
+                      }
+                      onChange={
+                        setPage
                       }
                     />
-                  </Card>
-
-                  {/* Pagination */}
-                  <HsPagination
-                    page={page}
-                    totalPages={totalPages}
-                    totalCount={
-                      data.totalCount
-                    }
-                    disabled={isFetching}
-                    onChange={setPage}
-                  />
-                </>
-              )}
-            </Stack>
-          )}
-      </Stack>
-    </main>
+                  </Box>
+                )}
+              </>
+            )}
+        </Stack>
+      </Container>
+    </Box>
   );
 }

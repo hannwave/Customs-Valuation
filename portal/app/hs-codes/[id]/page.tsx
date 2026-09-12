@@ -4,26 +4,30 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Alert,
+  Anchor,
   Button,
-  Card,
   Group,
-  Loader,
+  Paper,
   Stack,
   Text,
+  ThemeIcon,
   Title,
 } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 
 import { HsCodeDetails } from "@/components/hs-codes/HsCodeDetails";
+import { HsLoadingState } from "@/components/hs-codes/HsLoadingState";
 
 import {
   useGetHsCodeQuery,
   useGetHsRevisionsQuery,
 } from "@/lib/store/api/hsCodesApi";
 
+const FORCE_LOADING = false;
+const FORCE_ERROR = false;
+
 export default function HsCodeDetailPage() {
   const { t } = useTranslation();
-
   const params = useParams();
 
   const id =
@@ -31,9 +35,6 @@ export default function HsCodeDetailPage() {
       ? params.id
       : "";
 
-  /*
-   * Load the selected HS code.
-   */
   const {
     data: hsCode,
     isLoading,
@@ -43,180 +44,162 @@ export default function HsCodeDetailPage() {
     skip: !id,
   });
 
-  /*
-   * Load revisions so we can display
-   * the revision name/details.
-   */
   const {
     data: revisions,
   } = useGetHsRevisionsQuery();
 
-  /*
-   * Find the revision belonging to
-   * this HS code.
-   */
   const revision = revisions?.find(
     (item) =>
       item.id === hsCode?.revisionId,
   );
 
-  /*
-   * Loading state
-   */
-  if (isLoading) {
-    return (
-      <main className="hs-detail-page">
-        <HsDetailLoading />
-      </main>
-    );
-  }
-
-  /*
-   * Error / unavailable state
-   */
-  if (isError || !hsCode) {
-    return (
-      <main className="hs-detail-page">
-        <Stack gap="lg">
-          <Button
-            component={Link}
-            href="/hs-codes"
-            variant="subtle"
-            w="fit-content"
-          >
-            ←{" "}
-            {t(
-              "backToHsCodes",
-              "Back to HS codes",
-            )}
-          </Button>
-
-          <Alert
-            color="red"
-            title={t(
-              "errorTitle",
-              "Something went wrong",
-            )}
-          >
-            <Stack gap="sm">
-              <Text size="sm">
-                {t(
-                  "hsDetailError",
-                  "The requested HS code could not be loaded.",
-                )}
-              </Text>
-
-              <Button
-                variant="light"
-                color="red"
-                size="sm"
-                onClick={() => refetch()}
-              >
-                {t(
-                  "retry",
-                  "Retry",
-                )}
-              </Button>
-            </Stack>
-          </Alert>
-        </Stack>
-      </main>
-    );
-  }
-
-  /*
-   * Successful detail page
-   */
   return (
-    <main className="hs-detail-page">
-      <Stack gap="xl">
-        {/* Back navigation */}
-        <Button
-          component={Link}
-          href="/hs-codes"
-          variant="subtle"
-          w="fit-content"
-        >
-          ←{" "}
-          {t(
+    <main
+      style={{
+        width: "100%",
+        maxWidth: "1400px",
+        margin: "0 auto",
+        padding: "16px 24px 32px",
+      }}
+    >
+      <Stack gap="md">
+        <BackLink
+          label={t(
             "backToHsCodes",
             "Back to HS codes",
           )}
-        </Button>
-
-        {/* Header */}
-        <section>
-          <Title order={1}>
-            {t(
-              "hsCodeDetails",
-              "HS code details",
-            )}
-          </Title>
-
-          <Text
-            c="dimmed"
-            mt="xs"
-          >
-            {t(
-              "hsCodeDetailsIntro",
-              "Detailed information provided by the HS catalogue.",
-            )}
-          </Text>
-        </section>
-
-        {/* Details component */}
-        <HsCodeDetails
-          hsCode={hsCode}
-          revision={revision}
         />
 
-        {/* Bottom navigation */}
-        <Group>
-          <Button
-            component={Link}
-            href="/hs-codes"
-            variant="light"
-          >
-            {t(
-              "backToHsCodes",
-              "Back to HS codes",
-            )}
-          </Button>
-        </Group>
+        {(FORCE_LOADING || isLoading) && (
+          <HsLoadingState />
+        )}
+
+        {!FORCE_LOADING &&
+          !isLoading &&
+          (FORCE_ERROR ||
+            isError ||
+            !hsCode) && (
+            <Alert
+              color="red"
+              variant="light"
+              title={t(
+                "errorTitle",
+                "Something went wrong",
+              )}
+            >
+              <Stack gap="sm">
+                <Text size="sm">
+                  {t(
+                    "hsDetailError",
+                    "The requested HS code could not be loaded.",
+                  )}
+                </Text>
+
+                <Group>
+                  <Button
+                    variant="light"
+                    color="red"
+                    size="xs"
+                    onClick={() =>
+                      refetch()
+                    }
+                  >
+                    {t(
+                      "retry",
+                      "Retry",
+                    )}
+                  </Button>
+                </Group>
+              </Stack>
+            </Alert>
+          )}
+
+        {!FORCE_LOADING &&
+          !isLoading &&
+          !FORCE_ERROR &&
+          !isError &&
+          hsCode && (
+            <>
+              <Paper
+                withBorder
+                radius="md"
+                p={{
+                  base: "md",
+                  sm: "lg",
+                }}
+              >
+                <Stack gap="xs">
+                  <Group
+                    gap="xs"
+                    align="center"
+                  >
+                    <ThemeIcon
+                      variant="light"
+                      color="blue"
+                      radius="sm"
+                      size="sm"
+                    >
+                      #
+                    </ThemeIcon>
+
+                    <Title
+                      order={2}
+                      size="clamp(1.35rem, 3vw, 1.75rem)"
+                    >
+                      {t(
+                        "hsCodeDetails",
+                        "HS code details",
+                      )}
+                    </Title>
+                  </Group>
+
+                  <Text
+                    c="dimmed"
+                    size="sm"
+                  >
+                    {t(
+                      "hsCodeDetailsIntro",
+                      "Detailed information provided by the HS code.",
+                    )}
+                  </Text>
+
+                  <Text
+                    ff="monospace"
+                    fw={700}
+                    size="md"
+                    c="blue"
+                    mt={2}
+                  >
+                    {hsCode.code}
+                  </Text>
+                </Stack>
+              </Paper>
+
+              <HsCodeDetails
+                hsCode={hsCode}
+                revision={revision}
+              />
+            </>
+          )}
       </Stack>
     </main>
   );
 }
 
-/*
- * Local loading component for the detail page.
- *
- * This still uses Mantine.
- */
-function HsDetailLoading() {
-  const { t } = useTranslation();
-
+function BackLink({
+  label,
+}: {
+  label: string;
+}) {
   return (
-    <Card
-      withBorder
-      radius="md"
-      padding="xl"
+    <Anchor
+      component={Link}
+      href="/hs-codes"
+      size="sm"
+      c="dimmed"
+      underline="hover"
     >
-      <Stack
-        align="center"
-        justify="center"
-        gap="sm"
-        mih={200}
-      >
-        <Loader size="md" />
-
-        <Text c="dimmed">
-          {t(
-            "loading",
-            "Loading...",
-          )}
-        </Text>
-      </Stack>
-    </Card>
+      ← {label}
+    </Anchor>
   );
 }
