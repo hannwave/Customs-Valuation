@@ -61,7 +61,6 @@
   "count": "መዝገቦች",
   "backlog": "የትግበራ ወሰን",
   "language": "ቋንቋ",
-<<<<<<< HEAD
   "hsdescription": "የኤች ኤስ ኮምዶችን ፈልግ እና ይመልከቱ",
   "hsCatalogue.filters": "ፈልግ እና ማጣቀሻዎች",
   "hsCatalogue.filterDescription": " ከኮድወይም መግለጫ ወይም ስሪት የኤች ኤስ ኮዶችን ፈልግ.",
@@ -98,8 +97,8 @@
 "hsDetailError": "የተጠየቀው የኤችኤስ ኮድ መጫን አልተቻለም።",
 "retry": "እንደገና ሞክር",
 "hsCodeDetails": "የኤችኤስ ኮድ ዝርዝሮች",
-"hsCodeDetailsIntro": "በኤችኤስ ኮድ የቀረበ ዝርዝር መረጃ።"
-=======
+"hsCodeDetailsIntro": "በኤችኤስ ኮድ የቀረበ ዝርዝር መረጃ።",
+
   "registration": {
     "nav": "መለያ ይጠይቁ",
     "brand": "SES ጉምሩክ",
@@ -156,5 +155,5 @@
     "continue": "ወደ መግቢያ ይቀጥሉ",
     "demoSession": "የሙከራ መግቢያ · የመግቢያ መረጃ አይረጋገጥም"
   }
->>>>>>> 6998e749c6de2099ec2cb01fed39b6f66ea668ff
+
 }

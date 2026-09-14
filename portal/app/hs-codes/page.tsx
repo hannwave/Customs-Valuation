@@ -20,6 +20,7 @@ import { HsPagination } from "@/components/hs-codes/HsPagination";
 import { HsLoadingState } from "@/components/hs-codes/HsLoadingState";
 import { HsEmptyState } from "@/components/hs-codes/HsEmptyState";
 import { HsErrorState } from "@/components/hs-codes/HsErrorState";
+import { HsCodeDetailsModal } from "@/components/hs-codes/HsCodeDetailsModal";
 
 const PAGE_SIZE = 10;
 const FORCE_LOADING = false;
@@ -39,6 +40,15 @@ export default function HsCodesPage() {
     useState<string | null>(null);
 
   const [page, setPage] = useState(1);
+
+  /*
+   * Selected HS code for the details modal.
+   *
+   * null = modal closed
+   * string = modal opened for that HS code
+   */
+  const [selectedHsCodeId, setSelectedHsCodeId] =
+    useState<string | null>(null);
 
   const combinedSearch = useMemo(() => {
     return [codeSearch, descriptionSearch]
@@ -110,6 +120,14 @@ export default function HsCodesPage() {
     setDescriptionSearch("");
     setRevisionId(null);
     setPage(1);
+  };
+
+  const handleOpenDetails = (id: string) => {
+    setSelectedHsCodeId(id);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedHsCodeId(null);
   };
 
   const totalCount =
@@ -261,6 +279,9 @@ export default function HsCodesPage() {
                         revisions={
                           revisions ?? []
                         }
+                        onViewDetails={
+                          handleOpenDetails
+                        }
                       />
                     </Box>
 
@@ -271,6 +292,9 @@ export default function HsCodesPage() {
                       }
                       totalCount={
                         totalCount
+                      }
+                      pageSize={
+                        PAGE_SIZE
                       }
                       disabled={
                         isUpdating
@@ -285,6 +309,18 @@ export default function HsCodesPage() {
             )}
         </Stack>
       </Container>
+
+      <HsCodeDetailsModal
+        hsCodeId={
+          selectedHsCodeId
+        }
+        opened={
+          selectedHsCodeId !== null
+        }
+        onClose={
+          handleCloseDetails
+        }
+      />
     </Box>
   );
 }

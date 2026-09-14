@@ -1,4 +1,28 @@
 {
+  "localPrices": {
+    "eyebrow": "Reference evidence / Local markets",
+    "intro": "Explore local market observations by market, supplier and price category, with the cost basis behind each price.",
+    "demoNotice": "Synthetic records for exploring this workspace. Markets, suppliers, prices and verification details are examples; no live data is connected.",
+    "marketCount": "Demo markets", "supplierCount": "Demo suppliers", "filters": "Find local market prices",
+    "market": "Market", "allMarkets": "All markets", "category": "Price category", "allCategories": "All categories",
+    "supplier": "Supplier", "allSuppliers": "All suppliers", "supplierName": "Demo supplier {{supplier}}",
+    "status": "Verification status", "verified": "Verified", "pending": "Pending verification",
+    "records": "Local market price records", "tableCaption": "Synthetic local market observations in ETB, with their original units and VAT inclusion status.",
+    "emptyBody": "Try another code or broaden the market, supplier, category or date filters.",
+    "basisNote": "Local market evidence is kept separate from international prices. Categories, units and included costs may differ; these demo prices are not customs valuations.",
+    "recordDetails": "Local market observation", "priceNote": "Original quoted price in ETB · no tax or transport adjustments applied",
+    "region": "Region / city", "verificationDate": "Verification date", "notVerified": "Not verified",
+    "specification": "Product specification", "coffeeSpec": "Demo unroasted coffee · sample grade A",
+    "converterSpec": "Demo static converter · sample model SC-01",
+    "vat": "VAT", "otherTaxes": "Other taxes", "transport": "Transport",
+    "included": "Included", "excluded": "Excluded", "unknown": "Unknown", "costBasis": "Included costs",
+    "inclusionNote": "Unknown means the record does not specify whether the cost is included. No tax rate is assumed and no costs are added to or removed from the quoted price.",
+    "provenanceNote": "This record, supplier and market are frontend fixtures, not a real market survey or supplier quotation. Verification dates and statuses are illustrative. The original total equals unit price multiplied by quantity.",
+    "categories": { "wholesale": "Wholesale", "retail": "Retail", "manufacturer": "Manufacturer", "distributor": "Distributor", "supplierQuotation": "Supplier quotation" },
+    "markets": { "addis": "Addis demo market", "adama": "Adama demo market", "direDawa": "Dire Dawa demo market", "hawassa": "Hawassa demo market" },
+    "regions": { "addisAbaba": "Addis Ababa", "oromia": "Oromia", "direDawa": "Dire Dawa", "sidama": "Sidama" },
+    "sourceTypes": { "survey": "Demo market survey", "quotation": "Demo supplier quotation", "catalog": "Demo manufacturer catalog" }
+  },
   "prices": {
     "eyebrow": "Reference evidence / International",
     "intro": "Explore international trade observations and inspect the source behind each price.",
