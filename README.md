@@ -45,6 +45,12 @@ The `/international-prices` page runs entirely in the frontend with 12 synthetic
 
 The sample sources and review statuses are illustrative. There are no API calls, provider imports or saved edits in this section. Currency and quantity units remain unchanged, and no blended price statistics or customs values are calculated. Fixtures and query/export helpers live in `portal/lib/international-prices.ts` for a future API adapter. Run its checks with `node --test scripts/test-international-prices.mjs` from `portal` (Node.js 24).
 
+### Local market prices preview
+
+The local market preview at `/local-prices` also runs without a backend API. It contains 15 synthetic observations across four demo markets and all five categories: wholesale, retail, manufacturer, distributor and supplier quotation. Search by HS code, description or record ID; filter by market, category, supplier, verification status and observation dates; sort, paginate, inspect details and export the full filtered set as CSV.
+
+Local records retain their original ETB price and quantity unit. Details include market/region, supplier, product specification, source reference, verification date and separate included/excluded/unknown values for VAT, other taxes and transport. No tax rates, adjustments or comparisons with international prices are calculated. The module uses `portal/lib/local-prices.ts`; all markets, suppliers and verification details are illustrative, with no saved edits or API calls. English and Amharic labels follow the existing language switch. Run `node --test scripts/test-local-prices.mjs` from `portal` (Node.js 24).
+
 ### Temporary frontend access
 
 New visitors are directed to `/register` before seeing the workspace. Registration details can be reviewed, then users continue to `/sign-in`; the sign-in link also works without registration. Any non-empty username and password (for example `demo` / `demo`) opens the demo workspace. Refreshing keeps access in the current browser tab; Sign out clears it. Only a demo flag is stored in session storage; registration details and passwords are not saved or sent.

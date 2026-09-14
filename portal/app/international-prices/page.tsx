@@ -5,7 +5,7 @@ import { Modal } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import { emptyPriceFilters, filterPrices, internationalPrices, pricesToCsv,
   type InternationalPrice, type PriceFilters, type PriceSort } from "@/lib/international-prices";
-import styles from "./prices.module.css";
+import styles from "@/components/price-browser.module.css";
 
 const pageSize = 6;
 const origins = [...new Set(internationalPrices.map(record => record.origin))].sort();
