@@ -1,18 +1,27 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
+import { useDemoSession } from "@/lib/auth/DemoSessionProvider";
 const links = [["/", "dashboard"], ["/hs-codes", "hsCodes"], ["/international-prices", "international"],
   ["/local-prices", "local"], ["/historical-customs-prices", "historical"], ["/analytics", "analytics"],
   ["/valuation-decisions", "decisions"], ["/integrations", "integrations"], ["/reports", "reports"],
   ["/administration", "administration"], ["/audit", "audit"]];
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { t, i18n } = useTranslation(); const pathname = usePathname();
+  const router = useRouter();
+  const { ready, signedIn, signOut } = useDemoSession();
+  const publicPage = pathname === "/register" || pathname === "/sign-in";
   useEffect(() => { document.documentElement.lang = i18n.language; }, [i18n.language]);
+  useEffect(() => {
+    if (ready && !signedIn && !publicPage) router.replace("/register");
+  }, [ready, signedIn, publicPage, router]);
+  if (publicPage) return <>{children}</>;
+  if (!ready || !signedIn) return <div className="access-loading" role="status">{t("auth.opening")}</div>;
   return <div className="workspace"><aside><div className="brand">SES <span>CUSTOMS</span></div><p className="nav-label">{t("subtitle")}</p>
-    <nav aria-label={t("title")}>{links.map(([href,key]) => { const isActive = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`); return <Link key={href} href={href} aria-current={isActive ? "page" : undefined} className={isActive ? "active" : undefined}>{t(key)}</Link>; })}</nav>
+    <nav aria-label={t("title")}>{links.map(([href,key]) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined}>{t(key)}</Link>)}</nav>
     <p className="sidebar-note">{t("phase")}</p></aside><div className="content"><header><span>{t("title")}</span>
     <label>{t("language")} <select value={i18n.language} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label></header>
-    <div className="demo" role="note">{t("demo")}</div><main>{children}</main></div></div>;
+    <div className="demo" role="note">{t("auth.demoSession")} · {t("demo")}</div><main>{children}</main></div></div>;
 }
