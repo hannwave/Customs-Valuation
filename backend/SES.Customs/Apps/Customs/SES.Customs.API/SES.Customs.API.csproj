@@ -1,5 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <UserSecretsId>9e4bf2dc-7307-4ef0-b33f-84a3e8a4d279</UserSecretsId>
+  </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.20" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <ProjectReference Include="../SES.Customs.Core/SES.Customs.Core.csproj" />
     <ProjectReference Include="../SES.Customs.Infrastructure/SES.Customs.Infrastructure.csproj" />
   </ItemGroup>

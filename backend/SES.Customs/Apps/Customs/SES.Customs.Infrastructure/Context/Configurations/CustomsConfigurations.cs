@@ -34,7 +34,7 @@ public sealed class TariffConfiguration : IEntityTypeConfiguration<NationalTarif
 {
     public void Configure(EntityTypeBuilder<NationalTariffLine> b)
     {
-        b.ToTable("national_tariff_lines"); b.HasKey(x => x.Id);
+        b.ToTable("national_tariff_lines"); b.HasKey(x => x.Id); b.Property(x => x.Unit).HasMaxLength(80); b.Property(x => x.Duty).HasMaxLength(80);
         b.HasIndex(x => new { x.HsCodeId, x.Code, x.EffectiveDate }).IsUnique();
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -70,6 +70,35 @@ public sealed class LocalConfiguration : IEntityTypeConfiguration<LocalMarketPri
     {
         b.ToTable("local_prices"); b.Property(x => x.PriceType).HasConversion<string>();
         b.HasOne<LocalMarket>().WithMany().HasForeignKey(x => x.MarketId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+public sealed class LocalMarketObservationConfiguration : IEntityTypeConfiguration<LocalMarketObservation>
+{
+    public void Configure(EntityTypeBuilder<LocalMarketObservation> b)
+    {
+        b.ToTable("local_market_observations");
+        b.HasKey(x => x.Id);
+        b.HasIndex(x => new { x.HsCodeId, x.ClassificationStatus, x.RetrievalDate });
+        b.HasIndex(x => new { x.SourceId, x.SourceListingId }).IsUnique();
+        b.Property(x => x.RawPrice).HasPrecision(24, 8);
+        b.Property(x => x.OriginalQuantity).HasPrecision(24, 8);
+        b.Property(x => x.NormalizedQuantity).HasPrecision(24, 8);
+        b.Property(x => x.NormalizedPrice).HasPrecision(24, 8);
+        b.Property(x => x.NormalizedUnitPrice).HasPrecision(24, 8);
+        b.Property(x => x.OutlierScore).HasPrecision(18, 6);
+        b.Property(x => x.RawCurrency).HasMaxLength(3);
+        b.Property(x => x.NormalizedCurrency).HasMaxLength(3);
+        b.Property(x => x.ClassificationStatus).HasConversion<string>();
+        b.Property(x => x.Condition).HasConversion<string>();
+        b.Property(x => x.PriceType).HasConversion<string>();
+        b.Property(x => x.OutlierMethod).HasConversion<string>();
+        b.Property(x => x.ManualReviewStatus).HasConversion<string>();
+        b.Property(x => x.TargetProfileJson).HasColumnType("jsonb");
+        b.Property(x => x.MatchedKeywordsJson).HasColumnType("jsonb");
+        b.Property(x => x.ExcludedKeywordsJson).HasColumnType("jsonb");
+        b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PriceSource>().WithMany().HasForeignKey(x => x.SourceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<LocalMarketObservation>().WithMany().HasForeignKey(x => x.DuplicateOfId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 public sealed class HistoricalConfiguration : IEntityTypeConfiguration<HistoricalCustomsPrice>

@@ -7,5 +7,7 @@
 !**/.env.example
 **/appsettings.Local.json
 **/TestResults/
+*.log
+.verify-*/
 .vs/
 work/

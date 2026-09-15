@@ -14,14 +14,6 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned4() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("hs-codes/{id:guid}/international-prices"), Authorize(Policy = "CustomsOfficer")]
     public IActionResult Planned5() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("local-prices"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned6() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("local-prices/{id:guid}"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned7() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("hs-codes/{id:guid}/local-prices"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned8() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("local-markets"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned9() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("historical-customs-prices"), Authorize(Policy = "CustomsOfficer")]
     public IActionResult Planned10() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("historical-customs-prices/{id:guid}"), Authorize(Policy = "CustomsOfficer")]
@@ -52,8 +44,6 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned23() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("valuation-decisions/{id:guid}"), Authorize(Policy = "CustomsOfficer")]
     public IActionResult Planned24() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpPost("local-prices"), Authorize(Policy = "CustomsAdministrator")]
-    public IActionResult Planned25() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("hs-revisions"), Authorize(Policy = "CustomsAdministrator")]
     public IActionResult Planned26() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("price-sources"), Authorize(Policy = "CustomsAdministrator")]

@@ -153,6 +153,46 @@ export function HsCodeDetails({
             }}
           >
             {t(
+              "hsCatalogue.duty",
+              "Customs duty",
+            )}
+          </Text>
+
+          <Badge
+            mt="xs"
+            variant="light"
+            color={
+              hsCode.duty?.toLowerCase() ===
+              "prohibited"
+                ? "red"
+                : hsCode.duty?.toLowerCase() ===
+                    "free"
+                  ? "green"
+                  : "blue"
+            }
+            size="lg"
+          >
+            {hsCode.duty ||
+              t(
+                "hsCatalogue.dutyUnavailable",
+                "Not set",
+              )}
+          </Badge>
+        </Box>
+
+        <Divider />
+
+        <Box>
+          <Text
+            size="xs"
+            c="dimmed"
+            tt="uppercase"
+            fw={600}
+            style={{
+              letterSpacing: "0.5px",
+            }}
+          >
+            {t(
               "description",
               "Description",
             )}

@@ -8,8 +8,8 @@ public sealed class DemoHsCodeRepository : IHsCodeRepository
 {
     public static readonly Guid RevisionId = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly HsCodeDto[] Codes = [
-        new(Guid.Parse("22222222-2222-4222-8222-222222222222"), RevisionId, "850440", "Demo electrical converter", "የሙከራ ኤሌክትሪክ መቀየሪያ"),
-        new(Guid.Parse("33333333-3333-4333-8333-333333333333"), RevisionId, "090111", "Demo coffee product", "የሙከራ ቡና")
+        new(Guid.Parse("22222222-2222-4222-8222-222222222222"), RevisionId, "850440", "Demo electrical converter", "የሙከራ ኤሌክትሪክ መቀየሪያ", "15%"),
+        new(Guid.Parse("33333333-3333-4333-8333-333333333333"), RevisionId, "090111", "Demo coffee product", "የሙከራ ቡና", "Free")
     ];
     public Task<PagedResult<HsCodeDto>> SearchAsync(string? search, Guid? revisionId, int page, int pageSize, CancellationToken ct)
     {

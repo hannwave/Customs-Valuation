@@ -119,6 +119,17 @@ export function HsResultsTable({
                 }}
               >
                 {t(
+                  "hsCatalogue.duty",
+                  "Duty",
+                )}
+              </Table.Th>
+
+              <Table.Th
+                style={{
+                  minWidth: "100px",
+                }}
+              >
+                {t(
                   "hsCatalogue.action",
                   "Action",
                 )}
@@ -206,6 +217,28 @@ export function HsResultsTable({
                         </Text>
                       )}
                     </Stack>
+                  </Table.Td>
+
+                  <Table.Td>
+                    <Badge
+                      variant="light"
+                      color={
+                        item.duty?.toLowerCase() ===
+                        "prohibited"
+                          ? "red"
+                          : item.duty?.toLowerCase() ===
+                              "free"
+                            ? "green"
+                            : "blue"
+                      }
+                      size="sm"
+                    >
+                      {item.duty ||
+                        t(
+                          "hsCatalogue.dutyUnavailable",
+                          "Not set",
+                        )}
+                    </Badge>
                   </Table.Td>
 
                   <Table.Td>

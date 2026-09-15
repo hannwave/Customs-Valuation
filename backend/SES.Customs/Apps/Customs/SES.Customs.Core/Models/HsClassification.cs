@@ -36,6 +36,8 @@ public sealed class NationalTariffLine
     public string Code { get; set; } = "";
     public string DescriptionEn { get; set; } = "";
     public string? DescriptionAm { get; set; }
+    public string Unit { get; set; } = "";
+    public string Duty { get; set; } = "";
     public string SourceReference { get; set; } = "";
     public DateOnly EffectiveDate { get; set; }
     public DateOnly? EndDate { get; set; }
