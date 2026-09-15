@@ -1,23 +1,97 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiGlobe, FiLock, FiShield, FiTruck, FiUser } from "react-icons/fi";
 import { setSessionAccessToken } from "@/lib/auth/session";
 
-function Mark() { return <div className="auth-mark" aria-label="Ethiopia Customs Commission"><span>◉</span><b>✦</b><strong>♢</strong><small>ETHIOPIA CUSTOMS COMMISSION</small></div>; }
-
+export function Brand({ compact = false }: { compact?: boolean }) {
+  return <div className={`institution-brand ${compact ? "compact" : ""}`}><span className="institution-symbol" aria-hidden="true"><FiShield/><span/></span><span><strong>ETHIOPIA CUSTOMS</strong><small>{compact ? "VALUATION WORKSPACE" : "COMMISSION"}</small></span></div>;
+}
+export function LanguageSelect() {
+  const { t, i18n } = useTranslation();
+  return <label className="language-select"><FiGlobe aria-hidden="true"/><span className="sr-only">{t("language")}</span><select value={i18n.resolvedLanguage ?? "en"} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label>;
+}
 export function AuthShell({ children, signup = false }: { children: React.ReactNode; signup?: boolean }) {
-  return <div className="auth-page"><section className="auth-hero"><div className="auth-hero-brand">ETHIOPIA<br/>CUSTOMS COMMISSION</div><div className="auth-hero-copy"><p>SECURE BORDERS</p><p>PROSPEROUS NATION</p><span>Facilitating Trade<br/>for a Brighter Tomorrow</span></div><div className="auth-pillars"><span>◯ <b>SECURE<br/>OPERATIONS</b></span><span>▥ <b>EFFICIENT<br/>TRADE</b></span><span>♧ <b>STRONGER<br/>ECONOMY</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></section><section className="auth-card">{signup && <Link href="/login" className="back-link">← &nbsp;Back to Login</Link>}<div className="language">◎ &nbsp; English⌄</div>{!signup && <Mark/>}{children}<footer>© 2026 Customs Commission. All rights reserved.<span>Privacy &nbsp; | &nbsp; Help &nbsp; | &nbsp; Contact</span></footer></section></div>;
+  const { t } = useTranslation();
+  return <div className={`auth-page ${signup ? "registration-page" : ""}`}>
+    <section className="auth-hero" aria-label="Customs valuation workspace">
+      <Brand/>
+      <div className="auth-hero-copy"><span className="hero-kicker">{t("auth.trade", "FACILITATING TRADE. PROTECTING OUR FUTURE.")}</span><h2>{t("auth.heroFirst", "Secure borders.")}<br/><span>{t("auth.heroSecond", "Prosperous nation.")}</span></h2><p>{t("auth.heroBody", "Better evidence. Informed decisions. A shared workspace for the people moving Ethiopian trade forward.")}</p></div>
+      <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
+    </section>
+    <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<LanguageSelect/></div>
+      <div className="auth-card">{children}</div>
+      <footer className="auth-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield aria-hidden="true"/>{t("auth.authorized", "For authorized personnel")}</span></footer>
+    </section>
+  </div>;
 }
-
+function PasswordField({ name, label, placeholder, autoComplete = "new-password" }: { name: string; label: string; placeholder: string; autoComplete?: string }) {
+  const [visible, setVisible] = useState(false);
+  const { t } = useTranslation();
+  return <div className="field-group"><label htmlFor={name}>{label}<span className="required-mark"> *</span></label><div className="input-with-icon"><FiLock aria-hidden="true"/><input id={name} name={name} required type={visible ? "text" : "password"} autoComplete={autoComplete} placeholder={placeholder}/><button className="password-toggle" type="button" aria-label={`${visible ? t("auth.hide", "Hide password") : t("auth.show", "Show password")}: ${label}`} aria-pressed={visible} onClick={() => setVisible(!visible)}>{visible ? <FiEyeOff/> : <FiEye/>}</button></div></div>;
+}
 export function LoginForm() {
-  const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const router = useRouter();
-  async function submit(e: React.FormEvent<HTMLFormElement>) { e.preventDefault(); const data = new FormData(e.currentTarget); if (!data.get("identity") || !data.get("password")) { setError("Enter your username/email and password."); return; } setBusy(true); setError(""); try { const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080"; const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity: data.get("identity"), password: data.get("password") }) }); const body = await response.json(); if (!response.ok) throw new Error(body.message ?? "Invalid username or password."); setSessionAccessToken(body.accessToken); const requestedPath = new URLSearchParams(window.location.search).get("next"); const destination = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/"; router.push(destination); } catch (ex) { setError(ex instanceof Error ? ex.message : "Invalid username or password."); } finally { setBusy(false); } }
-  return <form className="auth-form" onSubmit={submit} noValidate><h1>Sign in</h1><p className="auth-subtitle">Access the Customs Management System</p>{error && <p className="auth-error" role="alert">{error}</p>}<label>Username or Email<input name="identity" autoComplete="username" placeholder="Username or Email" /></label><label>Password<div className="password-wrap"><input name="password" type="password" autoComplete="current-password" placeholder="Password"/><span>◉</span></div></label><div className="auth-options"><label className="check"><input type="checkbox"/> Remember me</label><Link href="/forgot-password">Forgot password?</Link></div><button className="auth-primary" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign In　→"}</button><div className="or"><span>or</span></div><button className="iam-button" type="button">♢　Login with Government IAM</button><p className="auth-register">Don’t have an account? <Link href="/signup">Create an account</Link></p></form>;
+  const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const router = useRouter(); const { t } = useTranslation();
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const data = new FormData(e.currentTarget); setBusy(true); setError("");
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+      const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity: data.get("identity"), password: data.get("password") }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message ?? t("auth.invalid", "Check your username and password and try again."));
+      setSessionAccessToken(body.accessToken);
+      const requestedPath = new URLSearchParams(window.location.search).get("next");
+      router.push(requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/");
+    } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.invalid", "Unable to sign in. Please try again.")); }
+    finally { setBusy(false); }
+  }
+  return <form className="auth-form" onSubmit={submit} aria-busy={busy}>
+    <div className="form-heading"><span className="form-heading-icon"><FiLock aria-hidden="true"/></span><p className="eyebrow">{t("auth.welcome", "YOUR VALUATION WORKSPACE")}</p><h1>{t("auth.signIn", "Welcome back")}</h1><p className="auth-subtitle">{t("auth.signInBody", "Sign in to access classification and price evidence.")}</p></div>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <div className="field-group"><label htmlFor="identity">{t("auth.identity", "Username or email")}<span className="required-mark"> *</span></label><div className="input-with-icon"><FiUser aria-hidden="true"/><input id="identity" name="identity" required autoComplete="username" placeholder={t("auth.identityPlaceholder", "Enter your username or email")}/></div></div>
+    <PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.passwordPlaceholder", "Enter your password")} autoComplete="current-password"/>
+    <button className="auth-primary" type="submit" disabled={busy}>{busy ? t("auth.signingIn", "Signing in…") : t("auth.signInAction", "Sign in to workspace")}<FiArrowRight aria-hidden="true"/></button>
+    <details className="access-help"><summary>{t("auth.help", "Need help signing in?")}</summary><p>{t("auth.helpBody", "Contact your system administrator for account approval or password assistance.")}</p></details>
+    <div className="auth-register"><span>{t("auth.noAccount", "New to the workspace?")}</span><Link href="/signup">{t("auth.request", "Request an account")}<FiArrowRight aria-hidden="true"/></Link></div>
+    <div className="auth-assurance"><FiShield aria-hidden="true"/><p>{t("auth.assurance", "Access is assigned by role. Valuation evidence supports the judgment of an authorized customs officer.")}</p></div>
+  </form>;
 }
-
 export function SignupForm() {
-  const [error, setError] = useState(""); const [sent, setSent] = useState(false);
-  async function submit(e: React.FormEvent<HTMLFormElement>) { e.preventDefault(); const data = new FormData(e.currentTarget); const required = ["fullName", "staffId", "email", "department", "role", "password", "confirm"]; if (required.some(k => !data.get(k))) { setError("Complete all required fields."); return; } if (data.get("password") !== data.get("confirm")) { setError("Passwords do not match."); return; } if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z]).{8,}/.test(String(data.get("password")))) { setError("Password does not meet the requirements."); return; } try { const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080"; const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName: data.get("fullName"), staffId: data.get("staffId"), email: data.get("email"), phone: data.get("phone"), department: data.get("department"), role: data.get("role"), password: data.get("password"), confirmPassword: data.get("confirm") }) }); const body = await response.json(); if (!response.ok) throw new Error(body.message ?? "Unable to submit registration."); setError(""); setSent(true); } catch (ex) { setError(ex instanceof Error ? ex.message : "Unable to submit registration."); } }
-  return <form className="auth-form signup-form" onSubmit={submit} noValidate><h1>Create Your Account</h1><p className="auth-subtitle">Register to access the Customs Management System</p><p className="auth-note">Account creation is subject to approval by the System Administrator.</p>{error && <p className="auth-error" role="alert">{error}</p>}{sent && <p className="auth-success" role="status">Request submitted for administrator approval.</p>}<div className="form-grid"><label>Full Name <em>*</em><input name="fullName" placeholder="Enter your full name"/></label><label>Employee/Staff ID <em>*</em><input name="staffId" placeholder="Enter your employee ID"/></label><label>Email Address <em>*</em><input name="email" type="email" placeholder="name@organization.et"/></label><label>Phone Number<input name="phone" placeholder="+251 9XX XXX XXX"/></label><label>Department / Office <em>*</em><select name="department" defaultValue=""><option value="" disabled>Select department</option><option>Head Office</option><option>Regional Office</option><option>Port Office</option></select></label><label>User Role <em>*</em><select name="role" defaultValue=""><option value="" disabled>Select role</option><option>Customs Officer</option><option>Customs Administrator</option></select></label><label className="wide">Password <em>*</em><input name="password" type="password" placeholder="Create a secure password"/></label><label className="wide">Confirm Password <em>*</em><input name="confirm" type="password" placeholder="Re-enter your password"/></label></div><div className="password-requirements"><b>Password Requirements:</b><span>✓ Minimum 8 characters　 ✓ At least one uppercase letter　 ✓ At least one number</span><span>✓ At least one lowercase letter　 ✓ At least one special character</span></div><label className="check terms"><input type="checkbox" required/> I have read and agree to the system’s <a href="#terms">Terms of Use</a> and <a href="#security">Security Policy</a>.</label><button className="auth-primary" type="submit">♙　Create Account</button></form>;
+  const [error, setError] = useState(""); const [sent, setSent] = useState(false); const [busy, setBusy] = useState(false);
+  const { t } = useTranslation();
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const data = new FormData(e.currentTarget);
+    if (data.get("password") !== data.get("confirm")) { setError(t("auth.mismatch", "Passwords do not match.")); return; }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(String(data.get("password")))) { setError(t("auth.passwordError", "Use at least 8 characters with uppercase, lowercase, a number and a special character.")); return; }
+    setBusy(true); setError("");
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+      const response = await fetch(`${base}/api/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fullName: data.get("fullName"), staffId: data.get("staffId"), email: data.get("email"), phone: data.get("phone"), department: data.get("department"), role: data.get("role"), password: data.get("password"), confirmPassword: data.get("confirm") }) });
+      const body = await response.json(); if (!response.ok) throw new Error(body.message ?? t("auth.registrationError", "Unable to submit registration."));
+      setSent(true);
+    } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.registrationError", "Unable to submit registration.")); }
+    finally { setBusy(false); }
+  }
+  if (sent) return <div className="registration-success" role="status"><span className="form-heading-icon"><FiCheck/></span><p className="eyebrow">{t("auth.submitted", "REQUEST SUBMITTED")}</p><h1>{t("auth.pending", "Your request is in review")}</h1><p className="lead">{t("auth.pendingBody", "Your system administrator will review your details and approve access before you can sign in.")}</p><Link className="primary-link" href="/login">{t("auth.back", "Back to sign in")}<FiArrowRight/></Link></div>;
+  return <form className="auth-form signup-form" onSubmit={submit} aria-busy={busy}>
+    <p className="eyebrow">{t("auth.join", "JOIN THE WORKSPACE")}</p><h1>{t("auth.create", "Request an account")}</h1><p className="auth-subtitle">{t("auth.createBody", "Start with your official staff details.")}</p>
+    <div className="auth-assurance registration-note"><FiShield aria-hidden="true"/><p>{t("auth.approval", "Every account is reviewed and approved by a system administrator.")}</p></div>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <div className="form-grid">
+      <div className="field-group"><label htmlFor="fullName">{t("auth.fullName", "Full name")}<span className="required-mark"> *</span></label><input id="fullName" name="fullName" required autoComplete="name" placeholder={t("auth.fullName", "Full name")}/></div>
+      <div className="field-group"><label htmlFor="staffId">{t("auth.staff", "Employee / staff ID")}<span className="required-mark"> *</span></label><input id="staffId" name="staffId" required placeholder={t("auth.staffPlaceholder", "Your employee ID")}/></div>
+      <div className="field-group"><label htmlFor="email">{t("auth.email", "Official email")}<span className="required-mark"> *</span></label><input id="email" name="email" type="email" required autoComplete="email" placeholder="name@organization.et"/></div>
+      <div className="field-group"><label htmlFor="phone">{t("auth.phone", "Phone number")} <small>{t("auth.optional", "(optional)")}</small></label><input id="phone" name="phone" type="tel" autoComplete="tel" placeholder="+251 …"/></div>
+      <div className="field-group"><label htmlFor="department">{t("auth.department", "Department / office")}<span className="required-mark"> *</span></label><select id="department" name="department" required defaultValue=""><option value="" disabled>{t("auth.selectOffice", "Select office")}</option><option value="Head Office">{t("auth.headOffice", "Head Office")}</option><option value="Regional Office">{t("auth.regionalOffice", "Regional Office")}</option><option value="Port Office">{t("auth.portOffice", "Port Office")}</option></select></div>
+      <div className="field-group"><label htmlFor="role">{t("auth.role", "Requested role")}<span className="required-mark"> *</span></label><select id="role" name="role" required defaultValue=""><option value="" disabled>{t("auth.selectRole", "Select role")}</option><option value="Customs Officer">{t("auth.officer", "Customs Officer")}</option><option value="Customs Administrator">{t("auth.administrator", "Customs Administrator")}</option></select></div>
+      <div className="wide"><PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.createPassword", "Create a strong password")}/></div>
+      <div className="wide"><PasswordField name="confirm" label={t("auth.confirm", "Confirm password")} placeholder={t("auth.repeatPassword", "Re-enter your password")}/></div>
+    </div>
+    <div className="password-requirements"><FiLock aria-hidden="true"/><p>{t("auth.passwordError", "Use at least 8 characters with uppercase, lowercase, a number and a special character.")}</p></div>
+    <button className="auth-primary" type="submit" disabled={busy}>{busy ? t("auth.submitting", "Submitting request…") : t("auth.submit", "Submit account request")}<FiArrowRight aria-hidden="true"/></button>
+    <p className="auth-register">{t("auth.haveAccount", "Already have an account?")} <Link href="/login">{t("auth.signInShort", "Sign in")}</Link></p>
+  </form>;
 }

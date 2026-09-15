@@ -132,10 +132,10 @@ export default function InternationalPricesPage() {
       <Container size="xl">
         <Stack gap="xl">
           <Box>
-            <Text size="sm" fw={700} c="blue" tt="uppercase">Market evidence</Text>
+            <Text className="eyebrow">PRICE EVIDENCE / INTERNATIONAL MARKETS</Text>
             <Title order={1}>International prices</Title>
             <Text c="dimmed" mt="xs">
-              Search live Google Shopping offers, or associate them with an HS item and store them in Supabase as unapproved international reference evidence.
+              Compare overseas offers in their original market and currency. Associate results with an HS code to save them for review.
             </Text>
           </Box>
 
@@ -166,22 +166,23 @@ export default function InternationalPricesPage() {
                 />
               </SimpleGrid>
               <Group justify="flex-end">
-                <Button type="submit" variant="light" disabled={loading}>
-                  {busyAction === "search" ? "Searching…" : "Search live only"}
+                <Button type="button" variant="outline" disabled={loading} onClick={() => void loadPrices("sync")}>
+                  {busyAction === "sync" ? "Saving evidence…" : "Save reference evidence"}
                 </Button>
-                <Button type="button" disabled={loading} onClick={() => void loadPrices("sync")}>
-                  {busyAction === "sync" ? "Loading into database…" : "Load prices into database"}
+                <Button type="submit" disabled={loading}>
+                  {busyAction === "search" ? "Searching…" : "Search international offers"}
                 </Button>
               </Group>
             </Stack>
           </Paper>
 
+          {!data && !loading && !error && <Paper className="evidence-empty" withBorder p="xl"><Text fw={600}>Explore prices in their market context</Text><Text size="sm" c="dimmed" mt="xs">Enter a product and choose a market to see offers, sellers and source links. Saving evidence requires an HS code.</Text></Paper>}
           {error && <Alert color="red" title="Price loading failed">{error}</Alert>}
           {status && <Alert color="green" title="Database updated">{status}</Alert>}
 
           {loading && (
             <Paper withBorder radius="lg" p="xl">
-              <Group justify="center"><Loader size="sm" /><Text>Requesting international offers from SerpAPI…</Text></Group>
+              <Group justify="center"><Loader size="sm" /><Text>Searching international marketplace offers…</Text></Group>
             </Paper>
           )}
 
@@ -199,7 +200,7 @@ export default function InternationalPricesPage() {
                   <Text size="xs" c="dimmed">Market: {data.market.toUpperCase()} · Retrieved {new Date(data.retrievedAt).toLocaleString()}</Text>
                 </Box>
                 <Badge variant="light" color={status ? "green" : "blue"}>
-                  {status ? "Saved in Supabase" : "Live SerpAPI results"}
+                  {status ? "Saved for review" : "Live shopping offers"}
                 </Badge>
               </Group>
               <Box style={{ overflowX: "auto" }}>

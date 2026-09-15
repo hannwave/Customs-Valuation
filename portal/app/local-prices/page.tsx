@@ -143,9 +143,10 @@ export default function LocalPricesPage() {
 
   return (
     <Box bg="gray.0" mih="100%" py="xl"><Container size="xl"><Stack gap="xl">
-      <Box><Text size="sm" fw={700} c="blue" tt="uppercase">Clean observations first, statistics second</Text><Title order={1}>Ethiopian local market analysis</Title><Text c="dimmed" mt="xs">Fetch, preserve, classify and normalize marketplace listings before calculating a representative price.</Text></Box>
+      <Box><Text className="eyebrow">PRICE EVIDENCE / ETHIOPIAN MARKET</Text><Title order={1}>Local market analysis</Title><Text c="dimmed" mt="xs">Build a comparable evidence pool from Ethiopian marketplace listings, then review the representative price.</Text></Box>
 
       <Paper component="form" onSubmit={submit} withBorder radius="lg" p="lg" shadow="xs"><Stack gap="lg">
+        <Box><Title order={2} size="h3">Define the product</Title><Text size="sm" c="dimmed" mt={4}>Use an exact description and HS code to keep your evidence comparable.</Text></Box>
         <SimpleGrid cols={{ base: 1, md: 3 }}>
           <TextInput required label="Product description" placeholder="Apple iPhone 13 128GB" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           <TextInput required label="HS code" placeholder="851713" value={hsCode} onChange={(event) => setHsCode(event.currentTarget.value)} />
@@ -153,6 +154,9 @@ export default function LocalPricesPage() {
           <TextInput label="Brand" placeholder="Apple" value={brand} onChange={(event) => setBrand(event.currentTarget.value)} />
           <TextInput label="Exact model" placeholder="iPhone 13" value={model} onChange={(event) => setModel(event.currentTarget.value)} />
           <TextInput label="Variant / specification" placeholder="128GB" value={variant} onChange={(event) => setVariant(event.currentTarget.value)} />
+        </SimpleGrid>
+        <Box className="form-section-heading"><Title order={2} size="h3">Set the comparison criteria</Title><Text size="sm" c="dimmed" mt={4}>Separate condition and price type before assessing quality and outliers.</Text></Box>
+        <SimpleGrid cols={{ base: 1, md: 3 }}>
           <Select label="Condition pool" data={conditions} value={condition} onChange={(value) => setCondition(value ?? "New")} allowDeselect={false} />
           <Select label="Price type" data={priceTypes} value={priceType} onChange={(value) => setPriceType(value ?? "Retail")} allowDeselect={false} />
           <Select label="Outlier method" data={outlierMethods} value={outlierMethod} onChange={(value) => setOutlierMethod(value ?? "Iqr")} allowDeselect={false} />
@@ -161,9 +165,10 @@ export default function LocalPricesPage() {
           <Switch mt="xl" checked={includeOutliers} onChange={(event) => setIncludeOutliers(event.currentTarget.checked)} label="Include flagged outliers in representative statistics" />
         </SimpleGrid>
         <Box><Text size="sm" fw={600} mb="xs">Marketplaces</Text><SimpleGrid cols={{ base: 1, sm: 3 }}>{providerChoices.map((provider) => <Paper key={provider.id} withBorder p="sm" radius="md"><Checkbox checked={selectedSources.includes(provider.id)} onChange={(event) => toggleSource(provider.id, event.currentTarget.checked)} label={<><Text size="sm" fw={600}>{provider.label}</Text><Text size="xs" c="dimmed">{provider.description}</Text></>} /></Paper>)}</SimpleGrid></Box>
-        <Group justify="flex-end"><Button type="submit" variant="light" disabled={busyAction !== null}>{busyAction === "search" ? "Fetching and classifying…" : "Analyze live results"}</Button><Button type="button" disabled={busyAction !== null} onClick={() => void loadPrices("sync")}>{busyAction === "sync" ? "Saving clean evidence…" : "Save clean evidence to database"}</Button></Group>
+        <Group justify="flex-end"><Button type="button" variant="outline" disabled={busyAction !== null} onClick={() => void loadPrices("sync")}>{busyAction === "sync" ? "Saving clean evidence…" : "Save clean evidence"}</Button><Button type="submit" disabled={busyAction !== null}>{busyAction === "search" ? "Fetching and classifying…" : "Analyze live results"}</Button></Group>
       </Stack></Paper>
 
+      {!data && !busyAction && !error && <Paper className="evidence-empty" withBorder p="xl"><Text fw={600}>Your evidence review starts with a search</Text><Text size="sm" c="dimmed" mt="xs">Choose a product and marketplaces above. Results will show comparable listings, excluded observations and the reasons behind each classification.</Text></Paper>}
       {error && <Alert color="red" title="Analysis failed">{error}</Alert>}{notice && <Alert color="green" title="Completed">{notice}</Alert>}
       {busyAction && <Paper withBorder radius="lg" p="xl"><Group justify="center"><Loader size="sm" /><Text>Fetching raw listings, matching products and calculating robust statistics…</Text></Group></Paper>}
 
