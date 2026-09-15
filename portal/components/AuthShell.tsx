@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiGlobe, FiLock, FiShield, FiTruck, FiUser } from "react-icons/fi";
 import { setSessionAccessToken } from "@/lib/auth/session";
+import { CommissionLogo } from "@/components/CommissionLogo";
 
 export function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`institution-brand ${compact ? "compact" : ""}`}><span className="institution-symbol" aria-hidden="true"><FiShield/><span/></span><span><strong>ETHIOPIA CUSTOMS</strong><small>{compact ? "VALUATION WORKSPACE" : "COMMISSION"}</small></span></div>;
+  return <div className={`institution-brand ${compact ? "compact" : ""}`}><CommissionLogo variant="light" priority/><span className="brand-caption">VALUATION WORKSPACE</span></div>;
 }
 export function LanguageSelect() {
   const { t, i18n } = useTranslation();
@@ -22,7 +23,7 @@ export function AuthShell({ children, signup = false }: { children: React.ReactN
       <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
     </section>
     <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<LanguageSelect/></div>
-      <div className="auth-card">{children}</div>
+      <div className="auth-card"><CommissionLogo className="auth-form-logo" priority/>{children}</div>
       <footer className="auth-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield aria-hidden="true"/>{t("auth.authorized", "For authorized personnel")}</span></footer>
     </section>
   </div>;
@@ -49,7 +50,7 @@ export function LoginForm() {
     finally { setBusy(false); }
   }
   return <form className="auth-form" onSubmit={submit} aria-busy={busy}>
-    <div className="form-heading"><span className="form-heading-icon"><FiLock aria-hidden="true"/></span><p className="eyebrow">{t("auth.welcome", "YOUR VALUATION WORKSPACE")}</p><h1>{t("auth.signIn", "Welcome back")}</h1><p className="auth-subtitle">{t("auth.signInBody", "Sign in to access classification and price evidence.")}</p></div>
+    <div className="form-heading"><p className="eyebrow">{t("auth.welcome", "YOUR VALUATION WORKSPACE")}</p><h1>{t("auth.signIn", "Welcome back")}</h1><p className="auth-subtitle">{t("auth.signInBody", "Sign in to access classification and price evidence.")}</p></div>
     {error && <p className="auth-error" role="alert">{error}</p>}
     <div className="field-group"><label htmlFor="identity">{t("auth.identity", "Username or email")}<span className="required-mark"> *</span></label><div className="input-with-icon"><FiUser aria-hidden="true"/><input id="identity" name="identity" required autoComplete="username" placeholder={t("auth.identityPlaceholder", "Enter your username or email")}/></div></div>
     <PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.passwordPlaceholder", "Enter your password")} autoComplete="current-password"/>

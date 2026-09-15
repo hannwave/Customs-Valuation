@@ -56,9 +56,21 @@ English-only copy. Amharic wording should receive institutional editorial review
 
 `portal/public/images/trade-terminal.webp` is an optimized AI-generated
 illustration in a photographic style. It does not depict an identified real
-customs facility. The PNG source is stored beside it. The outlined shield is a
-generic application mark, not a reproduction of the Commission's official seal.
-Replace it with an approved brand asset when available.
+customs facility. The PNG source is stored beside it.
+
+The supplied Commission logos replace the generic branding mark:
+
+- Full-color logo on the white login and registration panels and mobile header.
+- Transparent white/yellow logo on the authentication photograph and navy sidebar.
+- Supplied emblem, without tiny lettering, as the browser-tab icon.
+
+`portal/public/brand/customs-logo.png` is the unmodified supplied color artwork.
+`customs-logo-light.png` uses the same pixel silhouettes and lettering, with blue
+converted to opaque white and the white background removed to real alpha.
+Negative spaces remain transparent. `scripts/prepare-brand-assets.cjs` regenerates
+the light variant and icon without redrawing the logo or retyping its lettering.
+The desktop source files are unchanged. Security/help icons remain ordinary UI
+icons rather than repeating the institutional logo.
 
 `node scripts/prepare-ui-assets.cjs` regenerates the WebP and collects English
 component fallbacks into the translation catalogue.
