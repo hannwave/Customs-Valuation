@@ -11,3 +11,4 @@
 .verify-*/
 .vs/
 work/
+.local-dev/

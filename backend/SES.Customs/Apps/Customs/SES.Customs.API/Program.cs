@@ -10,6 +10,14 @@ using SES.Customs.Core.Features.HsCodes.Contract.Query;
 using SES.Customs.Infrastructure.Dependency;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Environment.IsDevelopment())
+{
+    // Git-ignored machine settings; explicit secrets and process settings win.
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false)
+        .AddUserSecrets<AuthService>(optional: true)
+        .AddEnvironmentVariables()
+        .AddCommandLine(args);
+}
 // Console logging works in local, CI and container environments without Event Log privileges.
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole();
