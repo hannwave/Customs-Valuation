@@ -10,26 +10,20 @@ export function HsLoadingState() {
   const { t } = useTranslation();
 
   return (
-    <Card
-      
-      radius="md"
-      padding="xl"
-    >
       <Stack
         align="center"
         justify="center"
         gap="sm"
         mih={160}
       >
-        <Loader size="md" />
+        <Loader
+          size="md"
+          color="#228be6"
+        />
 
         <Text c="dimmed">
-          {t(
-            "loading",
-            "Loading...",
-          )}
+          {t("loading", "Loading...")}
         </Text>
       </Stack>
-    </Card>
   );
 }

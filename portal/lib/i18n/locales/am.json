@@ -1,4 +1,30 @@
 {
+  "prices": {
+    "eyebrow": "የማጣቀሻ መረጃ / ዓለም አቀፍ",
+    "intro": "ዓለም አቀፍ የንግድ ዋጋ መረጃዎችን እና የእያንዳንዱን ዋጋ ምንጭ ይመልከቱ።",
+    "export": "የተጣራውን CSV አውርድ", "demo": "የሙከራ መረጃ",
+    "demoNotice": "ይህን የሥራ ቦታ ለመሞከር የተዘጋጁ መረጃዎች ናቸው። ዋጋዎች፣ ምንጮች እና የግምገማ ሁኔታዎች ምሳሌዎች ብቻ ናቸው።",
+    "observations": "የዋጋ መረጃዎች", "origins": "መነሻ አገሮች", "sources": "የሙከራ ምንጮች",
+    "filteredSet": "በተጣሩ ውጤቶች ውስጥ", "filters": "የማጣቀሻ ዋጋዎችን ፈልግ", "clear": "ማጣሪያዎችን አጽዳ",
+    "searchPlaceholder": "ለምሳሌ 090111፣ ቡና ወይም የመዝገብ መለያ", "origin": "መነሻ አገር",
+    "allCountries": "ሁሉም አገሮች", "source": "ምንጭ", "allSources": "ሁሉም ምንጮች",
+    "sourceName": "የሙከራ ምንጭ {{source}}", "status": "የግምገማ ሁኔታ", "allStatuses": "ሁሉም ሁኔታዎች",
+    "reviewed": "የተገመገመ", "pending": "ግምገማ የሚጠብቅ", "from": "ከቀን", "to": "እስከ ቀን",
+    "dateError": "የመጨረሻው ቀን ከመጀመሪያው ቀን በፊት መሆን የለበትም።", "records": "ዓለም አቀፍ የዋጋ መዝገቦች",
+    "resultCount_one": "{{count}} ተዛማጅ መረጃ", "resultCount_other": "{{count}} ተዛማጅ መረጃዎች",
+    "sort": "ደርድር", "newest": "አዲሱ መጀመሪያ", "oldest": "አሮጌው መጀመሪያ",
+    "tableCaption": "በመጀመሪያው ምንዛሬ እና መለኪያ የቀረቡ የሙከራ ዓለም አቀፍ ዋጋዎች።",
+    "product": "የኤች ኤስ ኮድ / ምርት", "unitPrice": "የአንድ አሃድ ዋጋ", "date": "የመረጃ ቀን", "details": "ዝርዝር",
+    "coffee": "የሙከራ ጥሬ ቡና", "converter": "የሙከራ ስታቲክ ኮንቨርተር", "per": "በ", "kg": "ኪ.ግ", "item": "እቃ",
+    "view": "አሳይ", "emptyTitle": "ተዛማጅ ዋጋዎች አልተገኙም", "emptyBody": "ሌላ ኮድ ይሞክሩ ወይም የአገር፣ ምንጭ እና ቀን ማጣሪያዎችን ያስፉ።",
+    "showing": "ከ{{total}} ውስጥ {{from}}–{{to}} በማሳየት ላይ", "basisNote": "እያንዳንዱ መረጃ የራሱን ምንዛሬ፣ መለኪያ እና የንግድ መሠረት ይይዛል። እነዚህ የሙከራ ዋጋዎች የጉምሩክ ግምቶች አይደሉም።",
+    "exported_one": "{{count}} የሙከራ መዝገብ ወርዷል።", "exported_other": "{{count}} የሙከራ መዝገቦች ወርደዋል።",
+    "recordDetails": "የዋጋ መረጃ", "close": "ዝጋ", "originalCurrency": "የመጀመሪያ ምንዛሬ · የምንዛሬ ለውጥ አልተደረገም",
+    "destination": "መድረሻ", "incoterm": "የንግድ መሠረት (Incoterm)", "quantity": "ብዛት", "total": "የመጀመሪያ ጠቅላላ ዋጋ",
+    "sourceReference": "የምንጭ መለያ", "provenance": "ምንጭ እና አመጣጥ",
+    "provenanceNote": "ይህ መዝገብ ለፊት ገጽ ሙከራ ተዘጋጅቷል፤ ከንግድ መረጃ አቅራቢ አልተገኘም። የምንጭ መለያው እና የግምገማ ሁኔታው ምሳሌዎች ብቻ ናቸው። ጠቅላላ ዋጋው የአሃድ ዋጋ በብዛት ተባዝቶ ይገኛል።",
+    "countries": { "BR": "ብራዚል", "VN": "ቬትናም", "CN": "ቻይና", "CO": "ኮሎምቢያ", "DE": "ጀርመን", "KE": "ኬንያ", "ET": "ኢትዮጵያ" }
+  },
   "title": "የጉምሩክ ማጣቀሻ የሥራ ቦታ",
   "subtitle": "የኤች ኤስ ምደባ እና የግምት ውሳኔ ድጋፍ",
   "dashboard": "አጠቃላይ እይታ",
@@ -71,5 +97,63 @@
 "hsDetailError": "የተጠየቀው የኤችኤስ ኮድ መጫን አልተቻለም።",
 "retry": "እንደገና ሞክር",
 "hsCodeDetails": "የኤችኤስ ኮድ ዝርዝሮች",
-"hsCodeDetailsIntro": "በኤችኤስ ኮድ የቀረበ ዝርዝር መረጃ።"
+"hsCodeDetailsIntro": "በኤችኤስ ኮድ የቀረበ ዝርዝር መረጃ።",
+
+  "registration": {
+    "nav": "መለያ ይጠይቁ",
+    "brand": "SES ጉምሩክ",
+    "portal": "የጉምሩክ ግምት ፖርታል",
+    "back": "ወደ ሥራ ቦታ ተመለስ",
+    "staffAccess": "የሠራተኞች መዳረሻ",
+    "title": "መለያ ይጠይቁ",
+    "intro": "ለጉምሩክ ግምት ፖርታል የመዳረሻ ጥያቄ ለማዘጋጀት የሥራ መረጃዎን ያስገቡ።",
+    "permissions": "ለአሁን የተፈቀደ መለያ ሳይኖርዎት የሙከራ ስርዓቱን ማየት ይችላሉ።",
+    "availabilityTitle": "የሙከራ ምዝገባ",
+    "availability": "መረጃዎን ከልሰው ወደ መግቢያ ገጹ ይቀጥሉ። እውነተኛ መለያ አይፈጠርም፤ መረጃውም አይቀመጥም።",
+    "reviewButton": "መረጃውን ይከልሱ",
+    "reviewTitle": "መረጃዎን ይከልሱ",
+    "reviewIntro": "መረጃዎን አረጋግጠው ወደ ሙከራ መግቢያ ገጹ ይቀጥሉ።",
+    "notSent": "ለሙከራው ዝግጁ ነዎት",
+    "unavailable": "ይህ መረጃ አልተላከም ወይም አልተቀመጠም። በማንኛውም የሙከራ ተጠቃሚ ስም እና የይለፍ ቃል መግባት ይችላሉ።",
+    "edit": "መረጃውን ያስተካክሉ",
+    "footer": "ለሠራተኞች ብቻ · SES ጉምሩክ",
+    "fields": {
+      "fullName": "ሙሉ ስም",
+      "email": "የሥራ ኢሜይል",
+      "employeeId": "የሠራተኛ መለያ ቁጥር",
+      "organization": "ተቋም",
+      "office": "ቢሮ ወይም ክፍል"
+    },
+    "placeholders": {
+      "fullName": "ሙሉ ስምዎን ያስገቡ",
+      "email": "name@organization.gov.et",
+      "employeeId": "የሠራተኛ መለያ ቁጥርዎ",
+      "organization": "የተቋም ስም",
+      "office": "የቢሮ ወይም የክፍል ስም"
+    },
+    "errors": {
+      "required": "ይህ መረጃ ያስፈልጋል።",
+      "invalidEmail": "ትክክለኛ የሥራ ኢሜይል አድራሻ ያስገቡ።"
+    }
+  },
+  "auth": {
+    "opening": "የሠራተኞች መዳረሻ በመክፈት ላይ…",
+    "signIn": "ይግቡ",
+    "signOut": "ውጣ",
+    "register": "ይመዝገቡ",
+    "haveAccount": "መለያ አለዎት?",
+    "needAccount": "ለፖርታሉ አዲስ ነዎት?",
+    "intro": "ወደ ጉምሩክ ግምት የሥራ ቦታ ለመግባት ይግቡ።",
+    "demoTitle": "የሙከራ መዳረሻ",
+    "demoHint": "ማንኛውንም የተጠቃሚ ስም እና የይለፍ ቃል ያስገቡ፤ ለምሳሌ demo / demo። የተፈጠረ የሙከራ መረጃ ይጠቀሙ፤ መለያ አይረጋገጥም፣ የይለፍ ቃልም አይቀመጥም።",
+    "identifier": "ኢሜይል ወይም የተጠቃሚ ስም",
+    "identifierPlaceholder": "ለምሳሌ demo",
+    "password": "የይለፍ ቃል",
+    "passwordPlaceholder": "ማንኛውም የሙከራ የይለፍ ቃል",
+    "togglePassword": "የይለፍ ቃል አሳይ ወይም ደብቅ",
+    "enter": "ወደ ሙከራው ይግቡ",
+    "continue": "ወደ መግቢያ ይቀጥሉ",
+    "demoSession": "የሙከራ መግቢያ · የመግቢያ መረጃ አይረጋገጥም"
+  }
+
 }

@@ -1,12 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import {
-  Badge,
   Button,
-  Group,
   Paper,
-  Stack,
   Table,
   Text,
   Tooltip,
@@ -22,22 +18,28 @@ import type {
 interface HsResultsTableProps {
   items: HsCode[];
   revisions: HsRevision[];
+  onViewDetails: (id: string) => void;
 }
 
 export function HsResultsTable({
   items,
   revisions,
+  onViewDetails,
 }: HsResultsTableProps) {
   const { t, i18n } = useTranslation();
+
+  const getRevision = (revisionId: string) => {
+    return revisions.find(
+      (revision) =>
+        revision.id === revisionId,
+    );
+  };
 
   const getRevisionName = (
     revisionId: string,
   ) => {
     return (
-      revisions.find(
-        (revision) =>
-          revision.id === revisionId,
-      )?.name ??
+      getRevision(revisionId)?.name ??
       t(
         "hsCatalogue.revisionUnavailable",
         "Revision unavailable",
@@ -61,39 +63,70 @@ export function HsResultsTable({
   return (
     <Paper
       withBorder
-      radius="lg"
-      shadow="sm"
+      radius={9}
+      shadow="none"
       style={{
+        background: "#fff",
+        borderColor: "#dce5e9",
         overflow: "hidden",
       }}
     >
+      {/* Results table */}
       <Box
         style={{
           overflowX: "auto",
         }}
+        tabIndex={0}
+        role="region"
+        aria-label={t(
+          "hsCatalogue.results",
+          "HS code results",
+        )}
       >
         <Table
-          striped
-          highlightOnHover
-          verticalSpacing="md"
-          horizontalSpacing="md"
+          style={{
+            minWidth: "880px",
+            borderCollapse: "collapse",
+          }}
         >
           <Table.Thead>
             <Table.Tr>
+              {/* HS Code */}
               <Table.Th
                 style={{
-                  minWidth: "120px",
+                  background: "#f5f8fa",
+                  padding: "13px 16px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.6px",
+                  textTransform:
+                    "uppercase",
+                  whiteSpace: "nowrap",
+                  color: "#526875",
+                  borderBottom:
+                    "1px solid #dce5e9",
                 }}
               >
                 {t(
                   "hsCatalogue.codeLabel",
-                  "HS codes",
+                  "HS code",
                 )}
               </Table.Th>
 
+              {/* Description */}
               <Table.Th
                 style={{
-                  minWidth: "250px",
+                  background: "#f5f8fa",
+                  padding: "13px 16px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.6px",
+                  textTransform:
+                    "uppercase",
+                  whiteSpace: "nowrap",
+                  color: "#526875",
+                  borderBottom:
+                    "1px solid #dce5e9",
                 }}
               >
                 {t(
@@ -102,9 +135,20 @@ export function HsResultsTable({
                 )}
               </Table.Th>
 
+              {/* Revision */}
               <Table.Th
                 style={{
-                  minWidth: "130px",
+                  background: "#f5f8fa",
+                  padding: "13px 16px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.6px",
+                  textTransform:
+                    "uppercase",
+                  whiteSpace: "nowrap",
+                  color: "#526875",
+                  borderBottom:
+                    "1px solid #dce5e9",
                 }}
               >
                 {t(
@@ -113,20 +157,20 @@ export function HsResultsTable({
                 )}
               </Table.Th>
 
+              {/* Action */}
               <Table.Th
                 style={{
-                  minWidth: "100px",
-                }}
-              >
-                {t(
-                  "hsCatalogue.duty",
-                  "Duty",
-                )}
-              </Table.Th>
-
-              <Table.Th
-                style={{
-                  minWidth: "100px",
+                  background: "#f5f8fa",
+                  padding: "13px 16px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.6px",
+                  textTransform:
+                    "uppercase",
+                  whiteSpace: "nowrap",
+                  color: "#526875",
+                  borderBottom:
+                    "1px solid #dce5e9",
                 }}
               >
                 {t(
@@ -139,132 +183,285 @@ export function HsResultsTable({
 
           <Table.Tbody>
             {items.map((item) => {
+              const revision =
+                getRevision(
+                  item.revisionId,
+                );
+
               const hasAmharicDescription =
-                Boolean(item.descriptionAm);
+                Boolean(
+                  item.descriptionAm,
+                );
 
               return (
-                <Table.Tr key={item.id}>
-                  <Table.Td>
-                    <Text
-                      fw={700}
-                      size="sm"
-                      ff="monospace"
+                <Table.Tr
+                  key={item.id}
+                  style={{
+                    transition:
+                      "background-color 120ms ease",
+                  }}
+                  onMouseEnter={(
+                    event,
+                  ) => {
+                    event.currentTarget.style.backgroundColor =
+                      "#f9fcfc";
+                  }}
+                  onMouseLeave={(
+                    event,
+                  ) => {
+                    event.currentTarget.style.backgroundColor =
+                      "";
+                  }}
+                >
+                  {/* HS Code */}
+                  <Table.Td
+                    style={{
+                      padding:
+                        "18px 16px",
+                      fontSize: "12px",
+                      verticalAlign:
+                        "middle",
+                      borderBottom:
+                        "1px solid #edf1f3",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily:
+                          "Consolas, monospace",
+                        fontSize: "12px",
+                        color: "#176b70",
+                        background:
+                          "#eaf3f3",
+                        borderRadius:
+                          "4px",
+                        padding:
+                          "4px 7px",
+                        display:
+                          "inline-block",
+                        letterSpacing:
+                          "0.6px",
+                        whiteSpace:
+                          "nowrap",
+                      }}
                     >
                       {item.code}
-                    </Text>
+                    </span>
                   </Table.Td>
 
-                  <Table.Td>
-                    <Stack gap={4}>
-                      <Text
-                        size="sm"
-                        lineClamp={2}
-                      >
-                        {getDescription(item)}
-                      </Text>
-
-                      {i18n.language === "am" &&
-                        !hasAmharicDescription && (
-                          <Badge
-                            size="xs"
-                            variant="dot"
-                            color="orange"
-                            w="fit-content"
-                          >
-                            {t(
-                              "needsReview",
-                              "Needs Review",
-                            )}
-                          </Badge>
-                        )}
-                    </Stack>
-                  </Table.Td>
-
-                  <Table.Td>
-                    <Stack gap={2}>
-                      <Badge
-                        variant="light"
-                        color="gray"
-                        size="sm"
-                        w="fit-content"
-                      >
-                        {getRevisionName(
-                          item.revisionId,
-                        )}
-                      </Badge>
-
-                      {revisions.find(
-                        (revision) =>
-                          revision.id ===
-                          item.revisionId,
-                      ) && (
-                        <Text
-                          size="xs"
-                          c="dimmed"
-                        >
-                          {t(
-                            "hsCatalogue.effectiveDate",
-                            "Effective",
-                          )}
-                          :{" "}
-                          {
-                            revisions.find(
-                              (revision) =>
-                                revision.id ===
-                                item.revisionId,
-                            )?.effectiveDate
-                          }
-                        </Text>
-                      )}
-                    </Stack>
-                  </Table.Td>
-
-                  <Table.Td>
-                    <Badge
-                      variant="light"
-                      color={
-                        item.duty?.toLowerCase() ===
-                        "prohibited"
-                          ? "red"
-                          : item.duty?.toLowerCase() ===
-                              "free"
-                            ? "green"
-                            : "blue"
-                      }
+                  {/* Description */}
+                  <Table.Td
+                    style={{
+                      padding:
+                        "18px 16px",
+                      fontSize: "12px",
+                      verticalAlign:
+                        "middle",
+                      borderBottom:
+                        "1px solid #edf1f3",
+                    }}
+                  >
+                    <Text
                       size="sm"
+                      style={{
+                        fontSize: "13px",
+                        color: "#182c3d",
+                        lineHeight: 1.5,
+                        maxWidth:
+                          "420px",
+                      }}
+                      lineClamp={2}
                     >
-                      {item.duty ||
-                        t(
-                          "hsCatalogue.dutyUnavailable",
-                          "Not set",
-                        )}
-                    </Badge>
+                      {getDescription(
+                        item,
+                      )}
+                    </Text>
+
+                    {i18n.language ===
+                      "am" &&
+                      !hasAmharicDescription && (
+                        <span
+                          style={{
+                            display:
+                              "inline-flex",
+                            alignItems:
+                              "center",
+                            gap: "6px",
+                            borderRadius:
+                              "20px",
+                            padding:
+                              "6px 9px",
+                            fontSize:
+                              "10px",
+                            whiteSpace:
+                              "nowrap",
+                            color:
+                              "#8a601a",
+                            background:
+                              "#fff5df",
+                            marginTop:
+                              "6px",
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width:
+                                "5px",
+                              height:
+                                "5px",
+                              borderRadius:
+                                "50%",
+                              background:
+                                "currentColor",
+                              flexShrink: 0,
+                            }}
+                          />
+
+                          {t(
+                            "needsReview",
+                            "Needs Review",
+                          )}
+                        </span>
+                      )}
                   </Table.Td>
 
-                  <Table.Td>
-                    <Group gap="xs">
-                      <Tooltip
-                        label={t(
-                          "hsCatalogue.viewDetails",
-                          "Details",
-                        )}
-                        withArrow
+                  {/* Revision */}
+                  <Table.Td
+                    style={{
+                      padding:
+                        "18px 16px",
+                      fontSize: "12px",
+                      verticalAlign:
+                        "middle",
+                      borderBottom:
+                        "1px solid #edf1f3",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display:
+                          "inline-flex",
+                        alignItems:
+                          "center",
+                        gap: "6px",
+                        borderRadius:
+                          "20px",
+                        padding:
+                          "6px 9px",
+                        fontSize: "10px",
+                        whiteSpace:
+                          "nowrap",
+                        color: "#25674f",
+                        background:
+                          "#edf6f0",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: "5px",
+                          height: "5px",
+                          borderRadius:
+                            "50%",
+                          background:
+                            "currentColor",
+                          flexShrink: 0,
+                        }}
+                      />
+
+                      {getRevisionName(
+                        item.revisionId,
+                      )}
+                    </span>
+
+                    {revision && (
+                      <small
+                        style={{
+                          display:
+                            "block",
+                          fontSize: "10px",
+                          color: "#697e88",
+                          marginTop:
+                            "6px",
+                        }}
                       >
-                        <Button
-                          component={Link}
-                          href={`/hs-codes/${item.id}`}
-                          variant="light"
-                          color="blue"
-                          size="sm"
-                          radius="md"
+                        {t(
+                          "hsCatalogue.effectiveDate",
+                          "Effective",
+                        )}
+                        :{" "}
+                        {
+                          revision.effectiveDate
+                        }
+                      </small>
+                    )}
+                  </Table.Td>
+
+                  {/* Details */}
+                  <Table.Td
+                    style={{
+                      padding:
+                        "18px 16px",
+                      fontSize: "12px",
+                      verticalAlign:
+                        "middle",
+                      borderBottom:
+                        "1px solid #edf1f3",
+                    }}
+                  >
+                    <Tooltip
+                      label={t(
+                        "hsCatalogue.viewDetails",
+                        "Details",
+                      )}
+                      withArrow
+                    >
+                      <Button
+                        type="button"
+                        variant="subtle"
+                        color="teal"
+                        size="sm"
+                        radius={0}
+                        onClick={() =>
+                          onViewDetails(
+                            item.id,
+                          )
+                        }
+                        styles={{
+                          root: {
+                            background:
+                              "none",
+                            color:
+                              "#176b70",
+                            fontSize:
+                              "12px",
+                            fontWeight:
+                              400,
+                            padding:
+                              "8px 0",
+                            whiteSpace:
+                              "nowrap",
+                            height:
+                              "auto",
+                          },
+                        }}
+                      >
+                        {t(
+                          "hsCatalogue.viewDetails",
+                          "View",
+                        )}{" "}
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            marginLeft:
+                              "4px",
+                          }}
                         >
-                          {t(
-                            "hsCatalogue.viewDetails",
-                            "Details",
-                          )}
-                        </Button>
-                      </Tooltip>
-                    </Group>
+                          ↗
+                        </span>
+                      </Button>
+                    </Tooltip>
                   </Table.Td>
                 </Table.Tr>
               );
