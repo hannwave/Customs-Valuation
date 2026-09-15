@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
