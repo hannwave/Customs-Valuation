@@ -18,8 +18,6 @@ TeleGebeya has moved to Zemen Gebeya inside the authenticated telebirr SuperApp.
 
 ## Start here
 
-For a working local login on Windows, follow [Local database and sign-in](docs/LOCAL-DEVELOPMENT.md).
-
 1. Follow [Environment setup](docs/SETUP.md).
 2. Configure secrets using [Configuration and secrets](docs/CONFIGURATION.md).
 3. Use [Operations and troubleshooting](docs/OPERATIONS.md) for migrations, HS imports and health checks.

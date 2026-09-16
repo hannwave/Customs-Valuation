@@ -98,6 +98,7 @@ export function HsSearchFilters({
     >
       <form onSubmit={handleSubmit}>
         <Stack gap="lg">
+          {/* Filter heading */}
           <Group
             justify="space-between"
             align="flex-start"
@@ -135,6 +136,7 @@ export function HsSearchFilters({
             </Group>
           </Group>
 
+          {/* Filter fields */}
           <SimpleGrid
             cols={{
               base: 1,
@@ -143,6 +145,7 @@ export function HsSearchFilters({
             }}
             spacing="md"
           >
+            {/* HS Code */}
             <TextInput
               label={t(
                 "hsCatalogue.codeLabel",
@@ -152,10 +155,6 @@ export function HsSearchFilters({
                 "hsCatalogue.codePlaceholder",
                 "e.g. 850440",
               )}
-              description={t(
-                "hsCatalogue.codeDescription",
-                "Search using the HS classification code.",
-              )}
               value={code}
               onChange={(event) =>
                 onCodeChange(
@@ -163,14 +162,35 @@ export function HsSearchFilters({
                 )
               }
               leftSection={
-                <FiHash size={17} />
+                <FiHash size={16} />
               }
               leftSectionPointerEvents="none"
               maxLength={100}
-              size="md"
-              radius="md"
+              size="sm"
+              radius={4}
+              styles={{
+                label: {
+                  fontSize: "12px",
+                  color: "#526875",
+                  marginBottom: "8px",
+                },
+
+                input: {
+                  width: "100%",
+                  minWidth: 0,
+                  height: "42px",
+                  minHeight: "42px",
+                  fontSize: "13px",
+                  color: "#182c3d",
+                  backgroundColor: "#f5f8fa",
+                  border:
+                    "1px solid #cbd8de",
+                  borderRadius: "4px",
+                },
+              }}
             />
 
+            {/* Description */}
             <TextInput
               label={t(
                 "hsCatalogue.descriptionLabel",
@@ -180,10 +200,6 @@ export function HsSearchFilters({
                 "hsCatalogue.descriptionPlaceholder",
                 "Search by description",
               )}
-              description={t(
-                "hsCatalogue.descriptionDescription",
-                "Search the HS code description.",
-              )}
               value={description}
               onChange={(event) =>
                 onDescriptionChange(
@@ -191,31 +207,50 @@ export function HsSearchFilters({
                 )
               }
               leftSection={
-                <FiTag size={17} />
+                <FiTag size={16} />
               }
               leftSectionPointerEvents="none"
               maxLength={100}
-              size="md"
-              radius="md"
+              size="sm"
+              radius={4}
+              styles={{
+                label: {
+                  fontSize: "12px",
+                  color: "#526875",
+                  marginBottom: "8px",
+                },
+
+                input: {
+                  width: "100%",
+                  minWidth: 0,
+                  height: "42px",
+                  minHeight: "42px",
+                  fontSize: "13px",
+                  color: "#182c3d",
+                  backgroundColor: "#f5f8fa",
+                  border:
+                    "1px solid #cbd8de",
+                  borderRadius: "4px",
+                },
+              }}
             />
 
+            {/* Revision */}
             <Select
               label={t(
                 "revision",
                 "Revision",
               )}
-              description={t(
-                "hsCatalogue.revisionDescription",
-                "Filter by HS revision.",
-              )}
               data={revisionOptions}
               value={
                 revisionId ?? ALL_REVISIONS
               }
-              onChange={handleRevisionChange}
+              onChange={
+                handleRevisionChange
+              }
               disabled={revisionsLoading}
               leftSection={
-                <FiRefreshCw size={17} />
+                <FiRefreshCw size={16} />
               }
               leftSectionPointerEvents="none"
               allowDeselect={false}
@@ -225,22 +260,37 @@ export function HsSearchFilters({
                 "hsCatalogue.noRevisions",
                 "No revisions found",
               )}
-              size="md"
-              radius="md"
+              size="sm"
+              radius={4}
+              styles={{
+                label: {
+                  fontSize: "12px",
+                  color: "#526875",
+                  marginBottom: "8px",
+                },
+
+                input: {
+                  width: "100%",
+                  minWidth: 0,
+                  height: "42px",
+                  minHeight: "42px",
+                  fontSize: "13px",
+                  color: "#182c3d",
+                  backgroundColor: "#f5f8fa",
+                  border:
+                    "1px solid #cbd8de",
+                  borderRadius: "4px",
+                  paddingRight: "36px",
+                  cursor: "pointer",
+                },
+              }}
               comboboxProps={{
                 withinPortal: true,
-              }}
-              styles={{
-                input: {
-                  cursor: "pointer",
-                },
-                section: {
-                  cursor: "pointer",
-                },
               }}
             />
           </SimpleGrid>
 
+          {/* Actions */}
           <Group
             justify="flex-end"
             gap="sm"

@@ -1,43 +1,60 @@
 "use client";
 
-import { Group, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { FiBookOpen } from "react-icons/fi";
+import {
+  Stack,
+  Text,
+  Title,
+} from "@mantine/core";
 import { useTranslation } from "react-i18next";
 
 export function HsCatalogueHeader() {
   const { t } = useTranslation();
 
   return (
-    <Group justify="space-between" align="center">
-      <Group gap="sm">
-        <ThemeIcon
-          size={42}
-          radius="md"
-          variant="light"
-          color="blue"
-        >
-          <FiBookOpen size={21} />
-        </ThemeIcon>
+    <Stack gap={0}>
+      <Text
+        size="xs"
+        fw={700}
+        tt="uppercase"
+        c="#176b70"
+        mb={6}
+        style={{
+          letterSpacing: "0.08em",
+        }}
+      >
+        {t(
+          "hsCatalogue.label",
+          "HS Catalogue",
+        )}
+      </Text>
 
-        <Stack gap={2}>
-          <Title
-            order={1}
-            size="clamp(1.5rem, 3vw, 2rem)"
-          >
-            {t(
-              "hsCatalogue.title",
-              "HS codes",
-            )}
-          </Title>
+      <Title
+        order={1}
+        fw={600}
+        size="clamp(1.7rem, 3vw, 2.2rem)"
+        c="#182c3d"
+        mb={10}
+      >
+        {t(
+          "hsCatalogue.title",
+          "HS codes",
+        )}
+      </Title>
 
-          <Text size="sm" c="dimmed">
-            {t(
-              "hsCatalogue.description",
-              "Search and browse the Harmonized System code.",
-            )}
-          </Text>
-        </Stack>
-      </Group>
-    </Group>
+      <Text
+        size="sm"
+        c="#566976"
+        maw={650}
+        style={{
+          lineHeight: 1.65,
+          fontSize: "15px",
+        }}
+      >
+        {t(
+          "hsCatalogue.description",
+          "Search and browse the Harmonized System code.",
+        )}
+      </Text>
+    </Stack>
   );
 }
