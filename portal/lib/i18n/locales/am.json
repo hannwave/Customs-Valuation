@@ -162,5 +162,8 @@
   "overview.localAction": "የአካባቢ ዋጋዎችን ይተንትኑ",
   "overview.historicalBody": "ለታሪካዊ የጉምሩክ ማስረጃ የተዘጋጀ ቦታ። ይህ ክፍል በዕቅድ ላይ ነው።",
   "overview.historicalAction": "የክፍሉን ዝርዝር ይመልከቱ",
-  "overview.officer": "ማስረጃ ይደግፋል። ባለሙያዎች ይወስናሉ።"
+  "overview.officer": "ማስረጃ ይደግፋል። ባለሙያዎች ይወስናሉ።",
+   "nav.ethioiaCustoms": "የኢትዮጵያ ጉምሩክ",
+  "nav.commission": "ኮሚሽን",
+  "nav.valuationWorkspace": "የዋጋ ግምት የሥራ ቦታ"
 }

@@ -162,5 +162,8 @@
   "nav.review": "REVIEW & OVERSIGHT",
   "nav.manage": "MANAGEMENT",
   "nav.open": "Open navigation",
-  "nav.close": "Close navigation"
+  "nav.close": "Close navigation",
+  "nav.ethioiaCustoms": "ETHIOPIA CUSTOMS",
+  "nav.commission": "COMMISSION",
+  "nav.valuationWorkspace": "VALUATION WORKSPACE"
 }
