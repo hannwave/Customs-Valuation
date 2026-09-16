@@ -8,6 +8,8 @@ import {
   FiShoppingBag, FiTrendingUp, FiUserPlus, FiUsers,
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
+import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
+import type { InternationalPriceSearch, LocalMarketPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
 
 function KpiGrid({ data }: { data: WorkspaceDashboard }) {
@@ -31,6 +33,85 @@ function LocationTree({ locations }: { locations: DashboardLocation[] }) {
 
 function DashboardHeader({ profile, eyebrow, title, description, actions }: { profile: WorkspaceProfile; eyebrow: string; title: string; description: string; actions?: React.ReactNode }) {
   return <div className="dashboard-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lead">{description}</p></div><div className="dashboard-heading-side"><span className="workspace-tag"><FiShield />{roleLabel(profile.user.role)}</span>{actions}</div></div>;
+}
+
+type EvidenceSource = "internationalMedian" | "internationalMean" | "localMedian" | "custom";
+
+function money(value: number | null | undefined, currency: string) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
+}
+
+function StatisticCard({ title, icon, stats, currency, tone, href }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; tone: "international" | "local"; href: string }) {
+  return <Link href={href} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
+    <div className="valuation-card-title"><span>{icon}</span><strong>{title}</strong><em>n = {stats?.observationCount ?? 0}</em></div>
+    <span className="valuation-label">Median unit price</span>
+    <b>{money(stats?.median, currency)}</b>
+    <dl>
+      <div><dt>Mean</dt><dd>{money(stats?.mean, currency)}</dd></div>
+      <div><dt>Minimum</dt><dd>{money(stats?.minimum, currency)}</dd></div>
+      <div><dt>Maximum</dt><dd>{money(stats?.maximum, currency)}</dd></div>
+    </dl>
+  </Link>;
+}
+
+function EvidenceTrend({ international, local, internationalCurrency }: { international: PriceStatistics | null; local: PriceStatistics | null; internationalCurrency: string }) {
+  const internationalValue = international?.median;
+  const localValue = local?.median;
+  const sharedCurrency = internationalCurrency === "ETB";
+  const toPoints = (value: number | undefined, offset: number) => value == null ? "" : Array.from({ length: 6 }, (_, index) => `${8 + index * 17},${68 - Math.min(42, Math.max(0, value / Math.max(value, localValue ?? value) * 34) + ((index % 2) * 2) + offset)}`).join(" ");
+  return <section className="valuation-trend"><div className="valuation-trend-heading"><div><h3>Price evidence snapshot</h3><p>{sharedCurrency ? "International median vs. Ethiopian local median" : `Source-currency medians · ${internationalCurrency} and ETB`}</p></div><span>Current search</span></div>
+    <div className="valuation-chart" aria-label="Current price evidence comparison"><svg viewBox="0 0 100 80" preserveAspectRatio="none" role="img"><path className="chart-grid" d="M0 15H100M0 40H100M0 65H100" />{internationalValue != null && <polyline className="chart-line chart-line--international" points={toPoints(internationalValue, 5)} />}{localValue != null && <polyline className="chart-line chart-line--local" points={toPoints(localValue, -5)} />}</svg><div className="chart-legend"><span><i className="chart-key chart-key--international" />International median {money(internationalValue, internationalCurrency)}</span><span><i className="chart-key chart-key--local" />Local median {money(localValue, "ETB")}</span></div></div>
+  </section>;
+}
+
+function OfficerEvidenceWorkspace() {
+  const [query, setQuery] = useState("");
+  const [market, setMarket] = useState("us");
+  const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
+  const [local, setLocal] = useState<LocalMarketPriceSearch | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<EvidenceSource>("internationalMedian");
+  const [customValue, setCustomValue] = useState("");
+  const currency = ({ us: "USD", gb: "GBP", de: "EUR", ae: "AED", za: "ZAR" } as Record<string, string>)[market] ?? "USD";
+
+  async function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const term = query.trim();
+    if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
+    setBusy(true); setError(""); setInternational(null); setLocal(null);
+    const token = getSessionAccessToken();
+    if (!token) { window.location.assign("/login?next=%2F"); return; }
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    const request = async <T,>(url: string) => {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (response.status === 401) { setSessionAccessToken(null); throw new Error("Your session expired. Please sign in again."); }
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail ?? body.message ?? "Evidence source could not be searched.");
+      return body as T;
+    };
+    const [internationalResult, localResult] = await Promise.allSettled([
+      request<InternationalPriceSearch>(`${base}/api/international-prices/search?${new URLSearchParams({ q: term, market })}`),
+      request<LocalMarketPriceSearch>(`${base}/api/local-prices/search?${new URLSearchParams({ q: term, sources: "jiji,ethioshop" })}`),
+    ]);
+    if (internationalResult.status === "fulfilled") setInternational(internationalResult.value);
+    if (localResult.status === "fulfilled") setLocal(localResult.value);
+    if (internationalResult.status === "rejected" && localResult.status === "rejected") setError(internationalResult.reason instanceof Error ? internationalResult.reason.message : "Price evidence could not be loaded.");
+    else if (internationalResult.status === "rejected") setError("International evidence is unavailable. Local results are shown below.");
+    else if (localResult.status === "rejected") setError("Local-market evidence is unavailable. International results are shown below.");
+    setBusy(false);
+  }
+
+  const selectedValue = selected === "internationalMedian" ? international?.statistics?.median : selected === "internationalMean" ? international?.statistics?.mean : selected === "localMedian" ? local?.statistics?.median : Number(customValue);
+  const selectedCurrency = selected === "localMedian" ? "ETB" : currency;
+  const canDecide = selected === "custom" ? Number(selectedValue) > 0 : selectedValue != null;
+  const hasResults = international || local;
+  return <section className="overview-evidence-workspace">
+    <section className="officer-search-hero"><div><span>VALUATION EVIDENCE SEARCH</span><h2>What product are you valuing?</h2><p>Search international and Ethiopian market evidence together, then select the reference basis for your decision.</p></div><form onSubmit={search}><FiSearch /><input aria-label="Product description" placeholder="e.g. Apple iPhone 13 128GB" value={query} onChange={event => setQuery(event.currentTarget.value)} required /><select aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}><option value="us">US · USD</option><option value="gb">UK · GBP</option><option value="de">Germany · EUR</option><option value="ae">UAE · AED</option><option value="za">South Africa · ZAR</option></select><button type="submit" disabled={busy}>{busy ? "Searching…" : <>Search <FiArrowRight /></>}</button></form><div className="officer-search-links"><Link href="/international-prices"><FiGlobe />International details</Link><Link href="/local-prices"><FiShoppingBag />Ethiopian details</Link></div></section>
+    {error && <p className="evidence-search-notice" role="status">{error}</p>}
+    {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="International statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local Ethiopian statistics" icon={<FiMapPin />} stats={local?.statistics ?? null} currency="ETB" tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && local?.statistics && currency === "ETB" ? <><b>{(((local.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median compared with the international median.</p></> : <><b>Source currencies differ</b><p>Use an approved exchange rate before comparing {currency} with ETB.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={local?.statistics ?? null} internationalCurrency={currency} /></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Valuation decision</h3><p>Select the reference price basis, then record a justified decision.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records</small></span><b>{money(local?.statistics?.median, "ETB")}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different reference value</strong><small>Requires documented evidence</small></span></label>{selected === "custom" && <input className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder="Reference value" value={customValue} onChange={event => setCustomValue(event.target.value)} />}</div><div className="selected-reference"><span>Selected reference value</span><b>{money(selectedValue, selectedCurrency)}</b></div><Link className={`valuation-record-link ${canDecide ? "" : "is-disabled"}`} href={canDecide ? "/valuation-decisions" : "#"} onClick={event => { if (!canDecide) event.preventDefault(); }}><FiFileText />Record valuation decision</Link><small className="decision-disclaimer">You will select the HS code, office and audited justification in the decision workspace.</small></aside></div>}
+  </section>;
 }
 
 function SystemDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
@@ -62,11 +143,10 @@ function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: 
 }
 
 function OfficerDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
-  function search(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const query = String(new FormData(event.currentTarget).get("search") ?? "").trim(); if (query) window.location.assign(`/hs-codes?search=${encodeURIComponent(query)}`); }
   const recent = data.decisions[0];
   return <>
     <DashboardHeader profile={profile} eyebrow="Officer operations" title={`Welcome, ${profile.user.fullName.split(" ")[0]}`} description="Find the product, examine price evidence, investigate anomalies, and record a defensible valuation decision." />
-    <section className="officer-search-hero"><div><span>CLASSIFICATION STARTS HERE</span><h2>What are you valuing today?</h2><p>Search by HS code, product description, model, or declaration reference.</p></div><form onSubmit={search}><FiSearch /><input name="search" aria-label="Search HS code or product" placeholder="Search HS code, product description, declaration…" required /><button type="submit">Search <FiArrowRight /></button></form><div className="officer-search-links"><Link href="/international-prices"><FiGlobe />International prices</Link><Link href="/local-prices"><FiShoppingBag />Ethiopian prices</Link><Link href="/valuation-decisions"><FiFileText />New decision</Link></div></section>
+    <OfficerEvidenceWorkspace />
     <KpiGrid data={data} />
     <div className="dashboard-main-grid officer-dashboard-grid">
       <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">Operational workload</p><h2>My valuation cases</h2><span>Saved, submitted, returned, and approved decisions</span></div><Link href="/valuation-decisions">Open workspace <FiArrowRight /></Link></div><DecisionTable data={data} /></section>

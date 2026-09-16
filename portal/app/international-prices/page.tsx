@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   Alert,
   Anchor,
@@ -48,6 +48,14 @@ export default function InternationalPricesPage() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [busyAction, setBusyAction] = useState<Action | null>(null);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const overviewQuery = parameters.get("q")?.trim();
+    const overviewMarket = parameters.get("market");
+    if (overviewQuery) setQuery(overviewQuery);
+    if (overviewMarket && markets.some(item => item.value === overviewMarket)) setMarket(overviewMarket);
+  }, []);
 
   async function loadPrices(action: Action) {
     const trimmedQuery = query.trim();
