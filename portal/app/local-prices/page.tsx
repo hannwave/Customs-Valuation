@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Alert, Anchor, Badge, Box, Button, Checkbox, Container, Group, NumberInput,
   Paper, Select, SimpleGrid, Stack, Switch, Table, Text, Textarea, TextInput, Title,
@@ -57,6 +57,11 @@ export default function LocalPricesPage() {
   const [reviewDecision, setReviewDecision] = useState("Approved");
   const [reviewJustification, setReviewJustification] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
+
+  useEffect(() => {
+    const overviewQuery = new URLSearchParams(window.location.search).get("q")?.trim();
+    if (overviewQuery) setQuery(overviewQuery);
+  }, []);
 
   function toggleSource(source: string, enabled: boolean) {
     setSelectedSources((current) => enabled ? [...new Set([...current, source])] : current.filter((item) => item !== source));
