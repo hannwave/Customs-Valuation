@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 type LogoProps = {
   variant?: "dark" | "light";
   className?: string;
@@ -14,8 +16,10 @@ export function CustomsLogo({ variant = "dark", className = "", decorative = fal
 }
 
 export function Brand({ compact = false, variant = "light" }: { compact?: boolean; variant?: "dark" | "light" }) {
+  const { t } = useTranslation();
+
   return <div className={`institution-brand ${compact ? "compact" : ""}`}>
     <CustomsLogo variant={variant} decorative/>
-    <span className="institution-wordmark"><strong>ETHIOPIA CUSTOMS</strong><small>COMMISSION</small>{compact && <span className="institution-context">VALUATION WORKSPACE</span>}</span>
+    <span className="institution-wordmark"><strong>{t("nav.ethioiaCustoms")}</strong><small>{t("nav.commission")}</small>{compact && <span className="institution-context">{t("nav.valuationWorkspace")}</span>}</span>
   </div>;
 }

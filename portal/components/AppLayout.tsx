@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import {
-  FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronRight,
+  FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
   FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
   FiShield, FiShoppingBag, FiUsers, FiX,
 } from "react-icons/fi";
@@ -44,6 +44,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { t, i18n } = useTranslation();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
@@ -79,21 +80,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   if (!authorized) return <div className="access-loading" role="status">{t("nav.loading", "Opening your workspace…")}</div>;
   return <div className="workspace">
     <a className="skip-link" href="#main-content">{t("nav.skip", "Skip to content")}</a>
-    <aside className={`sidebar ${menuOpen ? "is-open" : ""}`} id="workspace-navigation">
-      <Link href="/" className="sidebar-brand" aria-label={t("dashboard")}><Brand compact /></Link>
+    <aside className={`sidebar ${menuOpen ? "is-open" : ""} ${sidebarCollapsed ? "is-collapsed" : ""}`} id="workspace-navigation">
+      <div className="sidebar-top">
+        <Link href="/" className="sidebar-brand" aria-label={t("dashboard")} title={sidebarCollapsed ? "Ethiopia Customs" : undefined}><Brand compact /></Link>
+      </div>
       <nav aria-label={t("title")}>{visibleGroups.map(group => <div className="nav-group" key={group.label}>
         <p className="nav-label">{group.label}</p>
         {group.links.map(link => {
           const Icon = link.icon;
           const active = current?.href === link.href;
-          return <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined}>
-            <Icon aria-hidden="true" /><span>{t(link.key, link.label)}</span>{active && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
+          const label = t(link.key, link.label);
+          return <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined} aria-label={sidebarCollapsed ? label : undefined} title={sidebarCollapsed ? label : undefined}>
+            <Icon aria-hidden="true" /><span className="nav-text">{label}</span>{active && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
           </Link>;
         })}
       </div>)}</nav>
       <div className="sidebar-note"><FiShield /><span>{t("nav.note", "Scope-controlled access")}<small>{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.noteBody", "Your assigned customs locations determine visible records.")}</small></span></div>
-      <button type="button" className="signout-button" onClick={() => { setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut />{t("nav.signout", "Sign out")}</button>
+      <button type="button" className="signout-button" aria-label={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} title={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} onClick={() => { setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut /><span>{t("nav.signout", "Sign out")}</span></button>
+       <button type="button" className={`sidebar-collapse ${sidebarCollapsed ? "is-collapsed" : ""}`} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
+      {sidebarCollapsed ? <FiChevronRight /> : <FiChevronLeft />}
+    </button>
     </aside>
+    
     <div className="content">
       <header className="workspace-header">
         <div className="header-location">
