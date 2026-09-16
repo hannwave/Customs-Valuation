@@ -23,8 +23,19 @@ export async function workspaceApi<T>(path: string, init?: RequestInit): Promise
   const response = await fetch(`${base}/api/workspace${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { "Content-Type": "application/json" } : {}), ...init?.headers } });
   if (response.status === 401) { setSessionAccessToken(null); window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`); throw new Error("Your session expired."); }
   if (response.status === 204) return undefined as T;
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message ?? body.detail ?? "The request could not be completed.");
+
+  let body: any = {};
+  const rawText = await response.text();
+  if (rawText) {
+    try { body = JSON.parse(rawText); } catch { body = { message: rawText }; }
+  }
+
+  if (!response.ok) {
+    const errorMessage = body?.message ?? body?.detail ?? body?.error?.message ?? body?.title ?? body?.errors ?? body?.error ?? "The request could not be completed.";
+    const flattened = Array.isArray(errorMessage) ? errorMessage.flat().filter(Boolean).join("; ") : typeof errorMessage === "object" ? JSON.stringify(errorMessage) : errorMessage;
+    throw new Error(flattened || response.statusText || "The request could not be completed.");
+  }
+
   return body as T;
 }
 
