@@ -29,6 +29,9 @@ var jwt = builder.Configuration.GetSection("Jwt");
 var jwtKey = jwt["Key"] ?? throw new InvalidOperationException("Jwt:Key must be configured.");
 if (Encoding.UTF8.GetByteCount(jwtKey) < 32) throw new InvalidOperationException("Jwt:Key must be at least 32 bytes.");
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<WorkspaceAccess>();
+builder.Services.AddScoped<WorkspaceExceptionFilter>();
 builder.Services.Configure<SerpApiOptions>(builder.Configuration.GetSection(SerpApiOptions.SectionName));
 builder.Services.AddHttpClient<SerpApiClient>((services, client) =>
 {
@@ -67,8 +70,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization(options =>
 {
     options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
-    options.AddPolicy("CustomsOfficer", p => p.RequireAuthenticatedUser().RequireRole("CustomsOfficer"));
-    options.AddPolicy("CustomsAdministrator", p => p.RequireAuthenticatedUser().RequireRole("CustomsAdministrator"));
+    options.AddPolicy("CustomsOfficer", p => p.RequireAuthenticatedUser().RequireRole("CustomsOfficer", "CustomsAdministrator", "SystemAdministrator"));
+    options.AddPolicy("OfficerOnly", p => p.RequireAuthenticatedUser().RequireRole("CustomsOfficer"));
+    options.AddPolicy("CustomsAdministrator", p => p.RequireAuthenticatedUser().RequireRole("CustomsAdministrator", "SystemAdministrator"));
     options.AddPolicy("SystemAdministrator", p => p.RequireAuthenticatedUser().RequireRole("SystemAdministrator"));
 });
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));

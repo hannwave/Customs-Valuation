@@ -23,7 +23,7 @@ import { HsErrorState } from "@/components/hs-codes/HsErrorState";
 import { HsCodeDetailsModal } from "@/components/hs-codes/HsCodeDetailsModal";
 
 const PAGE_SIZE = 10;
-const FORCE_LOADING = false;
+
 
 export default function HsCodesPage() {
   const { t } = useTranslation();
@@ -141,6 +141,11 @@ export default function HsCodesPage() {
   );
 
   useEffect(() => {
+    const initialSearch = new URLSearchParams(window.location.search).get("search")?.trim();
+    if (initialSearch) { setCodeInput(initialSearch); setCodeSearch(initialSearch); setPage(1); }
+  }, []);
+
+  useEffect(() => {
     if (
       !isFetching &&
       page > totalPages
@@ -159,7 +164,6 @@ export default function HsCodesPage() {
   };
 
   const isInitialLoading =
-    FORCE_LOADING ||
     isLoading ||
     revisionsLoading;
 
@@ -264,6 +268,7 @@ export default function HsCodesPage() {
                       minWidth: 0,
                     }}
                   >
+                    {isUpdating && <HsLoadingState compact/>}
                     <Box
                       style={{
                         opacity:

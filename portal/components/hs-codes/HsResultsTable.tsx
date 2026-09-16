@@ -63,11 +63,11 @@ export function HsResultsTable({
   return (
     <Paper
       withBorder
-      radius={9}
+      radius="lg"
       shadow="none"
       style={{
         background: "#fff",
-        borderColor: "#dce5e9",
+        borderColor: "var(--line)",
         overflow: "hidden",
       }}
     >
@@ -94,7 +94,7 @@ export function HsResultsTable({
               {/* HS Code */}
               <Table.Th
                 style={{
-                  background: "#f5f8fa",
+                  background: "var(--surface)",
                   padding: "13px 16px",
                   fontSize: "10px",
                   fontWeight: 700,
@@ -102,9 +102,9 @@ export function HsResultsTable({
                   textTransform:
                     "uppercase",
                   whiteSpace: "nowrap",
-                  color: "#526875",
+                  color: "var(--muted)",
                   borderBottom:
-                    "1px solid #dce5e9",
+                    "1px solid var(--line)",
                 }}
               >
                 {t(
@@ -116,7 +116,7 @@ export function HsResultsTable({
               {/* Description */}
               <Table.Th
                 style={{
-                  background: "#f5f8fa",
+                  background: "var(--surface)",
                   padding: "13px 16px",
                   fontSize: "10px",
                   fontWeight: 700,
@@ -124,9 +124,9 @@ export function HsResultsTable({
                   textTransform:
                     "uppercase",
                   whiteSpace: "nowrap",
-                  color: "#526875",
+                  color: "var(--muted)",
                   borderBottom:
-                    "1px solid #dce5e9",
+                    "1px solid var(--line)",
                 }}
               >
                 {t(
@@ -138,7 +138,7 @@ export function HsResultsTable({
               {/* Revision */}
               <Table.Th
                 style={{
-                  background: "#f5f8fa",
+                  background: "var(--surface)",
                   padding: "13px 16px",
                   fontSize: "10px",
                   fontWeight: 700,
@@ -146,9 +146,9 @@ export function HsResultsTable({
                   textTransform:
                     "uppercase",
                   whiteSpace: "nowrap",
-                  color: "#526875",
+                  color: "var(--muted)",
                   borderBottom:
-                    "1px solid #dce5e9",
+                    "1px solid var(--line)",
                 }}
               >
                 {t(
@@ -160,7 +160,7 @@ export function HsResultsTable({
               {/* Action */}
               <Table.Th
                 style={{
-                  background: "#f5f8fa",
+                  background: "var(--surface)",
                   padding: "13px 16px",
                   fontSize: "10px",
                   fontWeight: 700,
@@ -168,9 +168,9 @@ export function HsResultsTable({
                   textTransform:
                     "uppercase",
                   whiteSpace: "nowrap",
-                  color: "#526875",
+                  color: "var(--muted)",
                   borderBottom:
-                    "1px solid #dce5e9",
+                    "1px solid var(--line)",
                 }}
               >
                 {t(
@@ -204,7 +204,7 @@ export function HsResultsTable({
                     event,
                   ) => {
                     event.currentTarget.style.backgroundColor =
-                      "#f9fcfc";
+                      "var(--surface)";
                   }}
                   onMouseLeave={(
                     event,
@@ -222,7 +222,7 @@ export function HsResultsTable({
                       verticalAlign:
                         "middle",
                       borderBottom:
-                        "1px solid #edf1f3",
+                        "1px solid var(--line)",
                     }}
                   >
                     <span
@@ -230,9 +230,9 @@ export function HsResultsTable({
                         fontFamily:
                           "Consolas, monospace",
                         fontSize: "12px",
-                        color: "#176b70",
+                        color: "var(--blue)",
                         background:
-                          "#eaf3f3",
+                          "var(--pale)",
                         borderRadius:
                           "4px",
                         padding:
@@ -258,14 +258,14 @@ export function HsResultsTable({
                       verticalAlign:
                         "middle",
                       borderBottom:
-                        "1px solid #edf1f3",
+                        "1px solid var(--line)",
                     }}
                   >
                     <Text
                       size="sm"
                       style={{
                         fontSize: "13px",
-                        color: "#182c3d",
+                        color: "var(--navy)",
                         lineHeight: 1.5,
                         maxWidth:
                           "420px",
@@ -335,7 +335,7 @@ export function HsResultsTable({
                       verticalAlign:
                         "middle",
                       borderBottom:
-                        "1px solid #edf1f3",
+                        "1px solid var(--line)",
                     }}
                   >
                     <span
@@ -381,7 +381,7 @@ export function HsResultsTable({
                           display:
                             "block",
                           fontSize: "10px",
-                          color: "#697e88",
+                          color: "var(--muted)",
                           marginTop:
                             "6px",
                         }}
@@ -407,7 +407,7 @@ export function HsResultsTable({
                       verticalAlign:
                         "middle",
                       borderBottom:
-                        "1px solid #edf1f3",
+                        "1px solid var(--line)",
                     }}
                   >
                     <Tooltip
@@ -420,9 +420,9 @@ export function HsResultsTable({
                       <Button
                         type="button"
                         variant="subtle"
-                        color="teal"
+                        color="blue"
                         size="sm"
-                        radius={0}
+                        radius="md"
                         onClick={() =>
                           onViewDetails(
                             item.id,
@@ -433,7 +433,7 @@ export function HsResultsTable({
                             background:
                               "none",
                             color:
-                              "#176b70",
+                              "var(--blue)",
                             fontSize:
                               "12px",
                             fontWeight:

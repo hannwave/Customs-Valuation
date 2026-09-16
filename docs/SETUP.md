@@ -58,7 +58,9 @@ dotnet ef database update `
   --context CustomsDbContext
 ```
 
-This creates authentication, HS-code, price-evidence, audit and raw local-market observation tables. Review migrations before applying them to a shared database.
+This creates authentication, HS-code, price-evidence, audit, raw local-market observation, Customs location, user-scope and valuation-workflow tables. Review migrations before applying them to a shared database.
+
+After the first database migration, sign in as the System Administrator and create at least one active location under **Administration → Locations**. Mark `supports_valuation` or `supports_inspection` for offices where Officers will record decisions. Then create or assign Customs Administrators and Officers under **Administration**. No operational location list is hard-coded into the application.
 
 ## 5. Configure the portal
 

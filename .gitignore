@@ -8,6 +8,7 @@
 **/appsettings.Local.json
 **/TestResults/
 *.log
+portal-dev.err
 .verify-*/
 .vs/
 work/

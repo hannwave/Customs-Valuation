@@ -16,7 +16,7 @@ namespace SES.Customs.API.Controllers;
 
 [ApiController]
 [Route("api/local-prices")]
-[Authorize(Roles = "CustomsOfficer,CustomsAdministrator,SystemAdministrator")]
+[Authorize(Policy = "OfficerOnly")]
 public sealed class LocalPricesController(
     LocalMarketSearchService localMarket,
     CustomsDbContext db,

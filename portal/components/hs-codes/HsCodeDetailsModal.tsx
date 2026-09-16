@@ -5,13 +5,14 @@ import {
   Button,
   Divider,
   Group,
-  Loader,
   Modal,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
 import { useTranslation } from "react-i18next";
+import { HsLoadingState } from "./HsLoadingState";
+import { HsErrorState } from "./HsErrorState";
 
 import {
   useGetHsCodeQuery,
@@ -26,14 +27,14 @@ interface HsCodeDetailsModalProps {
 
 const labelStyle = {
   fontSize: "12px",
-  color: "#697e88",
+  color: "var(--muted)",
   marginBottom: "7px",
 };
 
 const valueStyle = {
   margin: 0,
   fontSize: "14px",
-  color: "#182c3d",
+  color: "var(--navy)",
 };
 
 export function HsCodeDetailsModal({
@@ -75,7 +76,7 @@ export function HsCodeDetailsModal({
       onClose={onClose}
       centered
       size="lg"
-      radius={8}
+      radius="lg"
       padding={0}
       title={t(
         "hsCodeDetails",
@@ -89,18 +90,18 @@ export function HsCodeDetailsModal({
         header: {
           padding: "20px",
           borderBottom:
-            "1px solid #dce5e9",
+            "1px solid var(--line)",
           background: "#fff",
         },
 
         title: {
           fontSize: "17px",
           fontWeight: 600,
-          color: "#182c3d",
+          color: "var(--navy)",
         },
 
         close: {
-          color: "#566976",
+          color: "var(--muted)",
         },
 
         body: {
@@ -116,59 +117,9 @@ export function HsCodeDetailsModal({
         }}
       >
         {isLoadingDetails ? (
-          <div
-            style={{
-              minHeight: "260px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Loader
-              size="md"
-              color="#228be6"
-            />
-          </div>
+          <HsLoadingState/>
         ) : isError || !hsCode ? (
-          <Stack
-            align="center"
-            justify="center"
-            gap="sm"
-            py={40}
-          >
-            <Text
-              fw={600}
-              c="#182c3d"
-            >
-              {t(
-                "errorTitle",
-                "Something went wrong",
-              )}
-            </Text>
-
-            <Text
-              size="sm"
-              c="#697e88"
-              ta="center"
-              maw={420}
-            >
-              {t(
-                "hsDetailError",
-                "The requested HS code could not be loaded.",
-              )}
-            </Text>
-
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => refetch()}
-            >
-              {t(
-                "retry",
-                "Retry",
-              )}
-            </Button>
-          </Stack>
+          <HsErrorState onRetry={() => void refetch()} message={t("hsDetailError", "The requested HS code could not be loaded.")}/>
         ) : (
           <Stack gap="lg">
             {/* HS code header */}
@@ -183,8 +134,8 @@ export function HsCodeDetailsModal({
                     fontFamily:
                       "Consolas, monospace",
                     fontSize: "13px",
-                    color: "#176b70",
-                    background: "#eaf3f3",
+                    color: "var(--blue)",
+                    background: "var(--pale)",
                     borderRadius: "4px",
                     padding: "6px 9px",
                     letterSpacing: "0.6px",
@@ -212,7 +163,7 @@ export function HsCodeDetailsModal({
                 style={{
                   fontSize: "23px",
                   fontWeight: 600,
-                  color: "#182c3d",
+                  color: "var(--navy)",
                 }}
               >
                 {hsCode.code}
@@ -220,7 +171,7 @@ export function HsCodeDetailsModal({
 
               <Text
                 size="sm"
-                c="#697e88"
+                c="var(--muted)"
               >
                 {t(
                   "hsCodeDetailsIntro",
@@ -232,7 +183,7 @@ export function HsCodeDetailsModal({
             {/* Description */}
             <div
               style={{
-                background: "#edf5f5",
+                background: "var(--pale)",
                 padding: "20px",
                 borderRadius: "8px",
               }}
@@ -240,7 +191,7 @@ export function HsCodeDetailsModal({
               <Text
                 size="xs"
                 fw={500}
-                c="#526875"
+                c="var(--muted)"
                 mb={8}
               >
                 {t(
@@ -252,7 +203,7 @@ export function HsCodeDetailsModal({
               <Text
                 size="md"
                 fw={500}
-                c="#182c3d"
+                c="var(--navy)"
                 style={{
                   lineHeight: 1.6,
                 }}
@@ -283,13 +234,13 @@ export function HsCodeDetailsModal({
                   <>
                     <Divider
                       my="md"
-                      color="#cbdedf"
+                      color="var(--line)"
                     />
 
                     <Text
                       size="xs"
                       fw={500}
-                      c="#526875"
+                      c="var(--muted)"
                       mb={8}
                     >
                       Amharic
@@ -297,7 +248,7 @@ export function HsCodeDetailsModal({
 
                     <Text
                       size="sm"
-                      c="#345866"
+                      c="var(--ink)"
                       style={{
                         lineHeight: 1.6,
                       }}
@@ -313,7 +264,7 @@ export function HsCodeDetailsModal({
               <Text
                 fw={600}
                 size="sm"
-                c="#182c3d"
+                c="var(--navy)"
                 mb={6}
               >
                 {t(
@@ -324,7 +275,7 @@ export function HsCodeDetailsModal({
 
               <Text
                 size="xs"
-                c="#697e88"
+                c="var(--muted)"
                 mb="md"
               >
                 {t(
@@ -336,9 +287,9 @@ export function HsCodeDetailsModal({
               {revision ? (
                 <div
                   style={{
-                    background: "#f7f8fa",
+                    background: "var(--surface)",
                     border:
-                      "1px solid #e3e9ed",
+                      "1px solid var(--line)",
                     borderRadius: "8px",
                     padding: "16px",
                   }}

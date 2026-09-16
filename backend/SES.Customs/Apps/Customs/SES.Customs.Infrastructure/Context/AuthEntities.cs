@@ -8,6 +8,12 @@ public sealed class AuthAccountEntity
     public string FullName { get; set; } = "";
     public string Role { get; set; } = "";
     public bool Active { get; set; }
+    public string Status { get; set; } = "ACTIVE";
+    public Guid? PrimaryLocationId { get; set; }
+    public string EmployeeNumber { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public DateTimeOffset? LastLoginAt { get; set; }
     public string PasswordHash { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
 }

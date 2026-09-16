@@ -1,6 +1,6 @@
 namespace SES.Customs.Core.Models;
 
-// Persistence skeleton only. Creation must use a validated, audited command in phase 4.
+// Office and hierarchy snapshots preserve the context of an operational decision.
 public sealed class ValuationDecision
 {
     public Guid Id { get; set; }
@@ -12,6 +12,15 @@ public sealed class ValuationDecision
     public string OfficerSubjectId { get; set; } = "";
     public DateTimeOffset RecordedAt { get; set; }
     public List<DecisionEvidence> Evidence { get; set; } = [];
+    public Guid? LocationId { get; set; }
+    public string LocationSnapshotJson { get; set; } = "{}";
+    public string EvidenceNotes { get; set; } = "";
+    public string Status { get; set; } = "Draft";
+    public DateTimeOffset? SubmittedAt { get; set; }
+    public string? ReviewedBy { get; set; }
+    public string? ReviewJustification { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
+    public Guid Version { get; set; } = Guid.NewGuid();
 }
 public sealed class DecisionEvidence
 {
@@ -26,6 +35,7 @@ public sealed class DecisionEvidence
 }
 public sealed class AuditLog
 {
+    public Guid? LocationId { get; set; }
     public Guid Id { get; set; }
     public string UserId { get; set; } = "";
     public string Username { get; set; } = "";

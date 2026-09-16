@@ -9,7 +9,6 @@ import {
   Button,
   Container,
   Group,
-  Loader,
   Paper,
   Select,
   SimpleGrid,
@@ -19,6 +18,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { DataState } from "@/components/DataState";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { PriceStatisticsPanel } from "@/components/prices/PriceStatisticsPanel";
 import type {
@@ -128,10 +128,10 @@ export default function InternationalPricesPage() {
   const loading = busyAction !== null;
 
   return (
-    <Box bg="gray.0" mih="100%" py="xl">
-      <Container size="xl">
+    <Box className="data-page">
+      <Container fluid p={0}>
         <Stack gap="xl">
-          <Box>
+          <Box className="data-page-heading">
             <Text className="eyebrow">PRICE EVIDENCE / INTERNATIONAL MARKETS</Text>
             <Title order={1}>International prices</Title>
             <Text c="dimmed" mt="xs">
@@ -141,7 +141,7 @@ export default function InternationalPricesPage() {
 
           <Paper component="form" onSubmit={search} withBorder radius="lg" p="lg" shadow="xs">
             <Stack gap="md">
-              <SimpleGrid cols={{ base: 1, md: 3 }}>
+              <SimpleGrid className="evidence-query-fields" cols={{ base: 1, md: 3 }}>
                 <TextInput
                   label="Product description"
                   description="Optional when saving; the HS description will be used by default."
@@ -150,8 +150,8 @@ export default function InternationalPricesPage() {
                   onChange={(event) => setQuery(event.currentTarget.value)}
                 />
                 <TextInput
-                  label="Database HS code"
-                  description="Required only when saving prices to Supabase."
+                  label="HS code"
+                  description="Required only when saving reference evidence."
                   placeholder="Example: 090111"
                   value={hsCode}
                   onChange={(event) => setHsCode(event.currentTarget.value)}
@@ -165,7 +165,7 @@ export default function InternationalPricesPage() {
                   allowDeselect={false}
                 />
               </SimpleGrid>
-              <Group justify="flex-end">
+              <Group justify="flex-end" className="data-actions">
                 <Button type="button" variant="outline" disabled={loading} onClick={() => void loadPrices("sync")}>
                   {busyAction === "sync" ? "Saving evidence…" : "Save reference evidence"}
                 </Button>
@@ -176,14 +176,12 @@ export default function InternationalPricesPage() {
             </Stack>
           </Paper>
 
-          {!data && !loading && !error && <Paper className="evidence-empty" withBorder p="xl"><Text fw={600}>Explore prices in their market context</Text><Text size="sm" c="dimmed" mt="xs">Enter a product and choose a market to see offers, sellers and source links. Saving evidence requires an HS code.</Text></Paper>}
-          {error && <Alert color="red" title="Price loading failed">{error}</Alert>}
-          {status && <Alert color="green" title="Database updated">{status}</Alert>}
+          {!data && !loading && !error && <DataState kind="empty" title="Explore prices in their market context" description="Enter a product and choose a market to see offers, sellers and source links. Saving evidence requires an HS code."/>}
+          {error && <DataState kind="error" title="Prices could not be loaded" description={error}/>}
+          {status && <Alert color="green" title="Evidence saved">{status}</Alert>}
 
           {loading && (
-            <Paper withBorder radius="lg" p="xl">
-              <Group justify="center"><Loader size="sm" /><Text>Searching international marketplace offers…</Text></Group>
-            </Paper>
+            <DataState kind="loading" title={busyAction === "sync" ? "Saving international evidence" : "Searching international offers"} description="Collecting marketplace prices and source details. Statistics will appear when the search completes."/>
           )}
 
           {!loading && data && (
@@ -193,7 +191,7 @@ export default function InternationalPricesPage() {
               currency={marketCurrency[data.market.toLowerCase()] ?? "USD"}
               scopeLabel={`International prices · ${data.market.toUpperCase()}`}
             />
-            <Paper withBorder radius="lg" shadow="sm" style={{ overflow: "hidden" }}>
+            <Paper className="data-results" withBorder radius="lg" shadow="xs" style={{ overflow: "hidden" }}>
               <Group justify="space-between" p="md">
                 <Box>
                   <Text fw={700}>{data.items.length} offers for “{data.query}”</Text>
@@ -231,7 +229,7 @@ export default function InternationalPricesPage() {
                   </Table.Tbody>
                 </Table>
               </Box>
-              {data.items.length === 0 && <Text ta="center" c="dimmed" p="xl">No shopping offers matched this search.</Text>}
+              {data.items.length === 0 && <DataState kind="empty" compact title="No offers found" description="Try a more specific product name or another market."/>}
             </Paper>
             </>
           )}

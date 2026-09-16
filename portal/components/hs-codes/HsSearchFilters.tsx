@@ -89,7 +89,7 @@ export function HsSearchFilters({
       withBorder
       radius="lg"
       p={{ base: "md", sm: "lg" }}
-      shadow="sm"
+      shadow="xs"
       style={{
         borderColor:
           "var(--mantine-color-gray-2)",
@@ -166,28 +166,7 @@ export function HsSearchFilters({
               }
               leftSectionPointerEvents="none"
               maxLength={100}
-              size="sm"
-              radius={4}
-              styles={{
-                label: {
-                  fontSize: "12px",
-                  color: "#526875",
-                  marginBottom: "8px",
-                },
-
-                input: {
-                  width: "100%",
-                  minWidth: 0,
-                  height: "42px",
-                  minHeight: "42px",
-                  fontSize: "13px",
-                  color: "#182c3d",
-                  backgroundColor: "#f5f8fa",
-                  border:
-                    "1px solid #cbd8de",
-                  borderRadius: "4px",
-                },
-              }}
+              size="md"
             />
 
             {/* Description */}
@@ -211,28 +190,7 @@ export function HsSearchFilters({
               }
               leftSectionPointerEvents="none"
               maxLength={100}
-              size="sm"
-              radius={4}
-              styles={{
-                label: {
-                  fontSize: "12px",
-                  color: "#526875",
-                  marginBottom: "8px",
-                },
-
-                input: {
-                  width: "100%",
-                  minWidth: 0,
-                  height: "42px",
-                  minHeight: "42px",
-                  fontSize: "13px",
-                  color: "#182c3d",
-                  backgroundColor: "#f5f8fa",
-                  border:
-                    "1px solid #cbd8de",
-                  borderRadius: "4px",
-                },
-              }}
+              size="md"
             />
 
             {/* Revision */}
@@ -260,30 +218,7 @@ export function HsSearchFilters({
                 "hsCatalogue.noRevisions",
                 "No revisions found",
               )}
-              size="sm"
-              radius={4}
-              styles={{
-                label: {
-                  fontSize: "12px",
-                  color: "#526875",
-                  marginBottom: "8px",
-                },
-
-                input: {
-                  width: "100%",
-                  minWidth: 0,
-                  height: "42px",
-                  minHeight: "42px",
-                  fontSize: "13px",
-                  color: "#182c3d",
-                  backgroundColor: "#f5f8fa",
-                  border:
-                    "1px solid #cbd8de",
-                  borderRadius: "4px",
-                  paddingRight: "36px",
-                  cursor: "pointer",
-                },
-              }}
+              size="md"
               comboboxProps={{
                 withinPortal: true,
               }}
@@ -311,8 +246,8 @@ export function HsSearchFilters({
               {hasActiveFilters && (
                 <Button
                   type="button"
-                  variant="light"
-                  color="red"
+                  variant="default"
+                  color="blue"
                   size="md"
                   radius="md"
                   onClick={onClear}
