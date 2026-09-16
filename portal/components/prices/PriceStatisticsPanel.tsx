@@ -37,7 +37,7 @@ export function PriceStatisticsPanel({ statistics, currency, scopeLabel }: Price
 
       <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }}>
         {cards.map(([label, value]) => (
-          <Paper key={label} bg="gray.0" radius="md" p="md">
+          <Paper key={label} className="data-metric" radius="md" p="md">
             <Text size="xs" c="dimmed" tt="uppercase" fw={700}>{label}</Text>
             <Text fw={700} mt={4}>{value}</Text>
           </Paper>

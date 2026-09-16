@@ -128,6 +128,7 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
     {
         b.ToTable("valuation_decisions"); b.HasKey(x => x.Id);
         b.Property(x => x.SelectedReferenceValue).HasPrecision(24, 8);
+        b.Property(x => x.LocationSnapshotJson).HasColumnType("jsonb");
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Evidence).WithOne().HasForeignKey(x => x.DecisionId).OnDelete(DeleteBehavior.Restrict);
     }

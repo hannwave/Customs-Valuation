@@ -1,57 +1,113 @@
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
-import { useEffect, useState } from "react";
-import { FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronRight, FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMenu, FiSettings, FiShield, FiShoppingBag, FiUsers, FiX } from "react-icons/fi";
-import { Brand, LanguageSelect } from "@/components/AuthShell";
-import { CommissionLogo } from "@/components/CommissionLogo";
+import { useEffect, useMemo, useState } from "react";
+import {
+  FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronRight,
+  FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
+  FiShield, FiShoppingBag, FiUsers, FiX,
+} from "react-icons/fi";
+import { LanguageSelect } from "@/components/AuthShell";
+import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-const groups = [
-  { label: "nav.workspace", fallback: "WORKSPACE", links: [["/", "dashboard", FiGrid], ["/hs-codes", "hsCodes", FiBookOpen]] },
-  { label: "nav.evidence", fallback: "PRICE EVIDENCE", links: [["/international-prices", "international", FiGlobe], ["/local-prices", "local", FiShoppingBag], ["/historical-customs-prices", "historical", FiArchive]] },
-  { label: "nav.review", fallback: "REVIEW & OVERSIGHT", links: [["/valuation-decisions", "decisions", FiCheckSquare], ["/analytics", "analytics", FiBarChart2], ["/reports", "reports", FiFileText], ["/audit", "audit", FiActivity]] },
-  { label: "nav.manage", fallback: "MANAGEMENT", links: [["/administration", "administration", FiUsers], ["/integrations", "integrations", FiSettings]] },
-] as const;
+import { roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
+
+type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid };
+type NavGroup = { label: string; links: NavLink[] };
+const evidenceLinks: NavLink[] = [
+    { href: "/international-prices", key: "international", label: "International prices", icon: FiGlobe },
+    { href: "/local-prices", key: "local", label: "Ethiopian prices", icon: FiShoppingBag },
+    { href: "/historical-customs-prices", key: "historical", label: "Historical customs", icon: FiArchive },
+];
+const officerOnlyPaths = evidenceLinks.map(link => link.href);
+function navForRole(role: WorkspaceRole): NavGroup[] {
+  if (role === "SystemAdministrator") return [
+    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
+    { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
+    { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation oversight", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
+  ];
+  if (role === "CustomsAdministrator") return [
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
+    { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
+    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Scoped reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+  ];
+  return [
+    { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "My workspace", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "My valuation cases", icon: FiCheckSquare }] },
+    { label: "PRICE ANALYSIS", links: evidenceLinks },
+    { label: "REVIEW & HISTORY", links: [{ href: "/analytics", key: "analytics", label: "Statistics and trends", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Decision reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
+  ];
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { t, i18n } = useTranslation(); const pathname = usePathname();
+  const { t, i18n } = useTranslation();
+  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profile, setProfile] = useState<{ fullName?: string; username?: string; role?: string } | null>(null);
-  const [profileUnavailable, setProfileUnavailable] = useState(false);
+  const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
+  const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const isAuthPage = pathname === "/login" || pathname === "/signup";
+
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
     setMenuOpen(false);
     if (isAuthPage) return;
-    const token = getSessionAccessToken();
-    if (!token) { window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`); return; }
+    if (!getSessionAccessToken()) {
+      window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     setAuthorized(true);
-    const controller = new AbortController();
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-    void fetch(`${base}/api/auth/me`, { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } })
-      .then(async response => {
-        if (response.status === 401) { setSessionAccessToken(null); setAuthorized(false); window.location.assign(`/login?next=${encodeURIComponent(pathname)}`); return null; }
-        if (!response.ok) throw new Error("Profile unavailable");
-        return response.json();
-      }).then(data => { if (data) { setProfile(data); setProfileUnavailable(false); } })
-      .catch(() => { if (!controller.signal.aborted) setProfileUnavailable(true); });
-    return () => controller.abort();
+    setProfileError("");
+    void workspaceApi<WorkspaceProfile>("/me")
+      .then(setProfile)
+      .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
   }, [pathname, isAuthPage]);
+
+  useEffect(() => {
+    if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
+      window.location.replace("/");
+    }
+  }, [pathname, profile]);
+
+  const visibleGroups = useMemo(() => profile ? navForRole(profile.user.role) : [], [profile]);
+  const current = visibleGroups.flatMap(group => group.links).find(link =>
+    link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`));
+  const primaryLocation = profile?.locations.find(location => location.id === profile.user.primaryLocationId);
+
   if (isAuthPage) return <>{children}</>;
   if (!authorized) return <div className="access-loading" role="status">{t("nav.loading", "Opening your workspace…")}</div>;
-  const current = groups.flatMap(group => [...group.links]).find(([href]) => href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
   return <div className="workspace">
     <a className="skip-link" href="#main-content">{t("nav.skip", "Skip to content")}</a>
     <aside className={`sidebar ${menuOpen ? "is-open" : ""}`} id="workspace-navigation">
-      <Link href="/" className="sidebar-brand" aria-label={t("dashboard")}><Brand compact/></Link>
-      <nav aria-label={t("title")}>{groups.map(group => <div className="nav-group" key={group.label}><p className="nav-label">{t(group.label, group.fallback)}</p>{group.links.map(([href, key, Icon]) => { const active = current?.[0] === href; return <Link key={href} href={href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined}><Icon aria-hidden="true"/><span>{t(key)}</span>{active && <FiChevronRight className="nav-arrow" aria-hidden="true"/>}</Link>; })}</div>)}</nav>
-      <div className="sidebar-note"><FiShield/><span>{t("nav.note", "Evidence-led valuation")}<small>{t("nav.noteBody", "Professional judgment at every step.")}</small></span></div>
-      <button type="button" className="signout-button" onClick={() => { setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut/>{t("nav.signout", "Sign out")}</button>
+      <Link href="/" className="sidebar-brand" aria-label={t("dashboard")}><Brand compact /></Link>
+      <nav aria-label={t("title")}>{visibleGroups.map(group => <div className="nav-group" key={group.label}>
+        <p className="nav-label">{group.label}</p>
+        {group.links.map(link => {
+          const Icon = link.icon;
+          const active = current?.href === link.href;
+          return <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined}>
+            <Icon aria-hidden="true" /><span>{t(link.key, link.label)}</span>{active && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
+          </Link>;
+        })}
+      </div>)}</nav>
+      <div className="sidebar-note"><FiShield /><span>{t("nav.note", "Scope-controlled access")}<small>{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.noteBody", "Your assigned customs locations determine visible records.")}</small></span></div>
+      <button type="button" className="signout-button" onClick={() => { setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut />{t("nav.signout", "Sign out")}</button>
     </aside>
-    <div className="content"><header className="workspace-header"><div className="header-location"><button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="workspace-navigation" aria-label={t(menuOpen ? "nav.close" : "nav.open", menuOpen ? "Close navigation" : "Open navigation")} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <FiX/> : <FiMenu/>}</button><Link className="mobile-commission-brand" href="/" aria-label={t("dashboard")}><CommissionLogo/></Link><span className="header-institution">{t("nav.customs", "Customs valuation")}</span><FiChevronRight aria-hidden="true"/><strong>{current ? t(current[1]) : t("dashboard")}</strong></div><div className="header-actions"><LanguageSelect/><div className="profile-chip"><span className="profile-avatar">{(profile?.fullName ?? profile?.username ?? "U").slice(0, 1).toUpperCase()}</span><span className="profile-details"><strong>{profile?.fullName ?? profile?.username ?? t("nav.user", "Workspace user")}</strong><small>{profile?.role?.replace(/([a-z])([A-Z])/g, "$1 $2") ?? t("nav.profile", "Profile pending")}</small></span></div></div></header>
-    {profileUnavailable && <div className="service-notice" role="status"><FiInfo/>{t("nav.unavailable", "The service is unavailable. Account details and evidence may not load; please try again shortly.")}</div>}
-    <main id="main-content" tabIndex={-1}>{children}</main>
-    <footer className="workspace-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield/>{t("nav.support", "Valuation decision support")}</span></footer></div>
+    <div className="content">
+      <header className="workspace-header">
+        <div className="header-location">
+          <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="workspace-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <FiX /> : <FiMenu />}</button>
+          <span className="header-institution">{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.customs", "Ethiopia Customs")}</span><FiChevronRight aria-hidden="true" /><strong>{current ? t(current.key, current.label) : t("dashboard", "Overview")}</strong>
+        </div>
+        <div className="header-actions"><LanguageSelect /><div className="profile-chip">
+          <span className="profile-avatar">{(profile?.user.fullName ?? profile?.user.username ?? "U").slice(0, 1).toUpperCase()}</span>
+          <span className="profile-details"><strong>{profile?.user.fullName ?? profile?.user.username ?? "Workspace user"}</strong><small>{roleLabel(profile?.user.role)}</small></span>
+        </div></div>
+      </header>
+      {profileError && <div className="service-notice" role="status"><FiInfo />{profileError} Refresh the page after the API is available.</div>}
+      <main id="main-content" tabIndex={-1}>{children}</main>
+      <footer className="workspace-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield />{profile ? `${roleLabel(profile.user.role)} access` : "Valuation decision support"}</span></footer>
+    </div>
   </div>;
 }

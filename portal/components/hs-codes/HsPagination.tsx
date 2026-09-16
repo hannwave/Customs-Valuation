@@ -48,15 +48,15 @@ export function HsPagination({
       py="md"
       style={{
         borderTop:
-          "1px solid #dce5e9",
-        color: "#566976",
+          "1px solid var(--line)",
+        color: "var(--muted)",
         fontSize: "12px",
       }}
     >
       {/* Showing count */}
       <Text
         size="xs"
-        c="#566976"
+        c="var(--muted)"
       >
         {t(
           "hsCatalogue.showing",
@@ -86,9 +86,9 @@ export function HsPagination({
           styles={{
             root: {
               background: "#fff",
-              color: "#345866",
+              color: "var(--ink)",
               border:
-                "1px solid #cbd8de",
+                "1px solid var(--line)",
               fontSize: "12px",
               padding:
                 "9px 13px",
@@ -104,7 +104,7 @@ export function HsPagination({
 
         <Text
           size="xs"
-          c="#526875"
+          c="var(--muted)"
           style={{
             minWidth: "48px",
             textAlign: "center",
@@ -127,9 +127,9 @@ export function HsPagination({
           styles={{
             root: {
               background: "#fff",
-              color: "#345866",
+              color: "var(--ink)",
               border:
-                "1px solid #cbd8de",
+                "1px solid var(--line)",
               fontSize: "12px",
               padding:
                 "9px 13px",

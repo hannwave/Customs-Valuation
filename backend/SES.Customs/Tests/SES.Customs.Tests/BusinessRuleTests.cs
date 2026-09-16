@@ -10,6 +10,32 @@ using Xunit;
 namespace SES.Customs.Tests;
 public sealed class BusinessRuleTests
 {
+    [Fact]
+    public void Location_scope_expands_children_without_looping_on_cycles()
+    {
+        var branch = Guid.NewGuid(); var dryPort = Guid.NewGuid(); var station = Guid.NewGuid();
+        var locations = new[] { (branch, (Guid?)station), (dryPort, (Guid?)branch), (station, (Guid?)dryPort) };
+        var scope = AccessRules.Expand(locations, new[] { (branch, true) });
+        Assert.Equal(3, scope.Count);
+    }
+
+    [Fact]
+    public void Customs_admin_can_manage_only_officers_fully_inside_scope()
+    {
+        var allowed = Guid.NewGuid(); var outside = Guid.NewGuid();
+        Assert.True(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.Officer, new[] { allowed }));
+        Assert.False(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.Officer, new[] { allowed, outside }));
+        Assert.False(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.CustomsAdmin, new[] { allowed }));
+    }
+
+    [Fact]
+    public void Price_analysis_permissions_are_exclusive_to_customs_officers()
+    {
+        var pricePermissions = new[] { "reference_prices.view", "local_prices.view", "historical_prices.view", "statistics.view", "trends.view", "country_analysis.view", "outliers.view" };
+        Assert.All(pricePermissions, permission => Assert.Contains(permission, AccessRules.Permissions(AccessRules.Officer)));
+        Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.CustomsAdmin)));
+        Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.SystemAdmin)));
+    }
     private static ComparableObservation Observation(decimal value, PricePool pool = PricePool.International,
         string unit = "piece", string key = "reviewed-group-v1", string currency = "ETB") => new(pool, value, currency, unit, key);
     [Fact] public void CalculatesSrsExample()

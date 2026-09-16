@@ -7,6 +7,9 @@ The system keeps international, Ethiopian local and historical Customs price poo
 ## Implemented modules
 
 - JWT login, registration requests, administrator approval and user profile display.
+- Backend-enforced `SYSTEM_ADMIN`, `CUSTOMS_ADMIN` and `CUSTOMS_OFFICER` permissions with location scopes.
+- Effective-dated Customs location hierarchy, employee assignments, immutable location snapshots and audited changes.
+- Officer valuation drafts/submission, scoped administrator review, and role-filtered audit visibility.
 - Ethiopian HS codes and tariff-line duty data stored in PostgreSQL/Supabase.
 - Google Shopping international-price search through SerpAPI, with optional HS-code synchronization.
 - Jiji Ethiopia and EthioShop local-market collection adapters.

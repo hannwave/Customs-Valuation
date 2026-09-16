@@ -9,7 +9,7 @@ namespace SES.Customs.API.Controllers;
 
 [ApiController]
 [Route("api/international-prices")]
-[Authorize(Roles = "CustomsOfficer,CustomsAdministrator,SystemAdministrator")]
+[Authorize(Policy = "OfficerOnly")]
 public sealed class InternationalPricesController(
     SerpApiClient serpApi,
     CustomsDbContext db) : ControllerBase

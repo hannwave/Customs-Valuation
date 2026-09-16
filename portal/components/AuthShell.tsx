@@ -5,11 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiGlobe, FiLock, FiShield, FiTruck, FiUser } from "react-icons/fi";
 import { setSessionAccessToken } from "@/lib/auth/session";
-import { CommissionLogo } from "@/components/CommissionLogo";
-
-export function Brand({ compact = false }: { compact?: boolean }) {
-  return <div className={`institution-brand ${compact ? "compact" : ""}`}><CommissionLogo variant="light" priority/><span className="brand-caption">VALUATION WORKSPACE</span></div>;
-}
+import { Brand, CustomsLogo } from "@/components/Brand";
 export function LanguageSelect() {
   const { t, i18n } = useTranslation();
   return <label className="language-select"><FiGlobe aria-hidden="true"/><span className="sr-only">{t("language")}</span><select value={i18n.resolvedLanguage ?? "en"} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label>;
@@ -23,7 +19,7 @@ export function AuthShell({ children, signup = false }: { children: React.ReactN
       <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
     </section>
     <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<LanguageSelect/></div>
-      <div className="auth-card"><CommissionLogo className="auth-form-logo" priority/>{children}</div>
+      <div className="auth-card"><div className="auth-card-brand"><CustomsLogo/></div>{children}</div>
       <footer className="auth-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield aria-hidden="true"/>{t("auth.authorized", "For authorized personnel")}</span></footer>
     </section>
   </div>;
@@ -87,7 +83,7 @@ export function SignupForm() {
       <div className="field-group"><label htmlFor="email">{t("auth.email", "Official email")}<span className="required-mark"> *</span></label><input id="email" name="email" type="email" required autoComplete="email" placeholder="name@organization.et"/></div>
       <div className="field-group"><label htmlFor="phone">{t("auth.phone", "Phone number")} <small>{t("auth.optional", "(optional)")}</small></label><input id="phone" name="phone" type="tel" autoComplete="tel" placeholder="+251 …"/></div>
       <div className="field-group"><label htmlFor="department">{t("auth.department", "Department / office")}<span className="required-mark"> *</span></label><select id="department" name="department" required defaultValue=""><option value="" disabled>{t("auth.selectOffice", "Select office")}</option><option value="Head Office">{t("auth.headOffice", "Head Office")}</option><option value="Regional Office">{t("auth.regionalOffice", "Regional Office")}</option><option value="Port Office">{t("auth.portOffice", "Port Office")}</option></select></div>
-      <div className="field-group"><label htmlFor="role">{t("auth.role", "Requested role")}<span className="required-mark"> *</span></label><select id="role" name="role" required defaultValue=""><option value="" disabled>{t("auth.selectRole", "Select role")}</option><option value="Customs Officer">{t("auth.officer", "Customs Officer")}</option><option value="Customs Administrator">{t("auth.administrator", "Customs Administrator")}</option></select></div>
+      <div className="field-group"><label htmlFor="role">{t("auth.role", "Requested role")}<span className="required-mark"> *</span></label><select id="role" name="role" required defaultValue="CustomsOfficer"><option value="CustomsOfficer">{t("auth.officer", "Customs Officer")}</option></select></div>
       <div className="wide"><PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.createPassword", "Create a strong password")}/></div>
       <div className="wide"><PasswordField name="confirm" label={t("auth.confirm", "Confirm password")} placeholder={t("auth.repeatPassword", "Re-enter your password")}/></div>
     </div>
