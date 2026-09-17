@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SES.Customs.Infrastructure.Context;
@@ -11,9 +12,11 @@ using SES.Customs.Infrastructure.Context;
 namespace SES.Customs.Infrastructure.Context.Migrations
 {
     [DbContext(typeof(CustomsDbContext))]
-    partial class CustomsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917073552_AddOfficerPhaseTwo")]
+    partial class AddOfficerPhaseTwo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -41,9 +44,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<string>("Justification")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("LocationId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Module")
                         .IsRequired()
                         .HasColumnType("text");
@@ -69,8 +69,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LocationId", "OccurredAt");
 
                     b.HasIndex("RecordId", "OccurredAt");
 
@@ -629,10 +627,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("EvidenceNotes")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid>("HsCodeId")
                         .HasColumnType("uuid");
 
@@ -648,13 +642,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("LocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("LocationSnapshotJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
                     b.Property<string>("OfficerSubjectId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -662,35 +649,13 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<DateTimeOffset>("RecordedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ReviewJustification")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ReviewedBy")
-                        .HasColumnType("text");
-
                     b.Property<decimal>("SelectedReferenceValue")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("SubmittedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
                     b.HasIndex("HsCodeId");
-
-                    b.HasIndex("LocationId", "Status");
 
                     b.ToTable("valuation_decisions", (string)null);
                 });
@@ -863,39 +828,18 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasMaxLength(240)
                         .HasColumnType("character varying(240)");
 
-                    b.Property<string>("EmployeeNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("LastLoginAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Phone")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("PrimaryLocationId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -907,165 +851,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("PrimaryLocationId");
-
                     b.HasIndex("Username")
                         .IsUnique();
 
                     b.ToTable("AuthAccounts");
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BorderCountry")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CityWoreda")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("EffectiveFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("EffectiveTo")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsEntryPoint")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsExitPoint")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset?>("LastVerifiedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal?>("Latitude")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("LocationType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal?>("Longitude")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("OfficialCode")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<Guid?>("ParentLocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Region")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SourceReference")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("SupportsExport")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("SupportsImport")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("SupportsInspection")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("SupportsTransit")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("SupportsValuation")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Zone")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OfficialCode")
-                        .IsUnique();
-
-                    b.HasIndex("ParentLocationId");
-
-                    b.ToTable("customs_locations", (string)null);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ChangeReason")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("ChangedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ChangedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("CustomsLocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("NewValueJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("PreviousValueJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomsLocationId", "ChangedAt");
-
-                    b.ToTable("customs_location_history", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Infrastructure.Context.RegistrationRequestEntity", b =>
@@ -1115,44 +904,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasIndex("Status", "SubmittedAt");
 
                     b.ToTable("RegistrationRequests");
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("CustomsLocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("EffectiveFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("EffectiveTo")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IncludeChildLocations")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Responsibilities")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomsLocationId");
-
-                    b.HasIndex("UserId", "EffectiveTo");
-
-                    b.ToTable("customs_user_location_scopes", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.HistoricalCustomsPrice", b =>
@@ -1348,51 +1099,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasOne("SES.Customs.Core.Models.HsCode", null)
                         .WithMany()
                         .HasForeignKey("HsCodeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("LocationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.AuthAccountEntity", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("PrimaryLocationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocation", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("ParentLocationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("CustomsLocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("CustomsLocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

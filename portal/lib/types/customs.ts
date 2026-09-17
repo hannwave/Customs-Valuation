@@ -154,3 +154,77 @@ export interface LocalMarketSyncResponse {
   updatedCount: number;
   skippedCount: number;
 }
+
+export type Phase2Status = "InProgress" | "Completed" | "RequiresReview";
+export type Phase2CalculationType = "Percentage" | "Fixed";
+
+export interface Phase2TaxLine {
+  id: string;
+  name: string;
+  calculationType: Phase2CalculationType;
+  value: number;
+  currency: string;
+  order: number;
+  calculationBasis: string;
+  baseAmount: number;
+  calculatedAmount: number;
+  notes: string;
+}
+
+export interface Phase2Response {
+  decisionId: string;
+  phase1: {
+    hsCodeId: string;
+    initialDuty: number;
+    initialDutyCurrency: string;
+    source: string;
+  };
+  phase2: {
+    id: string;
+    status: Phase2Status;
+    originalHsCodeId: string;
+    selectedHsCodeId: string | null;
+    initialDutyAmount: number;
+    initialDutyCurrency: string;
+    targetCurrency: string;
+    exchangeRate: number;
+    exchangeRateSource: string;
+    exchangeRateDate: string | null;
+    exemptionAmount: number;
+    waiverAmount: number;
+    manualAdjustmentAmount: number;
+    manualAdjustmentType: "Fixed" | "Percentage";
+    notes: string;
+    totalAdditionalTax: number;
+    finalAmount: number;
+    calculationRuleVersion: string;
+    calculatedAt: string | null;
+    version: string;
+    taxLines: Phase2TaxLine[];
+  } | null;
+}
+
+export interface Phase2TaxLineRequest {
+  name: string;
+  calculationType: Phase2CalculationType;
+  value: number;
+  currency: string;
+  order: number;
+  calculationBasis: string;
+  notes: string;
+}
+
+export interface Phase2Request {
+  selectedHsCodeId: string | null;
+  targetCurrency: string;
+  exchangeRate: number;
+  exchangeRateSource: string;
+  exchangeRateDate: string | null;
+  exemptionAmount: number;
+  waiverAmount: number;
+  manualAdjustmentAmount: number;
+  manualAdjustmentType: "Fixed" | "Percentage";
+  notes: string;
+  taxLines: Phase2TaxLineRequest[];
+  expectedVersion?: string;
+}

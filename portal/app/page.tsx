@@ -4,13 +4,24 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiAlertTriangle, FiArrowRight, FiBookOpen, FiCheckCircle,
-  FiFileText, FiGlobe, FiMapPin, FiSearch, FiShield,
+  FiChevronRight, FiFileText, FiGlobe, FiMapPin, FiSearch, FiShield,
   FiShoppingBag, FiTrendingUp, FiUserPlus, FiUsers,
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
+import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import type { InternationalPriceSearch, LocalMarketPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
+
+type Phase = "one" | "two";
+
+function PhaseBar({ phase, onChange }: { phase: Phase; onChange: (next: Phase) => void }) {
+  return <nav className={`phase-bar phase-bar--${phase}`} aria-label="Officer valuation phases">
+    <button type="button" aria-pressed={phase === "one"} className={phase === "one" ? "is-active" : "is-collapsed"} onClick={() => onChange("one")}><span>01</span><strong>Phase 1</strong><small>Initial duty</small></button>
+    <FiChevronRight aria-hidden="true" />
+    <button type="button" aria-pressed={phase === "two"} className={phase === "two" ? "is-active" : "is-collapsed"} onClick={() => onChange("two")}><span>02</span><strong>Phase 2</strong><small>Additional taxes</small></button>
+  </nav>;
+}
 
 function KpiGrid({ data }: { data: WorkspaceDashboard }) {
   return <section className="dashboard-kpis" aria-label="Dashboard summary">{data.kpis.map(kpi => <article className={`dashboard-kpi dashboard-kpi--${kpi.tone}`} key={kpi.key}><span>{kpi.label}</span><strong>{kpi.value}</strong><small>{kpi.detail}</small></article>)}</section>;
@@ -189,9 +200,11 @@ function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: 
 
 function OfficerDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
   const recent = data.decisions[0];
+  const [phase, setPhase] = useState<Phase>("one");
   return <>
     <DashboardHeader profile={profile} eyebrow="Officer operations" title={`Welcome, ${profile.user.fullName.split(" ")[0]}`} description="Find the product, examine price evidence, investigate anomalies, and record a defensible valuation decision." />
-    <OfficerEvidenceWorkspace profile={profile} />
+    <PhaseBar phase={phase} onChange={setPhase} />
+    {phase === "one" ? <OfficerEvidenceWorkspace profile={profile} /> : <PhaseTwoOverview />}
     <KpiGrid data={data} />
     <div className="dashboard-main-grid officer-dashboard-grid">
       <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">Operational workload</p><h2>My valuation cases</h2><span>Saved, submitted, returned, and approved decisions</span></div><Link href="/valuation-decisions">Open workspace <FiArrowRight /></Link></div><DecisionTable data={data} /></section>

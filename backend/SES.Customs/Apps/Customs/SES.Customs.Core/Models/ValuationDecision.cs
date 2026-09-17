@@ -7,6 +7,10 @@ public sealed class ValuationDecision
     public Guid HsCodeId { get; set; }
     public decimal SelectedReferenceValue { get; set; }
     public string Currency { get; set; } = "";
+    // Phase 1 may populate this explicitly. The Phase 2 handoff falls back to
+    // SelectedReferenceValue for decisions created by the current skeleton.
+    public decimal? InitialDuty { get; set; }
+    public string InitialDutyCurrency { get; set; } = "";
     public string Decision { get; set; } = "";
     public string Justification { get; set; } = "";
     public string OfficerSubjectId { get; set; } = "";

@@ -38,12 +38,6 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned20() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/nbe/exchange-rates/sync"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned21() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("valuation-decisions"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned22() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpPost("valuation-decisions"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned23() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("valuation-decisions/{id:guid}"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned24() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("hs-revisions"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned26() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("price-sources"), Authorize(Policy = "SystemAdministrator")]

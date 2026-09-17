@@ -14,7 +14,9 @@ The EF model is a design starting point, not a production-approved schema. `data
 | price_sources | Pool and approval reference; enabled only after review | Mapped; application enforcement pending |
 | local_markets | Bilingual market name and region | Mapped |
 | exchange_rates | Original/converted currency, positive directional rate, date, source, retrieval time | Mapped; official rate immutability/versioning pending |
-| valuation_decisions | HS code, selected reference amount/currency, decision, justification, actor and time | Mapped; workflow validation pending |
+| valuation_decisions | HS code, selected reference amount/currency, optional Phase 1 initial duty, decision, justification, actor and time | Mapped; Phase 1 handoff implemented |
+| valuation_phase2 | One-to-one Phase 2 extension, preserved Phase 1 duty snapshot, currency conversion, relief/adjustment values, totals and calculation-rule version | Mapped; Phase 2 implemented with provisional rules |
+| valuation_phase2_tax_lines | Ordered Tax 1/Tax 2 placeholders (and future tax types), percentage/fixed values, basis, calculated amount and notes | Mapped; placeholder rules only |
 | decision_evidence | Exactly one of three pool-specific foreign keys; JSON snapshot and comparison version | Mapped; snapshot writer pending |
 | audit_logs | Actor/time/action/module/record, before/after JSON, decision and justification, optional IP/device | Mapped; append-only persistence policy pending |
 | countries, currencies, quantity_units | Controlled reference vocabularies and conversion rules | Planned; currently code strings |
@@ -36,7 +38,7 @@ Quantities/amounts currently use `numeric(24,8)` and rates `numeric(24,12)` as p
 
 Rates explicitly mean target units per original unit. The conversion primitive requires a specified matching date and source and returns a new snapshot. The caller must choose the date using an approved policy. Missing rates cause a controlled failure; there is no most-recent-rate fallback. Persist rate revisions and snapshots immutably before adding import/write paths.
 
-## Integrity work before the first migration
+## Integrity work before a production migration
 
 - Required/nonempty validation and database checks for quantities, amounts, dates, code lengths and allowed status transitions.
 - National tariff code length and uniqueness by national schedule/effective dates.

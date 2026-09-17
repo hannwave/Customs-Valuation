@@ -14,6 +14,8 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
     public DbSet<HistoricalCustomsPrice> HistoricalCustomsPrices => Set<HistoricalCustomsPrice>();
     public DbSet<PriceSource> PriceSources => Set<PriceSource>();
     public DbSet<ValuationDecision> ValuationDecisions => Set<ValuationDecision>();
+    public DbSet<ValuationPhase2> ValuationPhase2s => Set<ValuationPhase2>();
+    public DbSet<ValuationPhase2TaxLine> ValuationPhase2TaxLines => Set<ValuationPhase2TaxLine>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<AuthAccountEntity> AuthAccounts => Set<AuthAccountEntity>();
     public DbSet<RegistrationRequestEntity> RegistrationRequests => Set<RegistrationRequestEntity>();
