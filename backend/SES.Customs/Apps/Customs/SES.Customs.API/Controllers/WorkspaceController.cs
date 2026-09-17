@@ -14,6 +14,8 @@ public sealed record LocationChange(CustomsLocation Location, string Reason);
 public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
 public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, bool IncludeChildren, string EmployeeNumber, string Phone);
 public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
+public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
+public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public sealed record DecisionInput(Guid HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
 public sealed record DecisionTransition(Guid Version, string Justification, string Outcome = "Approved");
 
@@ -29,6 +31,56 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var user = await db.AuthAccounts.AsNoTracking().SingleAsync(u => u.Id == access.UserId, ct);
         var scope = await access.Locations(ct);
         return Ok(new { user = PublicUser(user), permissions = AccessRules.Permissions(access.Role), locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct), locationTypes = LocationTypes, locationStatuses = LocationStatuses });
+    }
+    [HttpGet("profile")]
+    public async Task<IActionResult> Profile(CancellationToken ct)
+    {
+        var user = await db.AuthAccounts.AsNoTracking().SingleAsync(u => u.Id == access.UserId, ct);
+        var now = DateTimeOffset.UtcNow;
+        var assignments = await db.UserLocationScopes.AsNoTracking()
+            .Where(s => s.UserId == access.UserId && s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now))
+            .OrderBy(s => s.EffectiveFrom)
+            .ToListAsync(ct);
+        var locationIds = assignments.Select(s => s.CustomsLocationId).Distinct().ToList();
+        var locations = await db.CustomsLocations.AsNoTracking().Where(l => locationIds.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct);
+        return Ok(new {
+            user = new { user.Username, user.Email, user.FullName, role = AccessRules.NormalizeRole(user.Role), roleCode = AccessRules.Code(user.Role), user.EmployeeNumber, user.Phone },
+            assignments = assignments.Select(s => new { s.Id, s.CustomsLocationId, s.IncludeChildLocations, s.Responsibilities, location = locations.FirstOrDefault(l => l.Id == s.CustomsLocationId) })
+        });
+    }
+    [HttpPatch("profile")]
+    public async Task<IActionResult> UpdateProfile(ProfileChange input, CancellationToken ct)
+    {
+        var user = await db.AuthAccounts.SingleAsync(u => u.Id == access.UserId, ct);
+        var username = (input.Username ?? "").Trim();
+        var email = (input.Email ?? "").Trim().ToLowerInvariant();
+        var fullName = (input.FullName ?? "").Trim();
+        var phone = (input.Phone ?? "").Trim();
+        Validate(Regex.IsMatch(username, "^[a-zA-Z0-9_.-]{3,120}$"), "Use a username with 3-120 letters, numbers, dots, hyphens or underscores.");
+        Validate(System.Net.Mail.MailAddress.TryCreate(email, out _), "Enter a valid email address.");
+        Validate(fullName.Length is >= 2 and <= 200, "Enter your full name.");
+        Validate(phone.Length <= 40, "Phone number is too long.");
+        Validate(!await db.AuthAccounts.AnyAsync(u => u.Id != user.Id && u.Username == username, ct), "That username is already used.");
+        Validate(!await db.AuthAccounts.AnyAsync(u => u.Id != user.Id && u.Email == email, ct), "That email is already used.");
+        var before = new { user.Username, user.Email, user.FullName, user.Phone };
+        user.Username = username; user.Email = email; user.FullName = fullName; user.Phone = phone; user.UpdatedAt = DateTimeOffset.UtcNow;
+        access.Audit("PROFILE_UPDATED", "Users", user.Id, before, new { user.Username, user.Email, user.FullName, user.Phone }, "User updated their own profile.");
+        await db.SaveChangesAsync(ct);
+        return Ok(new { user = new { user.Username, user.Email, user.FullName, role = AccessRules.NormalizeRole(user.Role), roleCode = AccessRules.Code(user.Role), user.EmployeeNumber, user.Phone } });
+    }
+    [HttpPost("profile/password")]
+    public async Task<IActionResult> ChangePassword(PasswordChange input, CancellationToken ct)
+    {
+        var user = await db.AuthAccounts.SingleAsync(u => u.Id == access.UserId, ct);
+        Validate(!string.IsNullOrWhiteSpace(input.CurrentPassword), "Enter your current password.");
+        Validate(AuthService.VerifyHash(user.PasswordHash, input.CurrentPassword), "Current password is incorrect.");
+        Validate(input.NewPassword == input.ConfirmPassword, "New passwords do not match.");
+        Validate(Regex.IsMatch(input.NewPassword ?? "", "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
+        user.PasswordHash = AuthService.Hash(input.NewPassword!);
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        access.Audit("PASSWORD_CHANGED", "Users", user.Id, null, new { changed = true }, "User changed their own password.");
+        await db.SaveChangesAsync(ct);
+        return Ok(new { message = "Password changed." });
     }
     [HttpGet("dashboard")]
     public async Task<IActionResult> Dashboard(CancellationToken ct)
