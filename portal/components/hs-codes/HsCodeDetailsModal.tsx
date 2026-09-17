@@ -180,7 +180,6 @@ export function HsCodeDetailsModal({
               </Text>
             </div>
 
-            {/* Description */}
             <div
               style={{
                 background: "var(--pale)",
@@ -188,6 +187,37 @@ export function HsCodeDetailsModal({
                 borderRadius: "8px",
               }}
             >
+              <Text
+                size="xs"
+                fw={500}
+                c="var(--muted)"
+                mb={8}
+              >
+                {t(
+                  "hsCatalogue.duty",
+                  "Customs duty",
+                )}
+              </Text>
+
+              <Badge
+                variant="light"
+                size="lg"
+                color={
+                  hsCode.duty?.toLowerCase() === "prohibited"
+                    ? "red"
+                    : hsCode.duty?.toLowerCase() === "free"
+                      ? "green"
+                      : "blue"
+                }
+                mb="md"
+              >
+                {hsCode.duty ||
+                  t(
+                    "hsCatalogue.dutyUnavailable",
+                    "Not set",
+                  )}
+              </Badge>
+
               <Text
                 size="xs"
                 fw={500}

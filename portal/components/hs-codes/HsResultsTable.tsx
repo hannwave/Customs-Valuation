@@ -60,6 +60,40 @@ export function HsResultsTable({
     return item.descriptionEn;
   };
 
+  const getDutyStyle = (duty: string | null) => {
+    const normalized = duty?.trim().toLowerCase() ?? "";
+
+    if (!normalized) {
+      return {
+        background: "#f3f4f6",
+        borderColor: "#dfe3e8",
+        color: "#4b5563",
+      };
+    }
+
+    if (normalized === "free") {
+      return {
+        background: "#edf6f0",
+        borderColor: "#bfe5c9",
+        color: "#25674f",
+      };
+    }
+
+    if (normalized.includes("prohibit")) {
+      return {
+        background: "#fef2f2",
+        borderColor: "#fecaca",
+        color: "#b42318",
+      };
+    }
+
+    return {
+      background: "#eef4ff",
+      borderColor: "#cfe0ff",
+      color: "#1d4ed8",
+    };
+  };
+
   return (
     <Paper
       withBorder
@@ -132,6 +166,28 @@ export function HsResultsTable({
                 {t(
                   "hsCatalogue.descriptionLabel",
                   "Description",
+                )}
+              </Table.Th>
+
+              {/* Duty */}
+              <Table.Th
+                style={{
+                  background: "var(--surface)",
+                  padding: "13px 16px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  letterSpacing: "0.6px",
+                  textTransform:
+                    "uppercase",
+                  whiteSpace: "nowrap",
+                  color: "var(--muted)",
+                  borderBottom:
+                    "1px solid var(--line)",
+                }}
+              >
+                {t(
+                  "hsCatalogue.duty",
+                  "Duty",
                 )}
               </Table.Th>
 
@@ -324,6 +380,48 @@ export function HsResultsTable({
                           )}
                         </span>
                       )}
+                  </Table.Td>
+
+                  {/* Duty */}
+                  <Table.Td
+                    style={{
+                      padding:
+                        "18px 16px",
+                      fontSize: "12px",
+                      verticalAlign:
+                        "middle",
+                      borderBottom:
+                        "1px solid var(--line)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        display:
+                          "inline-flex",
+                        alignItems:
+                          "center",
+                        justifyContent:
+                          "center",
+                        borderRadius:
+                          "999px",
+                        padding:
+                          "6px 10px",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        whiteSpace:
+                          "nowrap",
+                        border: "1px solid",
+                        ...getDutyStyle(
+                          item.duty,
+                        ),
+                      }}
+                    >
+                      {item.duty ||
+                        t(
+                          "hsCatalogue.dutyUnavailable",
+                          "Not set",
+                        )}
+                    </span>
                   </Table.Td>
 
                   {/* Revision */}

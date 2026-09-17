@@ -14,7 +14,7 @@ public sealed record LocationChange(CustomsLocation Location, string Reason);
 public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
 public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, bool IncludeChildren, string EmployeeNumber, string Phone);
 public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
-public sealed record DecisionInput(Guid HsCodeId, Guid LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
+public sealed record DecisionInput(Guid HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
 public sealed record DecisionTransition(Guid Version, string Justification, string Outcome = "Approved");
 
 [ApiController, Route("api/workspace"), Authorize, ServiceFilter(typeof(WorkspaceExceptionFilter))]
@@ -224,7 +224,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     private async Task<IQueryable<ValuationDecision>> VisibleDecisions(CancellationToken ct)
     {
         var scope = await access.Locations(ct); var subject = access.UserId.ToString();
-        return db.ValuationDecisions.Where(d => access.IsSystem || d.LocationId != null && scope.Contains(d.LocationId.Value) && (access.Role == AccessRules.CustomsAdmin || d.OfficerSubjectId == subject));
+        return db.ValuationDecisions.Where(d =>
+            access.IsSystem ||
+            access.Role == AccessRules.CustomsAdmin && d.LocationId != null && scope.Contains(d.LocationId.Value) ||
+            access.Role == AccessRules.Officer && d.OfficerSubjectId == subject);
     }
     [HttpGet("decisions")]
     public async Task<IActionResult> Decisions(CancellationToken ct) => Ok(await (await VisibleDecisions(ct)).AsNoTracking().OrderByDescending(d => d.RecordedAt).Take(200).ToListAsync(ct));
@@ -235,9 +238,13 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     private async Task<IActionResult> SaveDecision(Guid? id, DecisionInput input, CancellationToken ct)
     {
         access.Require(AccessRules.Officer);
-        await access.RequireLocation(input.LocationId, true, ct);
-        var office = await db.CustomsLocations.FindAsync([input.LocationId], ct);
-        Validate(office!.SupportsValuation || office.SupportsInspection, "This office does not support valuation or inspection work.");
+        CustomsLocation? office = null;
+        if (input.LocationId.HasValue)
+        {
+            await access.RequireLocation(input.LocationId.Value, true, ct);
+            office = await db.CustomsLocations.FindAsync([input.LocationId.Value], ct);
+            Validate(office!.SupportsValuation || office.SupportsInspection, "This office does not support valuation or inspection work.");
+        }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
         Validate(input.Justification.Trim().Length >= 10 && !string.IsNullOrWhiteSpace(input.Decision) && input.Evidence.Trim().Length >= 10, "Record the decision, evidence references and a meaningful justification.");
         Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId, ct), "Select a valid HS code.");
@@ -247,7 +254,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         JsonElement? before = id == null ? null : JsonSerializer.SerializeToElement(entity);
         var all = await db.CustomsLocations.AsNoTracking().ToListAsync(ct); var hierarchy = new List<object>(); var current = office; var seen = new HashSet<Guid>();
         while (current != null && seen.Add(current.Id)) { hierarchy.Add(new { current.Id, current.OfficialCode, current.Name, current.ParentLocationId }); current = all.Find(l => l.Id == current.ParentLocationId); }
-        entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(hierarchy);
+        object locationSnapshot = hierarchy.Count == 0 ? new { scope = "UnassignedOfficerWorkspace" } : hierarchy;
+        entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(locationSnapshot);
         entity.HsCodeId = input.HsCodeId; entity.SelectedReferenceValue = input.SelectedReferenceValue; entity.Currency = input.Currency!;
         entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification.Trim(); entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.

@@ -65,7 +65,7 @@ function EvidenceTrend({ international, local, internationalCurrency }: { intern
   </section>;
 }
 
-function OfficerEvidenceWorkspace() {
+function OfficerEvidenceWorkspace({ profile }: { profile: WorkspaceProfile }) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
@@ -74,6 +74,10 @@ function OfficerEvidenceWorkspace() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EvidenceSource>("internationalMedian");
   const [customValue, setCustomValue] = useState("");
+  const [hsCode, setHsCode] = useState("");
+  const [justification, setJustification] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [recordNotice, setRecordNotice] = useState("");
   const currency = ({ us: "USD", gb: "GBP", de: "EUR", ae: "AED", za: "ZAR" } as Record<string, string>)[market] ?? "USD";
 
   async function search(event: FormEvent<HTMLFormElement>) {
@@ -97,6 +101,9 @@ function OfficerEvidenceWorkspace() {
     ]);
     if (internationalResult.status === "fulfilled") setInternational(internationalResult.value);
     if (localResult.status === "fulfilled") setLocal(localResult.value);
+    if (internationalResult.status === "fulfilled" && internationalResult.value.statistics) setSelected("internationalMedian");
+    else if (localResult.status === "fulfilled" && localResult.value.statistics) setSelected("localMedian");
+    else setSelected("custom");
     if (internationalResult.status === "rejected" && localResult.status === "rejected") setError(internationalResult.reason instanceof Error ? internationalResult.reason.message : "Price evidence could not be loaded.");
     else if (internationalResult.status === "rejected") setError("International evidence is unavailable. Local results are shown below.");
     else if (localResult.status === "rejected") setError("Local-market evidence is unavailable. International results are shown below.");
@@ -105,12 +112,50 @@ function OfficerEvidenceWorkspace() {
 
   const selectedValue = selected === "internationalMedian" ? international?.statistics?.median : selected === "internationalMean" ? international?.statistics?.mean : selected === "localMedian" ? local?.statistics?.median : Number(customValue);
   const selectedCurrency = selected === "localMedian" ? "ETB" : currency;
-  const canDecide = selected === "custom" ? Number(selectedValue) > 0 : selectedValue != null;
   const hasResults = international || local;
+
+  async function recordDecision() {
+    const normalizedHsCode = hsCode.replace(/\D/g, "");
+    const parsedSelectedValue = Number(selectedValue);
+
+    if (!Number.isFinite(parsedSelectedValue) || parsedSelectedValue <= 0) { setError("Select a valid reference value before recording the decision."); return; }
+    if (![6, 8].includes(normalizedHsCode.length)) { setError("Enter the six-digit HS code for this product before recording the decision."); return; }
+    if (justification.trim().length < 10) { setError("Enter at least 10 characters of valuation justification."); return; }
+
+    setRecording(true); setError(""); setRecordNotice("");
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+      const response = await fetch(`${base}/api/hs-codes?search=${encodeURIComponent(normalizedHsCode)}&page=1&pageSize=20`, { headers: { Authorization: `Bearer ${getSessionAccessToken()}` } });
+      if (!response.ok) throw new Error("HS code lookup failed. Check the code and API connection.");
+      const hsResults = await response.json() as { items: { id: string; code: string }[] };
+      const hs = hsResults.items.find(item => item.code.replaceAll(".", "") === normalizedHsCode.slice(0, 6));
+      if (!hs) throw new Error("Select an exact HS code from the Ethiopian tariff catalogue.");
+
+      const assignedLocationId = profile.locations.find(location =>
+        location.id === profile.user.primaryLocationId &&
+        location.status === "ACTIVE" &&
+        (location.supportsValuation || location.supportsInspection)
+      )?.id ?? null;
+
+      await workspaceApi("/decisions", { method: "POST", body: JSON.stringify({
+        hsCodeId: hs.id,
+        locationId: assignedLocationId,
+        selectedReferenceValue: parsedSelectedValue,
+        currency: selectedCurrency,
+        decision: `Reference value selected from Overview search: ${query.trim()}`,
+        justification: justification.trim(),
+        evidence: `Overview evidence search for “${query.trim()}”; selected ${selected.replace(/([A-Z])/g, " $1").trim()}. ${profile.user.primaryLocationId ? "Assigned office was unavailable for valuation; saved in the officer workspace." : "Saved in the officer workspace without an office assignment."}`,
+        version: null,
+      }) });
+      setRecordNotice("Valuation draft saved. Opening your valuation decisions…");
+      window.setTimeout(() => window.location.assign("/valuation-decisions"), 700);
+    } catch (exception) { setError(exception instanceof Error ? exception.message : "The valuation decision could not be saved."); }
+    finally { setRecording(false); }
+  }
   return <section className="overview-evidence-workspace">
     <section className="officer-search-hero"><div><span>VALUATION EVIDENCE SEARCH</span><h2>What product are you valuing?</h2><p>Search international and Ethiopian market evidence together, then select the reference basis for your decision.</p></div><form onSubmit={search}><FiSearch /><input aria-label="Product description" placeholder="e.g. Apple iPhone 13 128GB" value={query} onChange={event => setQuery(event.currentTarget.value)} required /><select aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}><option value="us">US · USD</option><option value="gb">UK · GBP</option><option value="de">Germany · EUR</option><option value="ae">UAE · AED</option><option value="za">South Africa · ZAR</option></select><button type="submit" disabled={busy}>{busy ? "Searching…" : <>Search <FiArrowRight /></>}</button></form><div className="officer-search-links"><Link href="/international-prices"><FiGlobe />International details</Link><Link href="/local-prices"><FiShoppingBag />Ethiopian details</Link></div></section>
     {error && <p className="evidence-search-notice" role="status">{error}</p>}
-    {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="International statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local Ethiopian statistics" icon={<FiMapPin />} stats={local?.statistics ?? null} currency="ETB" tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && local?.statistics && currency === "ETB" ? <><b>{(((local.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median compared with the international median.</p></> : <><b>Source currencies differ</b><p>Use an approved exchange rate before comparing {currency} with ETB.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={local?.statistics ?? null} internationalCurrency={currency} /></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Valuation decision</h3><p>Select the reference price basis, then record a justified decision.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records</small></span><b>{money(local?.statistics?.median, "ETB")}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different reference value</strong><small>Requires documented evidence</small></span></label>{selected === "custom" && <input className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder="Reference value" value={customValue} onChange={event => setCustomValue(event.target.value)} />}</div><div className="selected-reference"><span>Selected reference value</span><b>{money(selectedValue, selectedCurrency)}</b></div><Link className={`valuation-record-link ${canDecide ? "" : "is-disabled"}`} href={canDecide ? "/valuation-decisions" : "#"} onClick={event => { if (!canDecide) event.preventDefault(); }}><FiFileText />Record valuation decision</Link><small className="decision-disclaimer">You will select the HS code, office and audited justification in the decision workspace.</small></aside></div>}
+    {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="International statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local Ethiopian statistics" icon={<FiMapPin />} stats={local?.statistics ?? null} currency="ETB" tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && local?.statistics && currency === "ETB" ? <><b>{(((local.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median compared with the international median.</p></> : <><b>Source currencies differ</b><p>Use an approved exchange rate before comparing {currency} with ETB.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={local?.statistics ?? null} internationalCurrency={currency} /></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Valuation decision</h3><p>Select the reference price basis, then record a justified decision.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records</small></span><b>{money(local?.statistics?.median, "ETB")}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different reference value</strong><small>Requires documented evidence</small></span></label>{selected === "custom" && <input className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder="Reference value" value={customValue} onChange={event => setCustomValue(event.target.value)} />}</div><div className="overview-decision-fields"><label>HS code<input value={hsCode} onChange={event => setHsCode(event.target.value)} placeholder="e.g. 851713" inputMode="numeric" /></label><label>Decision justification<textarea value={justification} onChange={event => setJustification(event.target.value)} placeholder="Explain why this reference value is appropriate…" rows={3} /></label></div><div className="selected-reference"><span>Selected reference value</span><b>{money(selectedValue, selectedCurrency)}</b></div><button className="valuation-record-link" type="button" disabled={recording} onClick={() => void recordDecision()}><FiFileText />{recording ? "Saving valuation decision…" : "Record valuation decision"}</button>{recordNotice && <small className="decision-save-notice">{recordNotice}</small>}<small className="decision-disclaimer">The decision is saved as your officer-owned draft with an audited justification. Add an office later before submission for formal review.</small></aside></div>}
   </section>;
 }
 
@@ -146,7 +191,7 @@ function OfficerDashboard({ data, profile }: { data: WorkspaceDashboard; profile
   const recent = data.decisions[0];
   return <>
     <DashboardHeader profile={profile} eyebrow="Officer operations" title={`Welcome, ${profile.user.fullName.split(" ")[0]}`} description="Find the product, examine price evidence, investigate anomalies, and record a defensible valuation decision." />
-    <OfficerEvidenceWorkspace />
+    <OfficerEvidenceWorkspace profile={profile} />
     <KpiGrid data={data} />
     <div className="dashboard-main-grid officer-dashboard-grid">
       <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">Operational workload</p><h2>My valuation cases</h2><span>Saved, submitted, returned, and approved decisions</span></div><Link href="/valuation-decisions">Open workspace <FiArrowRight /></Link></div><DecisionTable data={data} /></section>
