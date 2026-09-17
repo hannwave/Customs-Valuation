@@ -128,8 +128,47 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
     {
         b.ToTable("valuation_decisions"); b.HasKey(x => x.Id);
         b.Property(x => x.SelectedReferenceValue).HasPrecision(24, 8);
+        b.Property(x => x.InitialDuty).HasPrecision(24, 8);
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Evidence).WithOne().HasForeignKey(x => x.DecisionId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<ValuationPhase2>
+{
+    public void Configure(EntityTypeBuilder<ValuationPhase2> b)
+    {
+        b.ToTable("valuation_phase2"); b.HasKey(x => x.Id);
+        b.HasIndex(x => x.ValuationDecisionId).IsUnique();
+        b.Property(x => x.InitialDutyAmount).HasPrecision(24, 8);
+        b.Property(x => x.ExchangeRate).HasPrecision(24, 12);
+        b.Property(x => x.ExemptionAmount).HasPrecision(24, 8);
+        b.Property(x => x.WaiverAmount).HasPrecision(24, 8);
+        b.Property(x => x.ManualAdjustmentAmount).HasPrecision(24, 8);
+        b.Property(x => x.TotalAdditionalTax).HasPrecision(24, 8);
+        b.Property(x => x.FinalAmount).HasPrecision(24, 8);
+        b.Property(x => x.InitialDutyCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.TargetCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.Status).HasMaxLength(30).IsRequired();
+        b.Property(x => x.CalculationRuleVersion).HasMaxLength(80).IsRequired();
+        b.HasOne<ValuationDecision>().WithOne().HasForeignKey<ValuationPhase2>(x => x.ValuationDecisionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.OriginalHsCodeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.SelectedHsCodeId).OnDelete(DeleteBehavior.Restrict);
+        b.HasMany(x => x.TaxLines).WithOne().HasForeignKey(x => x.ValuationPhase2Id).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class ValuationPhase2TaxLineConfiguration : IEntityTypeConfiguration<ValuationPhase2TaxLine>
+{
+    public void Configure(EntityTypeBuilder<ValuationPhase2TaxLine> b)
+    {
+        b.ToTable("valuation_phase2_tax_lines"); b.HasKey(x => x.Id);
+        b.Property(x => x.Value).HasPrecision(24, 8);
+        b.Property(x => x.BaseAmount).HasPrecision(24, 8);
+        b.Property(x => x.CalculatedAmount).HasPrecision(24, 8);
+        b.Property(x => x.Name).HasMaxLength(120).IsRequired();
+        b.Property(x => x.CalculationType).HasMaxLength(30).IsRequired();
+        b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.CalculationBasis).HasMaxLength(40).IsRequired();
+        b.HasIndex(x => new { x.ValuationPhase2Id, x.Order });
     }
 }
 public sealed class EvidenceConfiguration : IEntityTypeConfiguration<DecisionEvidence>

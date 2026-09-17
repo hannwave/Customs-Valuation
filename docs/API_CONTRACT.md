@@ -1,6 +1,6 @@
 # API contract skeleton
 
-Base URL in development: `http://localhost:5080`. JSON uses camelCase. All business routes require authenticated, server-authorized access in the target system. Only the three HS demo reads permit anonymous synthetic data in Development. The current deny-only authentication adapter cannot accept credentials; protected shells return 401 until IAM is implemented, and then 501 until their workflow is built.
+Base URL in development: `http://localhost:5080`. JSON uses camelCase. All business routes require authenticated, server-authorized access. Only the three HS reads may permit anonymous synthetic data when demo mode is explicitly enabled in Development.
 
 ## Implemented read example
 
@@ -10,6 +10,13 @@ Base URL in development: `http://localhost:5080`. JSON uses camelCase. All busin
 | GET | `/api/hs-revisions` | Array of `id, name, number, effectiveDate, endDate, status` |
 | GET | `/api/hs-codes?search=&revisionId=&page=1&pageSize=20` | `items, totalCount, page, pageSize` |
 | GET | `/api/hs-codes/{id}` | HS DTO or 404 |
+| GET | `/api/valuation-decisions` | Officer-owned Phase 1 valuation cases |
+| POST | `/api/valuation-decisions` | Creates a Phase 1 handoff case and returns its case ID |
+| GET | `/api/valuation-decisions/{id}` | Officer-owned Phase 1 case or 404 |
+| GET | `/api/valuation-decisions/{id}/phase-2` | Phase 1 snapshot plus saved Phase 2 draft |
+| POST | `/api/valuation-decisions/{id}/phase-2/calculate` | Provisional Phase 2 calculation preview; does not persist |
+| PUT | `/api/valuation-decisions/{id}/phase-2` | Saves the Phase 2 draft and audit record |
+| POST | `/api/valuation-decisions/{id}/phase-2/complete` | Saves and completes Phase 2 |
 
 HS DTO: `id, revisionId, code, descriptionEn, descriptionAm`. Canonical codes are digit strings; dotted search is accepted. Page range is 1–100000, page size 1–100, search length at most 100; invalid query inputs return 400. Unknown revision filters produce an empty result. Errors use Problem Details. Cancellation tokens flow through handler and repository.
 
@@ -47,9 +54,6 @@ These are controller route declarations, not completed endpoints. Policies below
 | POST | `/api/integrations/itc/sync` | SystemAdministrator |
 | POST | `/api/integrations/wits/sync` | SystemAdministrator |
 | POST | `/api/integrations/nbe/exchange-rates/sync` | SystemAdministrator |
-| GET | `/api/valuation-decisions` | CustomsOfficer |
-| POST | `/api/valuation-decisions` | CustomsOfficer |
-| GET | `/api/valuation-decisions/{id}` | CustomsOfficer |
 | POST | `/api/local-prices` | CustomsAdministrator |
 | POST | `/api/hs-revisions` | CustomsAdministrator |
 | GET | `/api/price-sources` | CustomsAdministrator |
