@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiAlertTriangle, FiArrowRight, FiBookOpen, FiCheckCircle,
   FiChevronRight, FiFileText, FiGlobe, FiMapPin, FiSearch, FiShield,
-  FiShoppingBag, FiUserPlus, FiUsers,
+  FiShoppingBag, FiTrendingUp, FiUserPlus, FiUsers,
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
@@ -198,12 +198,20 @@ function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: 
   </>;
 }
 
-function OfficerDashboard({ profile }: { profile: WorkspaceProfile }) {
+function OfficerDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
+  const recent = data.decisions[0];
   const [phase, setPhase] = useState<Phase>("one");
   return <>
     <DashboardHeader profile={profile} eyebrow="Officer operations" title={`Welcome, ${profile.user.fullName.split(" ")[0]}`} description="Find the product, examine price evidence, investigate anomalies, and record a defensible valuation decision." />
     <PhaseBar phase={phase} onChange={setPhase} />
     {phase === "one" ? <OfficerEvidenceWorkspace profile={profile} /> : <PhaseTwoOverview />}
+    <KpiGrid data={data} />
+    <div className="dashboard-main-grid officer-dashboard-grid">
+      <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">Operational workload</p><h2>My valuation cases</h2><span>Saved, submitted, returned, and approved decisions</span></div><Link href="/valuation-decisions">Open workspace <FiArrowRight /></Link></div><DecisionTable data={data} /></section>
+      <section className="dashboard-panel"><div className="dashboard-panel-heading"><div><p className="eyebrow">Reference snapshot</p><h2>{recent?.hsCode ? `HS ${recent.hsCode}` : "Recent evidence"}</h2></div></div>{recent ? <div className="reference-snapshot"><div className="snapshot-product"><FiTrendingUp /><span><strong>{recent.product}</strong><small>Most recent decision</small></span></div><dl><div><dt>Selected value</dt><dd>{recent.currency} {recent.selectedReferenceValue.toLocaleString()}</dd></div><div><dt>Status</dt><dd><span className={`decision-status decision-status--${recent.status.toLowerCase()}`}>{recent.status}</span></dd></div><div><dt>Recorded</dt><dd>{new Date(recent.recordedAt).toLocaleDateString()}</dd></div></dl><p><FiAlertTriangle />Reference indicators support professional judgment; they never automatically invalidate a declared value.</p></div> : <DataState kind="empty" compact title="No recent decision" description="Search an HS code and create a valuation draft to build your history." />}</section>
+      <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">My recent activity</p><h2>Audit and decision history</h2></div><Link href="/audit">View history <FiArrowRight /></Link></div><AuditList data={data} /></section>
+      <section className="dashboard-panel"><div className="dashboard-panel-heading"><div><p className="eyebrow">My assignment</p><h2>Operational office</h2></div></div><div className="assignment-card"><FiMapPin /><strong>{data.locations.find(location => location.id === profile.user.primaryLocationId)?.displayName ?? "No primary office"}</strong><span>{data.locations.length} authorized location{data.locations.length === 1 ? "" : "s"}</span><small>{profile.user.employeeNumber || "Employee number not recorded"}</small></div></section>
+    </div>
   </>;
 }
 
@@ -232,5 +240,5 @@ export default function Dashboard() {
   if (!profile || !data) return <DataState kind="error" title="Dashboard unavailable" description={error} onRetry={() => void load()} />;
   if (data.role === "SystemAdministrator") return <SystemDashboard data={data} profile={profile} />;
   if (data.role === "CustomsAdministrator") return <AdminDashboard data={data} profile={profile} />;
-  return <OfficerDashboard profile={profile} />;
+  return <OfficerDashboard data={data} profile={profile} />;
 }
