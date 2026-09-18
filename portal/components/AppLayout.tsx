@@ -25,15 +25,21 @@ const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", k
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
 function navForRole(role: WorkspaceRole): NavGroup[] {
   if (role === "SystemAdministrator") return [
-    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
+    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid },
+      { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
+    ] },
+    { label: "LOCATION MANAGEMENT", links: [
+      { href: "/administration/regions", key: "regions", label: "Regions", icon: FiMapPin },
+      { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
+    ] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
     { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation oversight", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
-    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Scoped reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
   ];
   return [
@@ -52,7 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
-  const isAuthPage = pathname === "/login" || pathname === "/signup";
+  const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
@@ -90,8 +96,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, profile]);
 
   const visibleGroups = useMemo(() => profile ? navForRole(profile.user.role) : [], [profile]);
-  const current = visibleGroups.flatMap(group => group.links).find(link =>
-    link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`));
+  const current = visibleGroups.flatMap(group => group.links)
+    .filter(link => link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const primaryLocation = profile?.locations.find(location => location.id === profile.user.primaryLocationId);
 
   if (isAuthPage) return <>{children}</>;

@@ -27,13 +27,18 @@ public sealed class AuthAccountEntity
 public sealed class RegistrationRequestEntity
 {
     public Guid Id { get; set; }
+    public string Username { get; set; } = "";
     public string FullName { get; set; } = "";
     public string StaffId { get; set; } = "";
     public string Email { get; set; } = "";
     public string? Phone { get; set; }
     public string Department { get; set; } = "";
     public string Role { get; set; } = "";
+    public Guid? LocationId { get; set; }
     public string PasswordHash { get; set; } = "";
     public string Status { get; set; } = "Pending";
     public DateTimeOffset SubmittedAt { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
+    public string? ReviewedBy { get; set; }
+    public string? ReviewReason { get; set; }
 }

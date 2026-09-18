@@ -20,7 +20,7 @@ public sealed class ValuationDecisionsController(CustomsDbContext db) : Controll
         var subject = CurrentSubject();
         var username = User.Identity?.Name;
         var decisions = await db.ValuationDecisions.AsNoTracking()
-            .Where(x => string.IsNullOrEmpty(x.OfficerSubjectId) || x.OfficerSubjectId == subject || x.OfficerSubjectId == username)
+            .Where(x => x.HsCodeId != Guid.Empty && (string.IsNullOrEmpty(x.OfficerSubjectId) || x.OfficerSubjectId == subject || x.OfficerSubjectId == username))
             .OrderByDescending(x => x.RecordedAt).Take(100).ToListAsync(ct);
         var hsCodes = await db.HsCodes.AsNoTracking().Where(x => decisions.Select(d => d.HsCodeId).Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
         return Ok(decisions.Select(x => Map(x, hsCodes.GetValueOrDefault(x.HsCodeId)?.Code)));

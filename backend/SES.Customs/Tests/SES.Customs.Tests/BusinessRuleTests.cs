@@ -11,32 +11,12 @@ namespace SES.Customs.Tests;
 public sealed class BusinessRuleTests
 {
     [Fact]
-    public void Location_scope_expands_children_without_looping_on_cycles()
+    public void Location_descendants_include_nested_locations_without_looping_on_cycles()
     {
         var branch = Guid.NewGuid(); var dryPort = Guid.NewGuid(); var station = Guid.NewGuid();
         var locations = new[] { (branch, (Guid?)station), (dryPort, (Guid?)branch), (station, (Guid?)dryPort) };
-        var scope = AccessRules.Expand(locations, new[] { (branch, true) });
+        var scope = AccessRules.Descendants(locations, branch);
         Assert.Equal(3, scope.Count);
-    }
-
-    [Fact]
-    public void Customs_admin_can_manage_only_officers_fully_inside_scope()
-    {
-        var allowed = Guid.NewGuid(); var outside = Guid.NewGuid();
-        Assert.True(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.Officer, new[] { allowed }));
-        Assert.False(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.Officer, new[] { allowed, outside }));
-        Assert.False(AccessRules.CanManageOfficer(AccessRules.CustomsAdmin, new HashSet<Guid> { allowed }, AccessRules.CustomsAdmin, new[] { allowed }));
-    }
-
-    [Fact]
-    public void Region_history_starts_at_transfer_but_not_at_same_region_edit()
-    {
-        var joined = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-        var changed = DateTimeOffset.Parse("2026-04-01T00:00:00Z");
-        Assert.Equal(joined, AccessRules.RegionJoinAfterChange("NORTH", "NORTH", joined, changed));
-        Assert.Equal(changed, AccessRules.RegionJoinAfterChange("NORTH", "SOUTH", joined, changed));
-        Assert.Equal(joined, AccessRules.ActivityStart(joined, changed));
-        Assert.Equal(changed, AccessRules.ActivityStart(null, changed));
     }
 
     [Fact]

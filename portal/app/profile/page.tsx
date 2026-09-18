@@ -27,7 +27,7 @@ export default function ProfilePage() {
     try {
       const current = await workspaceApi<SelfProfile>("/profile");
       setProfile(current);
-      setForm({ username: current.user.username, email: current.user.email, fullName: current.user.fullName, phone: current.user.phone ?? "" });
+      setForm({ username: current.user.username ?? "", email: current.user.email, fullName: current.user.fullName, phone: current.user.phone ?? "" });
     } catch (ex) { setError(ex instanceof Error ? ex.message : t("profileLoadError", "Unable to load your profile.")); }
     finally { setLoading(false); }
   }, []);
@@ -98,11 +98,10 @@ export default function ProfilePage() {
       </div>
       <div className="assignment-lock-list">
         <h3><FiMapPin /> {t("profileAssignedLocations", "Assigned customs locations")}</h3>
-        {profile.assignments.length === 0 ? <DataState kind="empty" compact title={t("profileNoLocationAssignment", "No active location assignment")} description={t("profileLocationAssignmentDescription", "An administrator can assign customs locations from user administration.")} /> : profile.assignments.map(scope => <article key={scope.id} className="profile-locked-card">
-          <strong>{scope.location ? locationLabel(scope.location) : scope.customsLocationId}</strong>
-          <span>{scope.includeChildLocations ? t("profileIncludesChildLocations", "Includes child locations") : t("profileExactLocationOnly", "Exact location only")}</span>
-          <small>{scope.responsibilities || t("profileResponsibilitiesNotRecorded", "Responsibilities not recorded")}</small>
-        </article>)}
+        {!profile.location ? <DataState kind="empty" compact title={t("profileNoLocationAssignment", "No active location assignment")} description={t("profileLocationAssignmentDescription", "An administrator can assign customs locations from user administration.")} /> : <article className="profile-locked-card">
+          <strong>{locationLabel(profile.location)}</strong>
+          <span>{t("profileExactLocationOnly", "Primary location")}</span>
+        </article>}
       </div>
     </section>
   </div>;

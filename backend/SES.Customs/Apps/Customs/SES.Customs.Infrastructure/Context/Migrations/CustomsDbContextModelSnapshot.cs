@@ -28,6 +28,18 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("LocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasColumnType("text");
@@ -60,9 +72,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<Guid>("RecordId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("SubjectUserId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -76,8 +85,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasIndex("LocationId", "OccurredAt");
 
                     b.HasIndex("RecordId", "OccurredAt");
-
-                    b.HasIndex("SubjectUserId", "OccurredAt");
 
                     b.ToTable("audit_logs", (string)null);
                 });
@@ -250,6 +257,11 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.HasKey("Id");
 
@@ -860,15 +872,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<bool>("Active")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("ArchiveReason")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("ArchivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ArchivedBy")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -899,14 +902,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<Guid?>("PrimaryLocationId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset?>("RegionJoinedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RegionKey")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(60)
@@ -924,23 +919,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)");
 
-                    b.Property<Guid>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("EmployeeNumber");
-
                     b.HasIndex("PrimaryLocationId");
 
                     b.HasIndex("Username")
                         .IsUnique();
-
-                    b.HasIndex("RegionKey", "Status");
 
                     b.ToTable("AuthAccounts");
                 });
@@ -1142,47 +1129,11 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Username");
+
                     b.HasIndex("Status", "SubmittedAt");
 
                     b.ToTable("RegistrationRequests");
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("CustomsLocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("EffectiveFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("EffectiveTo")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IncludeChildLocations")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Responsibilities")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomsLocationId");
-
-                    b.HasIndex("UserId", "EffectiveTo");
-
-                    b.ToTable("customs_user_location_scopes", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.HistoricalCustomsPrice", b =>
@@ -1387,6 +1338,31 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.AuthAccountEntity", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
+                        .WithMany()
+                        .HasForeignKey("PrimaryLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocation", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
+                        .WithMany()
+                        .HasForeignKey("ParentLocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
+                        .WithMany()
+                        .HasForeignKey("CustomsLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2", b =>
                 {
                     b.HasOne("SES.Customs.Core.Models.HsCode", null)
@@ -1413,46 +1389,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .WithMany("TaxLines")
                         .HasForeignKey("ValuationPhase2Id")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.AuthAccountEntity", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("PrimaryLocationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocation", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("ParentLocationId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("CustomsLocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
-                {
-                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
-                        .WithMany()
-                        .HasForeignKey("CustomsLocationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

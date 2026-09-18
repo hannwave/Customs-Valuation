@@ -36,6 +36,17 @@ h3{font-size:18px;line-height:1.4}
 .language-select>svg{font-size:15px}
 
 .auth-page{min-height:100vh;display:grid;grid-template-columns:47% 53%;background:#f3f6fc}
+.compact-auth-page{display:block;background:linear-gradient(135deg,#eef4fb 0%,#f8fafc 55%,#e9f1fa 100%)}
+.compact-auth-page .auth-side{max-width:1360px;margin:0 auto;padding:22px 28px 30px;background:transparent}
+.compact-auth-page .auth-card{max-width:1240px;margin:22px auto 0;padding:0;background:transparent;border:0;box-shadow:none}
+.compact-auth-page .auth-card-brand{display:none}
+.compact-auth-header{display:flex;align-items:center;justify-content:center;gap:16px;margin:20px auto 6px;color:#6b7d93}
+.compact-auth-header .institution-brand{color:var(--navy)}
+.compact-auth-header .institution-brand .customs-logo{width:38px}
+.compact-auth-header .institution-brand strong{font-size:11px;letter-spacing:1.2px}
+.compact-auth-header .institution-brand small{font-size:8px;letter-spacing:2.4px;margin-top:2px}
+.compact-auth-header .institution-context{display:none}
+.compact-auth-header>span{border-left:1px solid #c8d4e2;padding-left:16px;font-size:12px;font-weight:600;letter-spacing:.3px}
 .auth-hero{position:sticky;top:0;height:100vh;min-height:800px;color:white;display:flex;flex-direction:column;padding:32px clamp(28px,4.5vw,76px);isolation:isolate;background:#153f6d url("/images/trade-terminal.webp") center 60%/cover}
 .auth-hero:before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(9,33,66,.91) 0%,rgba(11,47,89,.68) 48%,rgba(9,34,67,.35) 70%,rgba(9,31,59,.94) 100%)}
 .auth-hero:after{content:"";position:absolute;left:0;right:0;bottom:0;height:7px;background:repeating-linear-gradient(135deg,#f5cf27 0 2px,transparent 2px 9px);opacity:.65}
@@ -91,6 +102,43 @@ h3{font-size:18px;line-height:1.4}
 .registration-page .auth-side{padding-left:clamp(24px,3vw,48px);padding-right:clamp(24px,3vw,48px)}
 .signup-form h1{font-size:30px;margin:0 0 9px}
 .registration-note{margin:20px 0 25px}
+.paper-form{position:relative;background:#fffdf8;padding:26px 28px 28px;border:1px solid #d8d1c3;border-radius:3px;box-shadow:0 12px 28px #102a5612,0 2px 0 #cfc6b6;background-image:linear-gradient(#fffdf8,#fffdf8),repeating-linear-gradient(0deg,transparent 0 31px,#e9e1d5 32px);background-size:100% 100%,100% 32px}
+.compact-auth-page .paper-form{padding:30px 54px 26px;background-image:none;border-radius:12px;box-shadow:0 16px 40px #102a5614}
+.compact-auth-page .paper-form:before{display:none}
+.compact-auth-page .signup-form h1{font-size:28px}
+.compact-auth-page .paper-form-note{margin:14px 0 18px;padding:10px 13px}
+.compact-auth-page .field-group{margin-bottom:13px}
+.compact-auth-page .field-group>label{margin-bottom:6px}
+.compact-auth-page .field-group input,.compact-auth-page .field-group select{height:44px}
+.compact-auth-page .field-group select{cursor:pointer;background-color:#fffdf8;border:1px solid #a9bfd8;box-shadow:0 2px 0 #dce6f1;transition:border-color .15s,box-shadow .15s,background-color .15s}
+.compact-auth-page .field-group select:hover{border-color:#0d5eae;background-color:#f4f9ff;box-shadow:0 0 0 3px #0d5eae18}
+.compact-auth-page .field-group select:focus{border-color:#0d5eae;background-color:#fff;box-shadow:0 0 0 4px #0d5eae24}
+
+@media (max-width:900px){
+  .compact-auth-page .auth-side{max-width:100%;padding:18px 20px 24px}
+  .compact-auth-page .auth-card{max-width:100%}
+  .compact-auth-page .paper-form{padding:24px 28px 22px}
+}
+
+@media (max-width:640px){
+  .compact-auth-page .auth-side{padding:14px 12px 20px}
+  .compact-auth-page .auth-card{margin-top:12px}
+  .compact-auth-page .paper-form{padding:20px 16px 18px}
+  .compact-auth-page .form-grid{grid-template-columns:1fr;gap:0}
+  .compact-auth-page .wide{grid-column:auto}
+  .compact-auth-page .signup-form h1{font-size:24px}
+  .compact-auth-page .auth-subtitle{font-size:12px}
+  .compact-auth-header{margin:14px auto 4px}
+  .compact-auth-header>span{border-left:0;padding-left:0}
+}
+.compact-auth-page .form-section-label{margin-top:5px;padding:9px 0 3px}
+.compact-auth-page .password-requirements{margin:6px 0 10px;padding:8px 11px}
+.compact-auth-page .auth-register{margin-top:14px;padding-top:14px}
+.paper-form:before{content:"";position:absolute;top:0;bottom:0;left:18px;border-left:1px solid #e8b7b2;opacity:.75}
+.paper-form-note{display:flex;gap:12px;align-items:flex-start;margin:20px 0 25px;padding:14px 16px;background:#f4efe5;border:1px solid #dfd4c2;color:#4e6174;border-radius:2px;font-size:11px;line-height:1.7}
+.paper-form-note>svg{flex-shrink:0;color:var(--blue);font-size:18px;margin-top:2px}.paper-form-note strong{display:block;color:var(--navy);font-size:12px;margin-bottom:2px}.paper-form-note p{margin:0}
+.form-section-label{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 0 4px;border-top:1px solid #e8edf4;color:#183b63}.form-section-label>span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#183b63;color:#fff;font-weight:700}.form-section-label strong,.form-section-label small{display:block}.form-section-label small{margin-top:2px;color:var(--muted);font-size:12px}
+.paper-form .field-group>label{color:#334c68}.paper-form .field-group input,.paper-form .field-group select{background:#fffefb;border-radius:2px;border-color:#cfc7ba}.paper-form .field-group input:focus,.paper-form .field-group select:focus{border-color:var(--blue);box-shadow:0 0 0 3px #0d5eae18}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
 .wide{grid-column:1/-1}
 .password-requirements{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;background:var(--pale);border-radius:8px;color:#486589;font-size:11px;line-height:1.8;margin-bottom:15px}
@@ -726,6 +774,7 @@ h3{font-size:18px;line-height:1.4}
 .panel-heading p{font-size:13px;color:var(--muted);margin:0}
 .panel-heading button,.approve-button{border:1px solid #c7d9ee;background:var(--pale);color:var(--blue);font-size:12px;padding:10px 15px;border-radius:7px}
 .approve-button{background:var(--blue);color:white}
+.request-review-actions{display:grid;grid-template-columns:auto minmax(170px,1fr) auto;gap:8px;align-items:center;min-width:390px}.request-review-actions input{min-width:0;border:1px solid #d4deeb;border-radius:7px;padding:10px;font-size:11px}.danger-button{border-color:#e4bfc3!important;color:#9c3038!important;background:#fff5f5!important}
 .table-wrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
 th,td{text-align:left;padding:16px;border-bottom:1px solid #e5eaf1;font-size:13px}
@@ -1001,17 +1050,7 @@ tbody tr:hover{background:#f5f9fe}
 .decision-details dt{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#71839b;margin-bottom:7px}
 .decision-details dd{margin:0;font-size:12px;line-height:1.65;color:#324d6e;white-space:pre-wrap}
 .review-actions{display:grid;grid-template-columns:1fr auto;align-items:end;gap:14px;border-top:1px solid #e7edf4;padding-top:16px}
-.scope-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.scope-card{border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
-.scope-card h3{font-size:15px;margin:0 0 6px;color:var(--navy)}.scope-card>p{font-size:11px;line-height:1.6;color:var(--muted);margin:0 0 14px}
-.scope-list{display:grid;gap:6px;margin-bottom:13px}
-.scope-list>div{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#f5f8fc;border-radius:7px;padding:8px 10px;font-size:11px;color:#435b79}
-.scope-list button{border:0;background:transparent;color:#9c3038;font-size:11px}
-.scope-form{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.scope-form input,.scope-form select{width:100%;min-width:0;border:1px solid #d4deeb;border-radius:7px;padding:9px 10px;font-size:11px;color:var(--navy);background:#fff}
-.scope-form .inline-check{margin:0}.scope-form .primary-button{padding:9px 12px}
-
-@media(max-width:900px){.management-form{grid-template-columns:1fr}.management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:auto}.decision-details{grid-template-columns:1fr}.review-actions{grid-template-columns:1fr}.role-banner .badge{margin-left:0}.scope-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.management-form{grid-template-columns:1fr}.management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:auto}.decision-details{grid-template-columns:1fr}.review-actions{grid-template-columns:1fr}.role-banner .badge{margin-left:0}}
 @media(max-width:600px){.decision-card-heading{flex-direction:column}.page-heading{align-items:flex-start;flex-direction:column}.form-actions{justify-content:stretch}.form-actions>button{width:100%}.capability-fields{display:grid;grid-template-columns:1fr 1fr}}
 
 /* Role-specific dashboards share one visual system and change emphasis by authority. */
@@ -1077,6 +1116,15 @@ tbody tr:hover{background:#f5f9fe}
 .reference-snapshot{display:grid;gap:15px}.snapshot-product{display:flex;align-items:center;gap:11px;padding:13px;border-radius:9px;background:#edf5fd}.snapshot-product>svg{font-size:22px;color:var(--blue)}.snapshot-product span{display:grid;gap:3px}.snapshot-product strong{font-size:12px;color:var(--navy)}.snapshot-product small{font-size:9px;color:var(--muted)}
 .reference-snapshot dl{margin:0;display:grid;gap:1px}.reference-snapshot dl>div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #edf1f6}.reference-snapshot dt{font-size:10px;color:#6d8098}.reference-snapshot dd{margin:0;font-size:11px;font-weight:700;color:var(--navy)}.reference-snapshot>p{display:flex;gap:8px;margin:0;padding:10px;border-radius:7px;background:#fff7e5;color:#785a1c;font-size:9px;line-height:1.55}.reference-snapshot>p svg{flex-shrink:0;margin-top:2px}
 .assignment-card{display:grid;text-align:center;justify-items:center;padding:22px 10px;gap:7px}.assignment-card>svg{font-size:31px;color:var(--blue);margin-bottom:4px}.assignment-card strong{font-size:14px;color:var(--navy)}.assignment-card span{font-size:11px;color:#56708f}.assignment-card small{font-size:9px;color:#8c9bad}
+
+/* The compact employee form keeps its wide desktop canvas while collapsing cleanly on smaller screens. */
+@media(max-width:640px){
+  .compact-auth-page .auth-card,
+  .compact-auth-page.registration-page .auth-card{padding:0;max-width:100%}
+  .compact-auth-page .paper-form{padding:20px 16px 18px}
+  .compact-auth-page .form-grid{grid-template-columns:1fr;gap:0}
+  .compact-auth-page .wide{grid-column:auto}
+}
 
 @media(max-width:1280px){.dashboard-kpis{grid-template-columns:repeat(3,1fr)}.dashboard-main-grid{grid-template-columns:minmax(0,1.3fr) minmax(280px,1fr)}}
 @media(max-width:900px){.dashboard-heading{flex-direction:column}.dashboard-heading-side{align-items:flex-start}.dashboard-quick-actions{justify-content:flex-start}.dashboard-main-grid{grid-template-columns:1fr}.dashboard-panel--full{grid-column:auto}.activity-list{grid-template-columns:1fr}.valuation-workspace-grid{grid-template-columns:1fr}.valuation-decision-panel{order:-1}}

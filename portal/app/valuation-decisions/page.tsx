@@ -70,12 +70,12 @@ export default function ValuationDecisionsPage() {
     finally { setBusy(""); }
   }
 
-  if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying role and location scope to the decision register." />;
+  if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying your role and assigned location to the decision register." />;
   if (!profile) return <DataState kind="error" title="Decisions are unavailable" description={error} onRetry={() => void load()} />;
   const isOfficer = profile.user.role === "CustomsOfficer";
   const operationalLocations = profile.locations.filter(location => location.status === "ACTIVE" && (location.supportsValuation || location.supportsInspection));
   return <div className="management-page">
-    <div className="page-heading"><div><p className="eyebrow">Decision workflow</p><h1>Valuation decisions</h1><p className="lead">{isOfficer ? "Prepare evidence-based determinations and submit them for scoped review." : "Review submitted determinations from locations within your authorized scope."}</p></div><span className="workspace-tag"><FiFileText />{roleLabel(profile.user.role)}</span></div>
+    <div className="page-heading"><div><p className="eyebrow">Decision workflow</p><h1>Valuation decisions</h1><p className="lead">{isOfficer ? "Prepare evidence-based determinations and submit them for review." : "Review submitted determinations from your assigned locations."}</p></div><span className="workspace-tag"><FiFileText />{roleLabel(profile.user.role)}</span></div>
     {error && <DataState kind="error" compact title="Decision action failed" description={error} onRetry={() => void load()} />}
     {notice && <p className="management-notice" role="status">{notice}</p>}
 
@@ -94,8 +94,8 @@ export default function ValuationDecisionsPage() {
     </section>}
 
     <section className="admin-panel">
-      <div className="panel-heading"><div><h2>{isOfficer ? "My decisions" : "Scoped review queue"}</h2><p>{decisions.length} decision{decisions.length === 1 ? "" : "s"} visible under current access rules.</p></div></div>
-      {decisions.length === 0 ? <DataState kind="empty" compact title={isOfficer ? "No decisions recorded" : "No decisions in your scope"} description={isOfficer ? "Create the first draft above." : "Submitted officer decisions will appear here for review."} /> : <div className="decision-list">{decisions.map(decision => {
+      <div className="panel-heading"><div><h2>{isOfficer ? "My decisions" : "Assigned-location review queue"}</h2><p>{decisions.length} decision{decisions.length === 1 ? "" : "s"} visible under current access rules.</p></div></div>
+      {decisions.length === 0 ? <DataState kind="empty" compact title={isOfficer ? "No decisions recorded" : "No decisions in your assigned locations"} description={isOfficer ? "Create the first draft above." : "Submitted officer decisions will appear here for review."} /> : <div className="decision-list">{decisions.map(decision => {
         const hs = hsCodes[decision.hsCodeId]; const location = profile.locations.find(item => item.id === decision.locationId);
         const canReview = !isOfficer && decision.status === "Submitted"; const reason = reviewReasons[decision.id] ?? "";
         return <article className="decision-card" key={decision.id}><div className="decision-card-heading"><div><span className={`decision-status decision-status--${decision.status.toLowerCase()}`}>{decision.status}</span><h3>{hs ? `${hs.code} · ${hs.descriptionEn}` : `HS record ${decision.hsCodeId.slice(0, 8)}`}</h3><small>{location?.displayName ?? location?.name ?? "Historical location"} · {new Date(decision.recordedAt).toLocaleString()}</small></div><strong>{decision.currency} {decision.selectedReferenceValue.toLocaleString()}</strong></div>
