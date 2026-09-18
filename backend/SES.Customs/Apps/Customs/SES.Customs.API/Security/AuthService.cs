@@ -38,7 +38,12 @@ public sealed class AuthService(CustomsDbContext db)
 
     public static bool Verify(AuthUser user, string password)
     {
-        var parts = user.PasswordHash.Split('.', 3);
+        return VerifyHash(user.PasswordHash, password);
+    }
+
+    public static bool VerifyHash(string passwordHash, string password)
+    {
+        var parts = passwordHash.Split('.', 3);
         if (parts.Length != 3) return false;
         try { var salt = Convert.FromBase64String(parts[1]); var expected = Convert.FromBase64String(parts[2]); var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, 120_000, HashAlgorithmName.SHA256, expected.Length); return CryptographicOperations.FixedTimeEquals(actual, expected); }
         catch (FormatException) { return false; }

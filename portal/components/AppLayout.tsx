@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
   FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
-  FiShield, FiShoppingBag, FiUsers, FiX,
+  FiShield, FiShoppingBag, FiUser, FiUsers, FiX,
 } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
@@ -21,22 +21,26 @@ const evidenceLinks: NavLink[] = [
     { href: "/local-prices", key: "local", label: "Ethiopian prices", icon: FiShoppingBag },
     { href: "/historical-customs-prices", key: "historical", label: "Historical customs", icon: FiArchive },
 ];
+const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", key: "profile", label: "My profile", icon: FiUser }] };
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
 function navForRole(role: WorkspaceRole): NavGroup[] {
   if (role === "SystemAdministrator") return [
     { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
     { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation oversight", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
+    accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
     { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Scoped reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+    accountGroup,
   ];
   return [
     { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "My workspace", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "My valuation cases", icon: FiCheckSquare }] },
     { label: "PRICE ANALYSIS", links: evidenceLinks },
     { label: "REVIEW & HISTORY", links: [{ href: "/analytics", key: "analytics", label: "Statistics and trends", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Decision reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
+    accountGroup,
   ];
 }
 
@@ -64,6 +68,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       .then(setProfile)
       .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
   }, [pathname, isAuthPage]);
+  useEffect(() => {
+    if (isAuthPage || !authorized) return;
+    const refreshProfile = () => {
+      void workspaceApi<WorkspaceProfile>("/me")
+        .then(setProfile)
+        .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
+    };
+    window.addEventListener("profile-updated", refreshProfile);
+    return () => window.removeEventListener("profile-updated", refreshProfile);
+  }, [authorized, isAuthPage]);
 
   useEffect(() => {
     if (profile?.user.role === "CustomsAdministrator" && pathname === "/") {

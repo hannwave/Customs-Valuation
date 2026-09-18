@@ -923,6 +923,25 @@ tbody tr:hover{background:#f5f9fe}
 @keyframes data-spin{to{transform:rotate(360deg)}}
 @media(max-width:600px){.data-state{padding:26px 18px;min-height:210px}.data-state--compact{min-height:88px;padding:16px}.data-actions>button{flex:1;min-width:150px}}
 @media(prefers-reduced-motion:reduce){.data-spinner{animation:none}}
+
+/* Profile */
+.profile-page{width:100%;min-width:0}
+.profile-page>.page-heading{position:relative;padding:26px 30px 27px;margin-bottom:22px;border:1px solid #d8e5f3;border-radius:16px;background:linear-gradient(110deg,#fff 0%,#f5f9fe 100%);overflow:hidden}
+.profile-page>.page-heading:after{content:"";position:absolute;right:-42px;bottom:-66px;width:190px;height:190px;border:28px solid #dcebf9;border-radius:50%;opacity:.7}
+.profile-page>.page-heading>div,.profile-page>.page-heading>.workspace-tag{position:relative;z-index:1}
+.profile-page>.page-heading h1{margin-top:4px}.profile-page>.page-heading .lead{max-width:650px}
+.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start}
+.profile-panel{margin:0;box-shadow:0 4px 16px #102a5605}.profile-panel .panel-heading{align-items:flex-start}
+.profile-panel .panel-heading>svg{width:38px;height:38px;padding:10px;border-radius:11px;background:var(--pale);color:var(--blue);font-size:18px;flex-shrink:0}
+.profile-panel .management-form{gap:16px 18px}.profile-panel .management-form input{background:#fcfdff;transition:border-color .15s,box-shadow .15s,background .15s}.profile-panel .management-form input:focus{background:#fff;box-shadow:0 0 0 3px #0d5eae14}
+.profile-page>.admin-panel:last-child{margin-top:20px}
+.locked-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:23px}
+.locked-field{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;padding:15px 16px;border:1px solid #e0e8f1;border-radius:10px;background:#f7f9fc}.locked-field>svg{grid-row:1/3;color:#7891ad;font-size:18px}.locked-field span{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#7b8da3;font-weight:700}.locked-field strong{font-size:13px;color:var(--navy);margin-top:3px;overflow-wrap:anywhere}
+.assignment-lock-list{border-top:1px solid #e5ebf2;padding-top:20px}.assignment-lock-list h3{display:flex;align-items:center;gap:8px;color:var(--navy);font-size:14px;margin:0 0 13px}.assignment-lock-list h3 svg{color:var(--blue)}
+.profile-locked-card{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(150px,.8fr);gap:5px 16px;padding:14px 16px;border:1px solid #e0e8f1;border-radius:10px;background:#fbfcfe;margin-top:9px}.profile-locked-card strong{font-size:13px;color:var(--navy);overflow-wrap:anywhere}.profile-locked-card span,.profile-locked-card small{font-size:11px;color:var(--muted);line-height:1.6}.profile-locked-card small{grid-column:1/-1}
+.profile-page .management-notice{margin:0 0 20px}
+@media(max-width:900px){.profile-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.profile-page>.page-heading{padding:22px 20px}.locked-grid{grid-template-columns:1fr}.profile-locked-card{grid-template-columns:1fr}.profile-locked-card small{grid-column:auto}}
 @media(max-width:760px){.sidebar.is-open{position:fixed;top:74px;bottom:0;left:0;width:100%;z-index:30;overflow-y:auto;height:auto}
 .workspace-header{position:sticky;top:0;z-index:40}
 }
