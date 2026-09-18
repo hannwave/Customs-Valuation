@@ -25,19 +25,19 @@ const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", k
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
 function navForRole(role: WorkspaceRole): NavGroup[] {
   if (role === "SystemAdministrator") return [
-    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
+    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/dashboard", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
     { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation oversight", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/dashboard", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Scoped reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
   ];
   return [
-    { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "My workspace", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "My valuation cases", icon: FiCheckSquare }] },
+    { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "My workspace", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "My valuation cases", icon: FiCheckSquare }] },
     { label: "PRICE ANALYSIS", links: evidenceLinks },
     { label: "REVIEW & HISTORY", links: [{ href: "/analytics", key: "analytics", label: "Statistics and trends", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Decision reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
     accountGroup,
@@ -53,11 +53,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const isAuthPage = pathname === "/login" || pathname === "/signup";
+  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
     setMenuOpen(false);
-    if (isAuthPage) return;
+    if (isAuthPage || isPublicLanding) return;
     if (!getSessionAccessToken()) {
       window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
@@ -67,9 +68,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     void workspaceApi<WorkspaceProfile>("/me")
       .then(setProfile)
       .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
-  }, [pathname, isAuthPage]);
+  }, [pathname, isAuthPage, isPublicLanding]);
   useEffect(() => {
-    if (isAuthPage || !authorized) return;
+    if (isAuthPage || isPublicLanding || !authorized) return;
     const refreshProfile = () => {
       void workspaceApi<WorkspaceProfile>("/me")
         .then(setProfile)
@@ -77,7 +78,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("profile-updated", refreshProfile);
     return () => window.removeEventListener("profile-updated", refreshProfile);
-  }, [authorized, isAuthPage]);
+  }, [authorized, isAuthPage, isPublicLanding]);
 
   useEffect(() => {
     if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
@@ -90,7 +91,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`));
   const primaryLocation = profile?.locations.find(location => location.id === profile.user.primaryLocationId);
 
-  if (isAuthPage) return <>{children}</>;
+  if (isAuthPage || isPublicLanding) return <>{children}</>;
   if (!authorized) return <div className="access-loading" role="status">{t("nav.loading", "Opening your workspace…")}</div>;
   return <div className="workspace">
     <a className="skip-link" href="#main-content">{t("nav.skip", "Skip to content")}</a>
