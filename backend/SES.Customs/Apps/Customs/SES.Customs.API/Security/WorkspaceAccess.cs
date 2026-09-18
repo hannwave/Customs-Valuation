@@ -52,15 +52,50 @@ public sealed class WorkspaceAccess(CustomsDbContext db, IHttpContextAccessor ht
         var assignments = await db.UserLocationScopes.Where(s => s.UserId == target.Id && s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now)).Select(s => s.CustomsLocationId).ToListAsync(ct);
         if (!AccessRules.CanManageOfficer(Role, await Locations(ct), target.Role, assignments))
             throw new WorkspaceException(403, "You can manage only officers whose assignments are entirely within your scope.");
+        var ownRegion = await ActorRegion(ct);
+        var targetRegion = target.PrimaryLocationId is Guid targetOffice ? await RegionKey(targetOffice, ct) : target.RegionKey;
+        if (ownRegion != null && ownRegion != targetRegion)
+            throw new WorkspaceException(403, "This officer belongs to another region.");
     }
-    public void Audit(string action, string module, Guid id, object? before, object? after, string reason, Guid? location = null)
+    public async Task<string?> ActorRegion(CancellationToken ct)
+    {
+        if (IsSystem) return null;
+        var actor = await db.AuthAccounts.AsNoTracking().SingleAsync(u => u.Id == UserId, ct);
+        var now = DateTimeOffset.UtcNow;
+        var offices = await db.UserLocationScopes.AsNoTracking().Where(s => s.UserId == UserId && s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now))
+            .Select(s => s.CustomsLocationId).Distinct().ToListAsync(ct);
+        if (actor.PrimaryLocationId is Guid primary && offices.Count == 0) offices.Add(primary);
+        var regions = new HashSet<string>();
+        foreach (var office in offices) regions.Add(await RegionKey(office, ct));
+        if (regions.Count > 1) throw new WorkspaceException(403, "Administrator scopes cross regions. Ask a System Administrator to correct the assignments.");
+        return regions.SingleOrDefault();
+    }
+    public async Task<string> RegionKey(Guid locationId, CancellationToken ct)
+    {
+        var all = await db.CustomsLocations.AsNoTracking().Select(l => new { l.Id, l.ParentLocationId, l.OfficialCode, l.Region }).ToListAsync(ct);
+        var current = all.FirstOrDefault(l => l.Id == locationId) ?? throw new WorkspaceException(400, "Location not found.");
+        var visited = new HashSet<Guid>();
+        while (visited.Add(current.Id))
+        {
+            if (!string.IsNullOrWhiteSpace(current.Region))
+            {
+                var key = current.Region.Trim().ToUpperInvariant();
+                Validate(key.Length <= 120, "Region names must be 120 characters or fewer.");
+                return key;
+            }
+            if (current.ParentLocationId is not Guid parent) break;
+            current = all.FirstOrDefault(l => l.Id == parent) ?? current;
+        }
+        return current.OfficialCode.Trim().ToUpperInvariant();
+    }
+    public void Audit(string action, string module, Guid id, object? before, object? after, string reason, Guid? location = null, Guid? subjectUserId = null)
     {
         db.AuditLogs.Add(new AuditLog {
             Id = Guid.NewGuid(), UserId = UserId.ToString(), Username = http.HttpContext?.User.Identity?.Name ?? "",
-            Action = action, Module = module, RecordId = id, LocationId = location, OccurredAt = DateTimeOffset.UtcNow,
+            Action = action, Module = module, RecordId = id, LocationId = location, SubjectUserId = subjectUserId ?? (module == "Users" ? id : null), OccurredAt = DateTimeOffset.UtcNow,
             PreviousValueJson = before == null ? null : JsonSerializer.Serialize(before), NewValueJson = after == null ? null : JsonSerializer.Serialize(after),
             Justification = reason, IpDeviceInformation = $"{http.HttpContext?.Connection.RemoteIpAddress} | {http.HttpContext?.Request.Headers.UserAgent}"
         });
     }
-    public static object PublicUser(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.EmployeeNumber, u.Phone, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };
+    public static object PublicUser(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.RegionKey, u.RegionJoinedAt, u.ArchivedAt, u.ArchivedBy, u.ArchiveReason, u.Version, u.EmployeeNumber, u.Phone, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };
 }

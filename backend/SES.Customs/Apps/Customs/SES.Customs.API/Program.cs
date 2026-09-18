@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using SES.Customs.API.Security;
@@ -65,6 +66,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ValidateIssuer = true, ValidIssuer = jwt["Issuer"], ValidateAudience = true, ValidAudience = jwt["Audience"],
         ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = System.Security.Claims.ClaimTypes.Name, RoleClaimType = System.Security.Claims.ClaimTypes.Role
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var rawId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? context.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(rawId, out var id)) { context.Fail("Invalid account."); return; }
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<SES.Customs.Infrastructure.Context.CustomsDbContext>();
+            if (!await accounts.AuthAccounts.AnyAsync(u => u.Id == id && u.Active && u.Status == "ACTIVE" && u.ArchivedAt == null))
+                context.Fail("Account is inactive.");
+        }
     };
 });
 builder.Services.AddAuthorization(options =>

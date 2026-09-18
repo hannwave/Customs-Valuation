@@ -52,7 +52,7 @@ public sealed class ValuationDecisionsController(CustomsDbContext db) : Controll
             OfficerSubjectId = CurrentSubject(), RecordedAt = DateTimeOffset.UtcNow
         };
         db.ValuationDecisions.Add(decision);
-        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = CurrentSubject(), Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow, Action = "PHASE_1_SAVED", Module = "Valuation", RecordId = decision.Id, NewValueJson = JsonSerializer.Serialize(new { decision.HsCodeId, decision.InitialDuty, decision.InitialDutyCurrency }), Justification = decision.Justification });
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = CurrentSubject(), SubjectUserId = Guid.TryParse(CurrentSubject(), out var officerId) ? officerId : null, Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow, Action = "PHASE_1_SAVED", Module = "Valuation", RecordId = decision.Id, NewValueJson = JsonSerializer.Serialize(new { decision.HsCodeId, decision.InitialDuty, decision.InitialDutyCurrency }), Justification = decision.Justification });
         await db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(Get), new { id = decision.Id }, Map(decision, null));
     }

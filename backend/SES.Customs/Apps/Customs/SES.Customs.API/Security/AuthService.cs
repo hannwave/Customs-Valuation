@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
 
 namespace SES.Customs.API.Security;
@@ -31,6 +32,7 @@ public sealed class AuthService(CustomsDbContext db)
         var user = await db.AuthAccounts.FindAsync([id], ct);
         if (user is null) return;
         user.LastLoginAt = DateTimeOffset.UtcNow;
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = id.ToString(), SubjectUserId = id, Username = user.Username, OccurredAt = user.LastLoginAt.Value, Action = "USER_SIGNED_IN", Module = "Users", RecordId = id, LocationId = user.PrimaryLocationId });
         await db.SaveChangesAsync(ct);
     }
 

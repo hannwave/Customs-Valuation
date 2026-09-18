@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,15 +13,16 @@ namespace SES.Customs.API.Controllers;
 
 public sealed record LocationChange(CustomsLocation Location, string Reason);
 public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
-public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, bool IncludeChildren, string EmployeeNumber, string Phone);
-public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
+public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, bool IncludeChildren, string EmployeeNumber, string Phone, string Reason);
+public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason, string FullName, string Email, string EmployeeNumber, string Phone, Guid Version);
+public sealed record EmployeeArchive(string Reason, Guid Version);
 public sealed record DecisionInput(Guid HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
 public sealed record DecisionTransition(Guid Version, string Justification, string Outcome = "Approved");
 
 [ApiController, Route("api/workspace"), Authorize, ServiceFilter(typeof(WorkspaceExceptionFilter))]
 public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess access) : ControllerBase
 {
-    public static readonly string[] LocationTypes = ["HEAD_OFFICE", "BRANCH_OFFICE", "CUSTOMS_STATION", "CHECKPOINT", "INSPECTION_POINT", "DRY_PORT", "AIRPORT", "CARGO_OFFICE", "INDUSTRIAL_PARK", "RAIL_STATION", "FREE_TRADE_ZONE", "SPECIAL_ECONOMIC_ZONE", "TAX_CENTER", "COORDINATION_OFFICE", "WAREHOUSE", "OTHER"];
+    public static readonly string[] LocationTypes = ["REGIONAL_STATE", "CHARTERED_CITY", "HEAD_OFFICE", "BRANCH_OFFICE", "CUSTOMS_STATION", "CHECKPOINT", "INSPECTION_POINT", "DRY_PORT", "AIRPORT", "CARGO_OFFICE", "INDUSTRIAL_PARK", "RAIL_STATION", "FREE_TRADE_ZONE", "SPECIAL_ECONOMIC_ZONE", "TAX_CENTER", "COORDINATION_OFFICE", "WAREHOUSE", "OTHER"];
     public static readonly string[] LocationStatuses = ["ACTIVE", "INACTIVE", "TEMPORARILY_CLOSED", "PLANNED", "ARCHIVED"];
 
     [HttpGet("me")]
@@ -40,11 +42,15 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         List<AuthAccountEntity> allUsers = access.Role == AccessRules.Officer ? [] : await db.AuthAccounts.AsNoTracking().OrderBy(u => u.FullName).ToListAsync(ct);
         var managedUsers = allUsers.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin &&
             AccessRules.CanManageOfficer(access.Role, scope, u.Role, grants.Where(g => g.UserId == u.Id).Select(g => g.CustomsLocationId))).ToList();
+        if (access.Role == AccessRules.CustomsAdmin)
+        {
+            var ownRegion = await OwnRegion(ct);
+            managedUsers = managedUsers.Where(u => ownRegion == null || u.RegionKey == ownRegion).ToList();
+        }
         var decisions = await (await VisibleDecisions(ct)).AsNoTracking().OrderByDescending(d => d.RecordedAt).Take(100).ToListAsync(ct);
         var hsIds = decisions.Select(d => d.HsCodeId).Distinct().ToList();
         var hsCodes = await db.HsCodes.AsNoTracking().Where(h => hsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
-        var auditQuery = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == access.UserId.ToString());
-        var audit = await auditQuery.OrderByDescending(a => a.OccurredAt).Take(8).ToListAsync(ct);
+        var audit = (await VisibleAudit(ct)).Take(8).ToList();
         var revision = await db.HsRevisions.AsNoTracking().OrderByDescending(r => r.EffectiveDate).ThenByDescending(r => r.Number).FirstOrDefaultAsync(ct);
         var activeHs = revision == null ? 0 : await db.HsCodes.CountAsync(h => h.RevisionId == revision.Id, ct);
         var sources = await db.PriceSources.AsNoTracking().OrderBy(s => s.Pool).ThenBy(s => s.Name).ToListAsync(ct);
@@ -68,12 +74,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                 new { key = "security", label = "Security alerts", value = securityAlerts.ToString("N0"), detail = "Suspended or locked", tone = securityAlerts > 0 ? "red" : "green" }
             ],
             AccessRules.CustomsAdmin => [
-                new { key = "locations", label = "Offices under my scope", value = activeLocations.ToString("N0"), detail = $"{locations.Count:N0} total visible", tone = "blue" },
-                new { key = "officers", label = "Active Officers", value = officers.ToString("N0"), detail = $"{managedUsers.Count:N0} managed accounts", tone = "teal" },
-                new { key = "pending", label = "Pending valuations", value = submitted.ToString("N0"), detail = "Awaiting review", tone = submitted > 0 ? "gold" : "green" },
-                new { key = "returned", label = "Returned valuations", value = returned.ToString("N0"), detail = "Sent back for correction", tone = returned > 0 ? "gold" : "green" },
-                new { key = "today", label = "Decisions today", value = todayCount.ToString("N0"), detail = "Across my scope", tone = "blue" },
-                new { key = "suspended", label = "Suspended accounts", value = managedUsers.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my scope", tone = "red" }
+                new { key = "officers", label = "Active officers", value = officers.ToString("N0"), detail = $"{managedUsers.Count:N0} managed accounts", tone = "teal" },
+                new { key = "suspended", label = "Suspended officers", value = managedUsers.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my region", tone = "gold" },
+                new { key = "archived", label = "Archived officers", value = managedUsers.Count(u => u.ArchivedAt != null).ToString("N0"), detail = "History retained", tone = "blue" },
+                new { key = "activity", label = "Recent audit events", value = audit.Count.ToString("N0"), detail = "Latest visible actions", tone = "blue" }
             ],
             _ => [
                 new { key = "pending", label = "My pending cases", value = ownPending.ToString("N0"), detail = "Draft or returned", tone = "blue" },
@@ -146,8 +150,18 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var grants = await db.UserLocationScopes.AsNoTracking().Where(s => s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now)).ToListAsync(ct);
         var ids = grants.Where(s => scope.Contains(s.CustomsLocationId)).Select(s => s.UserId).Distinct().ToList();
         var users = await db.AuthAccounts.AsNoTracking().Where(u => access.IsSystem || ids.Contains(u.Id)).OrderBy(u => u.FullName).ToListAsync(ct);
-        return Ok(users.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin && AccessRules.CanManageOfficer(access.Role, scope, u.Role, grants.Where(g => g.UserId == u.Id).Select(g => g.CustomsLocationId)))
+        var ownRegion = await OwnRegion(ct);
+        return Ok(users.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin && AccessRules.CanManageOfficer(access.Role, scope, u.Role, grants.Where(g => g.UserId == u.Id).Select(g => g.CustomsLocationId)) && (ownRegion == null || u.RegionKey == ownRegion))
             .Select(u => new { user = PublicUser(u), assignments = grants.Where(g => g.UserId == u.Id) }));
+    }
+    private async Task<string?> OwnRegion(CancellationToken ct)
+    {
+        return await access.ActorRegion(ct);
+    }
+    private async Task RequireOwnRegion(string region, CancellationToken ct)
+    {
+        var own = await OwnRegion(ct);
+        Validate(own == null || own == region, "Choose an office within your region.");
     }
     [HttpPost("employees")]
     public async Task<IActionResult> CreateEmployee(EmployeeCreate input, CancellationToken ct)
@@ -160,10 +174,16 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await access.RequireLocation(input.LocationId, true, ct);
         Validate(Regex.IsMatch(input.Username ?? "", "^[a-zA-Z0-9_.-]{3,120}$") && !string.IsNullOrWhiteSpace(input.FullName) && System.Net.Mail.MailAddress.TryCreate(input.Email, out _), "Provide a valid username, name and email.");
         Validate(Regex.IsMatch(input.Password ?? "", "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
-        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = input.Username!, FullName = input.FullName.Trim(), Email = input.Email.Trim().ToLowerInvariant(), Role = role!, Active = true, PasswordHash = AuthService.Hash(input.Password!), CreatedAt = DateTimeOffset.UtcNow, PrimaryLocationId = input.LocationId, EmployeeNumber = input.EmployeeNumber, Phone = input.Phone };
+        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this account creation in at least 10 characters.");
+        var number = (input.EmployeeNumber ?? "").Trim();
+        Validate(number.Length == 0 || !await db.AuthAccounts.AnyAsync(u => u.EmployeeNumber == number, ct), "Employee number is already in use.");
+        var now = DateTimeOffset.UtcNow;
+        var region = await access.RegionKey(input.LocationId, ct);
+        await RequireOwnRegion(region, ct);
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = input.Username!, FullName = input.FullName.Trim(), Email = input.Email.Trim().ToLowerInvariant(), Role = role!, Active = true, PasswordHash = AuthService.Hash(input.Password!), CreatedAt = now, PrimaryLocationId = input.LocationId, EmployeeNumber = number, Phone = (input.Phone ?? "").Trim(), RegionKey = region, RegionJoinedAt = now };
         db.AuthAccounts.Add(user);
-        db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, CreatedBy = access.UserId.ToString() });
-        access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), "Created account and initial office assignment.", input.LocationId);
+        db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, CreatedBy = access.UserId.ToString(), EffectiveFrom = now });
+        access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), input.Reason!.Trim(), input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
     [HttpPatch("employees/{id:guid}")]
@@ -174,9 +194,16 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Employee not found.");
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
+        Validate(user.ArchivedAt == null, "Archived employees cannot be edited.");
+        Validate(user.Version == input.Version, "This employee changed. Refresh before editing.");
         Validate(new[] { "ACTIVE", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
-        Validate(input.Reason.Trim().Length >= 10, "Explain this change in at least 10 characters.");
+        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
+        Validate(!string.IsNullOrWhiteSpace(input.FullName) && System.Net.Mail.MailAddress.TryCreate(input.Email, out _), "Provide a valid name and email.");
         await access.RequireLocation(input.LocationId, true, ct);
+        var newRegion = await access.RegionKey(input.LocationId, ct);
+        await RequireOwnRegion(newRegion, ct);
+        var number = (input.EmployeeNumber ?? "").Trim();
+        Validate(number.Length == 0 || !await db.AuthAccounts.AnyAsync(u => u.Id != id && u.EmployeeNumber == number, ct), "Employee number is already in use.");
         var before = PublicUser(user);
         var now = DateTimeOffset.UtcNow;
         var targetRole = AccessRules.NormalizeRole(user.Role);
@@ -184,39 +211,91 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var activeScopes = await db.UserLocationScopes.Where(s => s.UserId == id && (s.EffectiveTo == null || s.EffectiveTo > now)).ToListAsync(ct);
         if (targetRole == AccessRules.Officer)
         {
-            foreach (var old in activeScopes) old.EffectiveTo = now;
-            db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString() });
+            var current = activeScopes.SingleOrDefault(s => s.CustomsLocationId == input.LocationId);
+            if (current == null || activeScopes.Count != 1)
+            {
+                foreach (var old in activeScopes) old.EffectiveTo = now;
+                db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString(), EffectiveFrom = now });
+            }
+            else current.Responsibilities = input.Responsibilities;
         }
         else
         {
-            var scope = activeScopes.FirstOrDefault(s => s.CustomsLocationId == input.LocationId);
-            if (scope is null) db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString() });
-            else { scope.IncludeChildLocations = input.IncludeChildren; scope.Responsibilities = input.Responsibilities; }
+            if (user.RegionKey != newRegion)
+            {
+                foreach (var old in activeScopes) old.EffectiveTo = now;
+                db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString(), EffectiveFrom = now });
+            }
+            else
+            {
+                var scope = activeScopes.FirstOrDefault(s => s.CustomsLocationId == input.LocationId);
+                if (scope is null) db.UserLocationScopes.Add(new() { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString(), EffectiveFrom = now });
+                else { scope.IncludeChildLocations = input.IncludeChildren; scope.Responsibilities = input.Responsibilities; }
+            }
         }
-        user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
-        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason, input.LocationId);
+        user.RegionJoinedAt = AccessRules.RegionJoinAfterChange(user.RegionKey, newRegion, user.RegionJoinedAt, now);
+        user.RegionKey = newRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
+        user.FullName = input.FullName.Trim(); user.Email = input.Email.Trim().ToLowerInvariant(); user.EmployeeNumber = number; user.Phone = (input.Phone ?? "").Trim(); user.Version = Guid.NewGuid();
+        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason!, input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
+    }
+    [HttpPost("employees/{id:guid}/archive")]
+    public async Task<IActionResult> ArchiveEmployee(Guid id, EmployeeArchive input, CancellationToken ct)
+    {
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Employee not found.");
+        await access.RequireEmployee(user, ct);
+        Validate(id != access.UserId && user.ArchivedAt == null && user.Version == input.Version, "Employee changed or is already archived. Refresh before archiving.");
+        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain the archive in at least 10 characters.");
+        var before = PublicUser(user);
+        user.ArchivedAt = DateTimeOffset.UtcNow; user.ArchivedBy = access.UserId; user.ArchiveReason = input.Reason!.Trim();
+        user.Status = "ARCHIVED"; user.Active = false; user.UpdatedAt = user.ArchivedAt; user.Version = Guid.NewGuid();
+        access.Audit("USER_ARCHIVED", "Users", id, before, PublicUser(user), input.Reason, user.PrimaryLocationId);
+        await db.SaveChangesAsync(ct);
+        return Ok(PublicUser(user));
     }
     [HttpPost("employees/{id:guid}/scopes")]
     public async Task<IActionResult> AddScope(Guid id, ScopeChange input, CancellationToken ct)
     {
         access.Require(AccessRules.SystemAdmin);
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Account not found.");
         Validate(AccessRules.NormalizeRole(user.Role) is AccessRules.CustomsAdmin or AccessRules.Officer, "Scopes apply to Customs Administrators and Officers.");
         Validate(!input.IncludeChildren || AccessRules.NormalizeRole(user.Role) == AccessRules.CustomsAdmin, "Officers require explicit office assignments.");
         Validate(input.Reason.Trim().Length >= 10, "Explain the assignment in at least 10 characters.");
         await access.RequireLocation(input.LocationId, true, ct);
+        Validate(user.ArchivedAt == null, "Archived employees cannot receive assignments.");
+        var region = await access.RegionKey(input.LocationId, ct);
+        if (AccessRules.NormalizeRole(user.Role) == AccessRules.CustomsAdmin && user.RegionKey.Length > 0)
+            Validate(user.RegionKey == region, "A Customs Administrator may have scopes in only one region.");
+        var now = DateTimeOffset.UtcNow;
+        if (AccessRules.NormalizeRole(user.Role) == AccessRules.Officer)
+            Validate(!await db.UserLocationScopes.AnyAsync(s => s.UserId == id && s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now), ct), "An officer may have only one active office assignment. Use employee edit to transfer them.");
+        else
+            Validate(!await db.UserLocationScopes.AnyAsync(s => s.UserId == id && s.CustomsLocationId == input.LocationId && s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now), ct), "This administrator already has an active assignment to that office.");
         var grant = new UserLocationScope { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = input.Responsibilities, CreatedBy = access.UserId.ToString() };
-        db.UserLocationScopes.Add(grant); user.PrimaryLocationId ??= input.LocationId;
+        db.UserLocationScopes.Add(grant);
+        if (AccessRules.NormalizeRole(user.Role) == AccessRules.Officer) user.PrimaryLocationId = input.LocationId;
+        else user.PrimaryLocationId ??= input.LocationId;
+        user.RegionKey = region; user.RegionJoinedAt = now; user.Version = Guid.NewGuid();
         access.Audit("SCOPE_ASSIGNED", "Users", id, null, grant, input.Reason, input.LocationId);
-        await db.SaveChangesAsync(ct); return Ok(grant);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(grant);
     }
     [HttpDelete("employees/{id:guid}/scopes/{scopeId:guid}")]
     public async Task<IActionResult> RevokeScope(Guid id, Guid scopeId, [FromQuery] string reason, CancellationToken ct)
     {
         access.Require(AccessRules.SystemAdmin); Validate(reason.Trim().Length >= 10, "Explain the revocation.");
         var grant = await db.UserLocationScopes.SingleOrDefaultAsync(s => s.Id == scopeId && s.UserId == id, ct) ?? throw new WorkspaceException(404, "Scope not found.");
+        Validate(grant.EffectiveTo == null || grant.EffectiveTo > DateTimeOffset.UtcNow, "This assignment is already inactive.");
         var before = JsonSerializer.SerializeToElement(grant); grant.EffectiveTo = DateTimeOffset.UtcNow;
+        var user = await db.AuthAccounts.FindAsync([id], ct);
+        if (user != null && user.PrimaryLocationId == grant.CustomsLocationId)
+        {
+            var replacement = await db.UserLocationScopes.AsNoTracking().Where(s => s.UserId == id && s.Id != scopeId && s.EffectiveFrom <= DateTimeOffset.UtcNow && (s.EffectiveTo == null || s.EffectiveTo > DateTimeOffset.UtcNow)).FirstOrDefaultAsync(ct);
+            user.PrimaryLocationId = replacement?.CustomsLocationId;
+            if (replacement != null) user.RegionKey = await access.RegionKey(replacement.CustomsLocationId, ct);
+            user.Version = Guid.NewGuid();
+        }
         access.Audit("SCOPE_REVOKED", "Users", id, before, grant, reason, grant.CustomsLocationId);
         await db.SaveChangesAsync(ct); return NoContent();
     }
@@ -224,9 +303,12 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     private async Task<IQueryable<ValuationDecision>> VisibleDecisions(CancellationToken ct)
     {
         var scope = await access.Locations(ct); var subject = access.UserId.ToString();
+        var region = await OwnRegion(ct);
         return db.ValuationDecisions.Where(d =>
             access.IsSystem ||
-            access.Role == AccessRules.CustomsAdmin && d.LocationId != null && scope.Contains(d.LocationId.Value) ||
+            access.Role == AccessRules.CustomsAdmin && d.LocationId != null && scope.Contains(d.LocationId.Value) &&
+                db.AuthAccounts.Any(u => u.Id.ToString() == d.OfficerSubjectId && (u.Role == AccessRules.Officer || u.Role == "CUSTOMS_OFFICER") && u.RegionJoinedAt <= d.RecordedAt &&
+                    (region == null || u.RegionKey == region) && u.PrimaryLocationId != null && scope.Contains(u.PrimaryLocationId.Value)) ||
             access.Role == AccessRules.Officer && d.OfficerSubjectId == subject);
     }
     [HttpGet("decisions")]
@@ -261,7 +343,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
         entity.EvidenceNotes = input.Evidence.Trim();
         if (id == null) db.ValuationDecisions.Add(entity);
-        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, input.Justification, input.LocationId);
+        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, input.Justification, input.LocationId, access.UserId);
         await db.SaveChangesAsync(ct); return Ok(entity);
     }
     [HttpPost("decisions/{id:guid}/submit")]
@@ -272,7 +354,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(decision.OfficerSubjectId == access.UserId.ToString() && decision.Status == "Draft" && decision.Version == input.Version, "Only your current saved draft may be submitted.");
         await access.RequireLocation(decision.LocationId!.Value, true, ct);
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId, access.UserId); await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpPost("decisions/{id:guid}/review")]
     public async Task<IActionResult> Review(Guid id, DecisionTransition input, CancellationToken ct)
@@ -282,13 +364,57 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(decision.Status == "Submitted" && decision.Version == input.Version && input.Outcome is "Approved" or "Returned", "Only a current submitted decision may be approved or returned.");
         Validate(input.Justification.Trim().Length >= 10, "A review justification is required.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = input.Justification; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, input.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, input.Justification, decision.LocationId, Guid.TryParse(decision.OfficerSubjectId, out var officerId) ? officerId : null); await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpGet("audit")]
     public async Task<IActionResult> Audit(CancellationToken ct)
     {
-        var scope = await access.Locations(ct); var subject = access.UserId.ToString();
-        var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == subject);
-        return Ok(await query.OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct));
+        return Ok((await VisibleAudit(ct)).Take(200));
+    }
+    private async Task<List<AuditLog>> VisibleAudit(CancellationToken ct)
+    {
+        if (access.IsSystem) return await db.AuditLogs.AsNoTracking().OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct);
+        if (access.Role == AccessRules.Officer) return await db.AuditLogs.AsNoTracking().Where(a => a.UserId == access.UserId.ToString()).OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct);
+        var scope = await access.Locations(ct);
+        var now = DateTimeOffset.UtcNow;
+        var grants = await db.UserLocationScopes.AsNoTracking().Where(s => s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now)).ToListAsync(ct);
+        var users = await db.AuthAccounts.AsNoTracking().Where(u => u.Role == AccessRules.Officer || u.Role == "CUSTOMS_OFFICER").ToListAsync(ct);
+        var ownRegion = await OwnRegion(ct);
+        var permitted = users.Where(u => AccessRules.CanManageOfficer(access.Role, scope, u.Role, grants.Where(g => g.UserId == u.Id).Select(g => g.CustomsLocationId)) && (ownRegion == null || u.RegionKey == ownRegion))
+            .ToDictionary(u => u.Id, u => AccessRules.ActivityStart(u.RegionJoinedAt, u.CreatedAt));
+        var ids = permitted.Keys.ToList();
+        if (ids.Count == 0) return [];
+        var candidates = await db.AuditLogs.AsNoTracking().Where(a => a.SubjectUserId != null && ids.Contains(a.SubjectUserId.Value)).OrderByDescending(a => a.OccurredAt).Take(5000).ToListAsync(ct);
+        return candidates.Where(a => a.SubjectUserId is Guid id && a.OccurredAt >= permitted[id]).Take(200).ToList();
+    }
+    [HttpGet("employees/{id:guid}/audit")]
+    public async Task<IActionResult> EmployeeAudit(Guid id, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, [FromQuery] string? action, CancellationToken ct)
+        => Ok(await EmployeeAuditRows(id, from, to, action, ct));
+
+    [HttpGet("employees/{id:guid}/audit/export")]
+    public async Task<IActionResult> ExportEmployeeAudit(Guid id, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, [FromQuery] string? action, CancellationToken ct)
+    {
+        var rows = await EmployeeAuditRows(id, from, to, action, ct);
+        static string Cell(object? value)
+        {
+            var content = value?.ToString() ?? "";
+            if (content.Length > 0 && "=+-@\t\r".Contains(content[0])) content = "'" + content;
+            return "\"" + content.Replace("\"", "\"\"") + "\"";
+        }
+        var csv = new StringBuilder("OccurredAt,Action,Module,Actor,SubjectUserId,LocationId,Justification,PreviousValue,NewValue\r\n");
+        foreach (var row in rows) csv.AppendJoin(',', new object?[] { row.OccurredAt, row.Action, row.Module, row.Username, row.SubjectUserId, row.LocationId, row.Justification, row.PreviousValueJson, row.NewValueJson }.Select(Cell)).Append("\r\n");
+        return File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", $"employee-{id}-audit.csv");
+    }
+    private async Task<List<AuditLog>> EmployeeAuditRows(Guid id, DateTimeOffset? from, DateTimeOffset? to, string? action, CancellationToken ct)
+    {
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        var user = await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, ct) ?? throw new WorkspaceException(404, "Employee not found.");
+        await access.RequireEmployee(user, ct);
+        var joined = access.IsSystem ? DateTimeOffset.MinValue : AccessRules.ActivityStart(user.RegionJoinedAt, user.CreatedAt);
+        var lower = from > joined ? from.Value : joined;
+        var query = db.AuditLogs.AsNoTracking().Where(a => a.SubjectUserId == id && a.OccurredAt >= lower);
+        if (to.HasValue) query = query.Where(a => a.OccurredAt <= to.Value);
+        if (!string.IsNullOrWhiteSpace(action)) query = query.Where(a => a.Action == action);
+        return await query.OrderByDescending(a => a.OccurredAt).Take(1000).ToListAsync(ct);
     }
 }

@@ -43,4 +43,9 @@ public static class AccessRules
         NormalizeRole(actorRole) == SystemAdmin ||
         NormalizeRole(actorRole) == CustomsAdmin && NormalizeRole(targetRole) == Officer &&
         targetLocations.Any() && targetLocations.All(scope.Contains);
+
+    public static DateTimeOffset? RegionJoinAfterChange(string currentRegion, string nextRegion, DateTimeOffset? joinedAt, DateTimeOffset changedAt) =>
+        !string.Equals(currentRegion, nextRegion, StringComparison.Ordinal) ? changedAt : joinedAt;
+
+    public static DateTimeOffset ActivityStart(DateTimeOffset? joinedAt, DateTimeOffset createdAt) => joinedAt ?? createdAt;
 }

@@ -41,7 +41,10 @@ export function LoginForm() {
       if (!response.ok) throw new Error(body.message ?? t("auth.invalid", "Check your username and password and try again."));
       setSessionAccessToken(body.accessToken);
       const requestedPath = new URLSearchParams(window.location.search).get("next");
-      router.push(requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : "/");
+      const role = String(body.user?.role ?? "").replace(/[_ ]/g, "").toLowerCase();
+      const isCustomsAdministrator = role === "customsadministrator" || role === "customsadmin";
+      const safeRequestedPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : null;
+      router.push(isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/");
     } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.invalid", "Unable to sign in. Please try again.")); }
     finally { setBusy(false); }
   }

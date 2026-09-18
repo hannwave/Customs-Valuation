@@ -66,6 +66,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, isAuthPage]);
 
   useEffect(() => {
+    if (profile?.user.role === "CustomsAdministrator" && pathname === "/") {
+      window.location.replace("/administration");
+      return;
+    }
     if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
       window.location.replace("/");
     }

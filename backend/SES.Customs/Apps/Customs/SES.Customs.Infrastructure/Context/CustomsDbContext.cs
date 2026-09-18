@@ -44,8 +44,8 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
             e.HasOne<CustomsLocation>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Version).IsConcurrencyToken(); e.HasIndex(x => new { x.LocationId, x.Status });
         });
-        modelBuilder.Entity<AuditLog>().HasIndex(x => new { x.LocationId, x.OccurredAt });
-        modelBuilder.Entity<AuthAccountEntity>(entity => { entity.HasKey(x => x.Id); entity.HasIndex(x => x.Username).IsUnique(); entity.HasIndex(x => x.Email).IsUnique(); entity.Property(x => x.Username).HasMaxLength(120).IsRequired(); entity.Property(x => x.Email).HasMaxLength(240).IsRequired(); entity.Property(x => x.Role).HasMaxLength(60).IsRequired(); });
+        modelBuilder.Entity<AuditLog>(entity => { entity.HasIndex(x => new { x.LocationId, x.OccurredAt }); entity.HasIndex(x => new { x.SubjectUserId, x.OccurredAt }); });
+        modelBuilder.Entity<AuthAccountEntity>(entity => { entity.HasKey(x => x.Id); entity.HasIndex(x => x.Username).IsUnique(); entity.HasIndex(x => x.Email).IsUnique(); entity.HasIndex(x => x.EmployeeNumber); entity.HasIndex(x => new { x.RegionKey, x.Status }); entity.Property(x => x.Version).IsConcurrencyToken(); entity.Property(x => x.RegionKey).HasMaxLength(120); entity.Property(x => x.Username).HasMaxLength(120).IsRequired(); entity.Property(x => x.Email).HasMaxLength(240).IsRequired(); entity.Property(x => x.Role).HasMaxLength(60).IsRequired(); });
         modelBuilder.Entity<RegistrationRequestEntity>(entity => { entity.HasKey(x => x.Id); entity.HasIndex(x => new { x.Status, x.SubmittedAt }); entity.Property(x => x.Status).HasMaxLength(30).IsRequired(); entity.Property(x => x.Email).HasMaxLength(240).IsRequired(); });
     }
 }

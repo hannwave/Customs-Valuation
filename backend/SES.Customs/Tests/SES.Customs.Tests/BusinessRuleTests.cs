@@ -29,6 +29,17 @@ public sealed class BusinessRuleTests
     }
 
     [Fact]
+    public void Region_history_starts_at_transfer_but_not_at_same_region_edit()
+    {
+        var joined = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var changed = DateTimeOffset.Parse("2026-04-01T00:00:00Z");
+        Assert.Equal(joined, AccessRules.RegionJoinAfterChange("NORTH", "NORTH", joined, changed));
+        Assert.Equal(changed, AccessRules.RegionJoinAfterChange("NORTH", "SOUTH", joined, changed));
+        Assert.Equal(joined, AccessRules.ActivityStart(joined, changed));
+        Assert.Equal(changed, AccessRules.ActivityStart(null, changed));
+    }
+
+    [Fact]
     public void Price_analysis_permissions_are_exclusive_to_customs_officers()
     {
         var pricePermissions = new[] { "reference_prices.view", "local_prices.view", "historical_prices.view", "statistics.view", "trends.view", "country_analysis.view", "outliers.view" };

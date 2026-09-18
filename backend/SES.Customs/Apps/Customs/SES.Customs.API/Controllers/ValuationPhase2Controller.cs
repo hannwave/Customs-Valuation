@@ -72,7 +72,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         }
         db.AuditLogs.Add(new AuditLog
         {
-            Id = Guid.NewGuid(), UserId = CurrentSubject(), Username = User.Identity?.Name ?? "",
+            Id = Guid.NewGuid(), UserId = CurrentSubject(), SubjectUserId = Guid.TryParse(CurrentSubject(), out var officerId) ? officerId : null, Username = User.Identity?.Name ?? "",
             OccurredAt = DateTimeOffset.UtcNow, Action = status == "Completed" ? "PHASE_2_COMPLETED" : "PHASE_2_SAVED",
             Module = "ValuationPhase2", RecordId = phase2.Id, PreviousValueJson = previous,
             NewValueJson = JsonSerializer.Serialize(new { phase2.Status, phase2.FinalAmount, phase2.Version }),

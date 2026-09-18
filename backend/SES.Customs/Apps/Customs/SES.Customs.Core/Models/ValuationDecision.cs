@@ -40,6 +40,7 @@ public sealed class DecisionEvidence
 public sealed class AuditLog
 {
     public Guid? LocationId { get; set; }
+    public Guid? SubjectUserId { get; set; }
     public Guid Id { get; set; }
     public string UserId { get; set; } = "";
     public string Username { get; set; } = "";

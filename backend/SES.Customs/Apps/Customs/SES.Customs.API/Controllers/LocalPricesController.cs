@@ -178,7 +178,7 @@ public sealed class LocalPricesController(
         item.UpdatedAt = DateTimeOffset.UtcNow;
         db.AuditLogs.Add(new AuditLog
         {
-            Id = Guid.NewGuid(), UserId = item.ReviewedBy, Username = User.Identity?.Name ?? "unknown",
+            Id = Guid.NewGuid(), UserId = item.ReviewedBy, SubjectUserId = Guid.TryParse(item.ReviewedBy, out var reviewerId) ? reviewerId : null, Username = User.Identity?.Name ?? "unknown",
             OccurredAt = DateTimeOffset.UtcNow, Action = "LocalPriceClassificationOverride", Module = "LocalPrices",
             RecordId = item.Id, PreviousValueJson = JsonSerializer.Serialize(previous),
             NewValueJson = JsonSerializer.Serialize(new { item.ClassificationStatus, item.ManualReviewStatus, item.ReviewedBy, item.ReviewedAt, item.ReviewJustification }),

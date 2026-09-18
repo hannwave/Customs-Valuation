@@ -10,6 +10,12 @@ public sealed class AuthAccountEntity
     public bool Active { get; set; }
     public string Status { get; set; } = "ACTIVE";
     public Guid? PrimaryLocationId { get; set; }
+    public string RegionKey { get; set; } = "";
+    public DateTimeOffset? RegionJoinedAt { get; set; }
+    public DateTimeOffset? ArchivedAt { get; set; }
+    public Guid? ArchivedBy { get; set; }
+    public string? ArchiveReason { get; set; }
+    public Guid Version { get; set; } = Guid.NewGuid();
     public string EmployeeNumber { get; set; } = "";
     public string Phone { get; set; } = "";
     public DateTimeOffset? UpdatedAt { get; set; }

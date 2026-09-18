@@ -22,6 +22,8 @@ dotnet ef migrations add DescriptiveMigrationName `
 
 Apply reviewed migrations with `dotnet ef database update` using the same project, startup-project and context arguments. Never rewrite an already-applied shared migration; add a corrective migration instead.
 
+The regional employee/audit change is in `AddRegionalEmployeeAudit`. Before starting the updated API against a persistent database, set `ConnectionStrings__Customs` for that database and apply this migration. The design-time factory otherwise uses an inert localhost connection. Existing employees are backfilled with a conservative join boundary based on their latest active assignment; verify legacy transfers with the responsible System Administrator.
+
 ## HS-code import
 
 The System Administrator import endpoint accepts the Ethiopian tariff JSON file as multipart form data:
@@ -48,7 +50,7 @@ Development seed accounts are created only when the authentication table is empt
 ## Roles, locations and valuation workflow
 
 - **System Administrator:** global location registry, Customs Administrator and Officer accounts, HS/source/integration administration, global audit, and global valuation oversight.
-- **Customs Administrator:** Officers, assignments, activity, valuation reviews and audit records only inside explicitly assigned locations. Child offices are included only when the administrator's scope says so.
+- **Customs Administrator:** Officers, assignments, and employee activity in one region. Officer activity from before the most recent join to that region is not available to that administrator. Child offices are included only when the administrator's scope says so.
 - **Customs Officer:** HS and price evidence, personal valuation drafts/submissions, and their own audit activity. Officers cannot open administrative APIs.
 
 Bootstrap sequence:
@@ -59,6 +61,8 @@ Bootstrap sequence:
 4. Officers save drafts at `/valuation-decisions` and submit them.
 5. The scoped Customs Administrator records an approval or return with mandatory justification.
 6. Verify all changes at `/audit`; the API filters global, scoped, or own events according to role.
+
+The employee table at `/administration` supports search, profile edits, status and office changes, adding officers, and archiving (never hard deletion). Every change requires a reason. Select an officer's Activity action to filter their audit events, switch between table and timeline, or export CSV. The API endpoints are `GET /api/workspace/employees/{id}/audit`, `GET /api/workspace/employees/{id}/audit/export`, and `POST /api/workspace/employees/{id}/archive`. Region transfers reset the administrator-visible activity start time while preserving older records for system-level audit.
 
 Authorization is applied by the API. Hiding navigation links is only a usability feature and is not the security boundary.
 
