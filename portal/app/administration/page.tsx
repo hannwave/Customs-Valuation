@@ -33,11 +33,13 @@ export default function AdministrationPage() {
     setLoading(true); setError("");
     try {
       const current = await workspaceApi<WorkspaceProfile>("/me");
-      if (current.user.role !== "SystemAdministrator") throw new Error("Only System Administrators can review administrator applications or manage employee accounts.");
+      if (current.user.role === "CustomsOfficer") throw new Error("Customs Officers do not have user-administration access.");
       const employeeRows = await workspaceApi<EmployeeRecord[]>("/employees");
       let pending: RegistrationRequest[] = [];
-      const response = await authApi<{ requests: RegistrationRequest[] }>("/registration-requests");
-      pending = response.requests;
+      if (current.user.role === "SystemAdministrator") {
+        const response = await authApi<{ requests: RegistrationRequest[] }>("/registration-requests");
+        pending = response.requests;
+      }
       setProfile(current); setEmployees(employeeRows); setRequests(pending);
       setDrafts(Object.fromEntries(employeeRows.map(row => [row.user.id, {
         status: row.user.status || (row.user.active ? "ACTIVE" : "INACTIVE"),
@@ -81,7 +83,7 @@ export default function AdministrationPage() {
   if (!profile) return <DataState kind="error" title="Administration is unavailable" description={error} onRetry={() => void load()} />;
   const activeLocations = profile.locations.filter(location => location.status === "ACTIVE");
   return <div className="management-page">
-    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>User and access control</h1><p className="lead">Review employee registration requests and manage approved employee accounts.</p></div>
+    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>{profile.user.role === "SystemAdministrator" ? "User and access control" : "Employees and regional access"}</h1><p className="lead">{profile.user.role === "SystemAdministrator" ? "Review employee registration requests and manage approved employee accounts." : "Manage Customs Officers assigned within your region."}</p></div>
       {profile.user.role === "SystemAdministrator" && <Link className="primary-link" href="/administration/regions"><FiMapPin />Manage locations</Link>}
     </div>
     <div className="role-banner"><span className="badge">{roleLabel(profile.user.role)}</span><strong>{profile.user.role === "SystemAdministrator" ? "Nationwide authority" : `${profile.locations.length} assigned location${profile.locations.length === 1 ? "" : "s"}`}</strong><span>{profile.permissions.includes("users.manage_all") ? "May manage administrators and officers." : "May manage Customs Officers assigned to your location."}</span></div>

@@ -2,6 +2,13 @@ import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session
 
 export type WorkspaceRole = "SystemAdministrator" | "CustomsAdministrator" | "CustomsOfficer";
 export type LocationStatus = "ACTIVE" | "INACTIVE" | "TEMPORARILY_CLOSED" | "PLANNED" | "ARCHIVED";
+export function normalizeWorkspaceRole(value: unknown): WorkspaceRole | null {
+  const role = String(value ?? "").replace(/[\s_-]/g, "").toUpperCase();
+  if (role === "SYSTEMADMIN" || role === "SYSTEMADMINISTRATOR") return "SystemAdministrator";
+  if (role === "CUSTOMSADMIN" || role === "CUSTOMSADMINISTRATOR") return "CustomsAdministrator";
+  if (role === "CUSTOMSOFFICER") return "CustomsOfficer";
+  return null;
+}
 export interface WorkspaceUser { id: string; username?: string; email: string; fullName: string; role: WorkspaceRole; roleCode: string; active: boolean; status: string; primaryLocationId: string | null; employeeNumber: string; phone: string; createdAt?: string; updatedAt?: string | null; lastLoginAt?: string | null }
 export interface CustomsLocation { id: string; officialCode: string; name: string; displayName: string; locationType: string; parentLocationId: string | null; region: string; zone: string; cityWoreda: string; borderCountry: string; status: LocationStatus; effectiveFrom: string; effectiveTo: string | null; isEntryPoint: boolean; isExitPoint: boolean; supportsImport: boolean; supportsExport: boolean; supportsTransit: boolean; supportsValuation: boolean; supportsInspection: boolean; latitude: number | null; longitude: number | null; source: string; sourceReference: string; lastVerifiedAt: string | null; version: string }
 export interface WorkspaceProfile { user: WorkspaceUser; permissions: string[]; locations: CustomsLocation[]; locationTypes: string[]; locationStatuses: string[] }

@@ -203,23 +203,33 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpGet("employees")]
     public async Task<IActionResult> Employees(CancellationToken ct)
     {
-        access.Require(AccessRules.SystemAdmin);
-        var ownLocation = await db.AuthAccounts.AsNoTracking().Where(u => u.Id == access.UserId).Select(u => u.PrimaryLocationId).SingleOrDefaultAsync(ct);
-        var users = await db.AuthAccounts.AsNoTracking().Where(u => u.Role != AccessRules.SystemAdmin && (access.IsSystem || u.PrimaryLocationId == ownLocation)).OrderBy(u => u.FullName).ToListAsync(ct);
-        return Ok(users.Where(u => access.IsSystem && AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin)
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        var scope = await access.Locations(ct);
+        var query = db.AuthAccounts.AsNoTracking();
+        if (!access.IsSystem)
+            query = query.Where(u => u.PrimaryLocationId.HasValue && scope.Contains(u.PrimaryLocationId.Value));
+
+        // Role aliases are normalized in application code because EF cannot translate
+        // AccessRules.NormalizeRole into SQL. Keep the location restriction in SQL,
+        // then apply the role visibility rule to the small result set in memory.
+        var users = await query.OrderBy(u => u.FullName).ToListAsync(ct);
+        return Ok(users.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin &&
+                                   (access.IsSystem || AccessRules.NormalizeRole(u.Role) == AccessRules.Officer))
             .Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId }));
     }
     [HttpPost("employees")]
     public async Task<IActionResult> CreateEmployee(EmployeeCreate input, CancellationToken ct)
     {
-        access.Require(AccessRules.SystemAdmin);
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var role = AccessRules.NormalizeRole(input.Role);
-        Validate(role == AccessRules.Officer || access.IsSystem && role == AccessRules.CustomsAdmin, "Only system administrators can create Customs Administrators.");
+        Validate(role == AccessRules.Officer || access.IsSystem && role == AccessRules.CustomsAdmin, "Customs Administrators can create Customs Officers only.");
         await access.RequireLocation(input.LocationId, true, ct);
         Validate(Regex.IsMatch(input.Username ?? "", "^[a-zA-Z0-9_.-]{3,120}$") && !string.IsNullOrWhiteSpace(input.FullName) && System.Net.Mail.MailAddress.TryCreate(input.Email, out _), "Provide a valid username, name and email.");
         Validate(Regex.IsMatch(input.Password ?? "", "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
-        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = input.Username!, FullName = input.FullName.Trim(), Email = input.Email.Trim().ToLowerInvariant(), Role = role!, Active = true, PasswordHash = AuthService.Hash(input.Password!), CreatedAt = DateTimeOffset.UtcNow, PrimaryLocationId = input.LocationId, EmployeeNumber = input.EmployeeNumber, Phone = input.Phone };
+        var now = DateTimeOffset.UtcNow;
+        var region = await access.RegionKey(input.LocationId, ct);
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = input.Username!, FullName = input.FullName.Trim(), Email = input.Email.Trim().ToLowerInvariant(), Role = role!, Active = true, PasswordHash = AuthService.Hash(input.Password!), CreatedAt = now, PrimaryLocationId = input.LocationId, RegionKey = region, RegionJoinedAt = now, EmployeeNumber = input.EmployeeNumber?.Trim() ?? "", Phone = input.Phone?.Trim() ?? "" };
         db.AuthAccounts.Add(user);
         access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), "Created account and initial office assignment.", input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
@@ -227,18 +237,20 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpPatch("employees/{id:guid}")]
     public async Task<IActionResult> UpdateEmployee(Guid id, EmployeeChange input, CancellationToken ct)
     {
-        access.Require(AccessRules.SystemAdmin);
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Employee not found.");
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
         Validate(new[] { "ACTIVE", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
-        Validate(input.Reason.Trim().Length >= 10, "Explain this change in at least 10 characters.");
+        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
         await access.RequireLocation(input.LocationId, true, ct);
         var before = PublicUser(user);
         var now = DateTimeOffset.UtcNow;
-        user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
-        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason, input.LocationId);
+        var nextRegion = await access.RegionKey(input.LocationId, ct);
+        user.RegionJoinedAt = string.Equals(user.RegionKey, nextRegion, StringComparison.OrdinalIgnoreCase) ? user.RegionJoinedAt ?? now : now;
+        user.RegionKey = nextRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
+        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason!.Trim(), input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
 

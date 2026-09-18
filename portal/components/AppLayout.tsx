@@ -12,7 +12,7 @@ import {
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import { roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
+import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
 
 type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid };
 type NavGroup = { label: string; links: NavLink[] };
@@ -37,7 +37,7 @@ function navForRole(role: WorkspaceRole): NavGroup[] {
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
@@ -71,14 +71,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setAuthorized(true);
     setProfileError("");
     void workspaceApi<WorkspaceProfile>("/me")
-      .then(setProfile)
+      .then(current => {
+        const role = normalizeWorkspaceRole(current.user.role);
+        setProfile(role ? { ...current, user: { ...current.user, role } } : current);
+      })
       .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
   }, [pathname, isAuthPage]);
   useEffect(() => {
     if (isAuthPage || !authorized) return;
     const refreshProfile = () => {
       void workspaceApi<WorkspaceProfile>("/me")
-        .then(setProfile)
+        .then(current => {
+          const role = normalizeWorkspaceRole(current.user.role);
+          setProfile(role ? { ...current, user: { ...current.user, role } } : current);
+        })
         .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
     };
     window.addEventListener("profile-updated", refreshProfile);
@@ -86,7 +92,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [authorized, isAuthPage]);
 
   useEffect(() => {
-    if (profile?.user.role === "CustomsAdministrator" && pathname === "/") {
+    if (normalizeWorkspaceRole(profile?.user.role) === "CustomsAdministrator" && pathname === "/") {
       window.location.replace("/administration");
       return;
     }

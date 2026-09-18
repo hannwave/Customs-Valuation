@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiGlobe, FiLock, FiMapPin, FiShield, FiTruck, FiUser } from "react-icons/fi";
 import { setSessionAccessToken } from "@/lib/auth/session";
+import { normalizeWorkspaceRole } from "@/lib/workspace";
 import { Brand, CustomsLogo } from "@/components/Brand";
 export function LanguageSelect() {
   const { t, i18n } = useTranslation();
@@ -42,10 +43,10 @@ export function LoginForm() {
       if (!response.ok) throw new Error(body.message ?? t("auth.invalid", "Check your username and password and try again."));
       setSessionAccessToken(body.accessToken);
       const requestedPath = new URLSearchParams(window.location.search).get("next");
-      const role = String(body.user?.role ?? "").replace(/[_ ]/g, "").toLowerCase();
-      const isCustomsAdministrator = role === "customsadministrator" || role === "customsadmin";
+      const role = normalizeWorkspaceRole(body.user?.role);
+      const isCustomsAdministrator = role === "CustomsAdministrator";
       const safeRequestedPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : null;
-      router.push(isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/");
+      router.replace(isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/");
     } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.invalid", "Unable to sign in. Please try again.")); }
     finally { setBusy(false); }
   }
