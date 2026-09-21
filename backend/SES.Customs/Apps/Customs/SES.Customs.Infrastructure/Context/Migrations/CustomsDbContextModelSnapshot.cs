@@ -1047,7 +1047,12 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.HasIndex("ParentLocationId");
 
-                    b.ToTable("customs_locations", (string)null);
+                    b.ToTable("customs_locations", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_customs_locations_coordinates_complete", "(\"Latitude\" IS NULL AND \"Longitude\" IS NULL) OR (\"Latitude\" IS NOT NULL AND \"Longitude\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_customs_locations_coordinates_ethiopia", "\"Latitude\" IS NULL OR (\"Latitude\" >= 3.35 AND \"Latitude\" <= 14.95 AND \"Longitude\" >= 33.00 AND \"Longitude\" <= 48.05)");
+                            t.HasCheckConstraint("CK_customs_locations_location_type", "\"LocationType\" IN ('REGION', 'BRANCH')");
+                        });
                 });
 
             modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>

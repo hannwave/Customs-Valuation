@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { FiClock, FiEdit3, FiFilter, FiMapPin, FiPlus } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
+import LocationCoordinatesFieldset from "@/components/LocationCoordinatesFieldset";
+import { coordinateValidationMessage, hasRecordedEthiopianCoordinates, parseCoordinate } from "@/lib/location-coordinates";
 import { workspaceApi, type CustomsLocation, type LocationStatus, type WorkspaceProfile } from "@/lib/workspace";
 
 type LocationHistory = { id: string; changedAt: string; changedBy: string; changeReason: string };
@@ -13,6 +15,8 @@ type BranchForm = {
   displayName: string;
   parentLocationId: string;
   status: LocationStatus;
+  latitude: string;
+  longitude: string;
   effectiveFrom: string;
   effectiveTo: string | null;
   reason: string;
@@ -26,6 +30,8 @@ const blankBranch = (defaultRegionId = ""): BranchForm => ({
   displayName: "",
   parentLocationId: defaultRegionId,
   status: "ACTIVE",
+  latitude: "",
+  longitude: "",
   effectiveFrom: now(),
   effectiveTo: null,
   reason: "",
@@ -92,6 +98,8 @@ export default function BranchesPage() {
       displayName: branch.displayName,
       parentLocationId: branch.parentLocationId ?? "",
       status: branch.status,
+      latitude: branch.latitude?.toString() ?? "",
+      longitude: branch.longitude?.toString() ?? "",
       effectiveFrom: branch.effectiveFrom,
       effectiveTo: branch.effectiveTo,
       version: branch.version,
@@ -115,15 +123,21 @@ export default function BranchesPage() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
     setError("");
     setNotice("");
 
     if (!form.parentLocationId) {
       setError("Please select a parent region for this branch.");
-      setBusy(false);
       return;
     }
+
+    const coordinateError = coordinateValidationMessage(form.latitude, form.longitude, true);
+    if (coordinateError) {
+      setError(coordinateError);
+      return;
+    }
+
+    setBusy(true);
 
     try {
       const payload = {
@@ -135,6 +149,8 @@ export default function BranchesPage() {
           locationType: "BRANCH",
           parentLocationId: form.parentLocationId,
           status: form.status,
+          latitude: parseCoordinate(form.latitude),
+          longitude: parseCoordinate(form.longitude),
           effectiveFrom: form.effectiveFrom,
           effectiveTo: form.effectiveTo || null,
           version: form.version,
@@ -254,9 +270,9 @@ export default function BranchesPage() {
               </select>
             </label>
 
-            <label>
-              <span>Status</span>
-              <select
+          <label>
+            <span>Status</span>
+            <select
                 value={form.status}
                 onChange={e => setForm(v => ({ ...v, status: e.target.value as BranchForm["status"] }))}
               >
@@ -265,10 +281,17 @@ export default function BranchesPage() {
                 <option value="TEMPORARILY_CLOSED">TEMPORARILY_CLOSED</option>
                 <option value="PLANNED">PLANNED</option>
                 <option value="ARCHIVED">ARCHIVED</option>
-              </select>
-            </label>
+            </select>
+          </label>
 
-            <label>
+          <LocationCoordinatesFieldset
+            latitude={form.latitude}
+            longitude={form.longitude}
+            required
+            onChange={(field, value) => setForm(current => ({ ...current, [field]: value }))}
+          />
+
+          <label>
               <span>Effective from</span>
               <input
                 type="datetime-local"
@@ -357,6 +380,7 @@ export default function BranchesPage() {
                   <th>Display name</th>
                   <th>Region</th>
                   <th>Status</th>
+                  <th>Map position</th>
                   <th>Effective from</th>
                   <th>Actions</th>
                 </tr>
@@ -377,6 +401,11 @@ export default function BranchesPage() {
                       <td>
                         <span className={branch.status === "ACTIVE" ? "status-active" : "status-pending"}>
                           {branch.status.replaceAll("_", " ")}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={hasRecordedEthiopianCoordinates(branch.latitude, branch.longitude) ? "coordinate-status is-recorded" : "coordinate-status"}>
+                          {hasRecordedEthiopianCoordinates(branch.latitude, branch.longitude) ? "Recorded" : "Needed"}
                         </span>
                       </td>
                       <td><small>{new Date(branch.effectiveFrom).toLocaleDateString()}</small></td>

@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { FiClock, FiEdit3, FiMapPin, FiPlus } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
+import LocationCoordinatesFieldset from "@/components/LocationCoordinatesFieldset";
+import { coordinateValidationMessage, hasRecordedEthiopianCoordinates, parseCoordinate } from "@/lib/location-coordinates";
 import { workspaceApi, type CustomsLocation, type LocationStatus, type WorkspaceProfile } from "@/lib/workspace";
 
 type LocationHistory = { id: string; changedAt: string; changedBy: string; changeReason: string };
@@ -13,6 +15,8 @@ type RegionForm = {
   displayName: string;
   locationType: string;
   status: LocationStatus;
+  latitude: string;
+  longitude: string;
   effectiveFrom: string;
   effectiveTo: string | null;
   reason: string;
@@ -26,6 +30,8 @@ const blankRegion = (): RegionForm => ({
   displayName: "",
   locationType: "REGION",
   status: "ACTIVE",
+  latitude: "",
+  longitude: "",
   effectiveFrom: now(),
   effectiveTo: null,
   reason: "",
@@ -73,6 +79,8 @@ export default function RegionsPage() {
       displayName: region.displayName,
       locationType: region.locationType,
       status: region.status,
+      latitude: region.latitude?.toString() ?? "",
+      longitude: region.longitude?.toString() ?? "",
       effectiveFrom: region.effectiveFrom,
       effectiveTo: region.effectiveTo,
       version: region.version,
@@ -96,9 +104,16 @@ export default function RegionsPage() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
     setError("");
     setNotice("");
+
+    const coordinateError = coordinateValidationMessage(form.latitude, form.longitude, true);
+    if (coordinateError) {
+      setError(coordinateError);
+      return;
+    }
+
+    setBusy(true);
 
     try {
       const payload = {
@@ -110,6 +125,8 @@ export default function RegionsPage() {
           locationType: form.locationType,
           parentLocationId: null,
           status: form.status,
+          latitude: parseCoordinate(form.latitude),
+          longitude: parseCoordinate(form.longitude),
           effectiveFrom: form.effectiveFrom,
           effectiveTo: form.effectiveTo || null,
           version: form.version,
@@ -219,6 +236,13 @@ export default function RegionsPage() {
             </select>
           </label>
 
+          <LocationCoordinatesFieldset
+            latitude={form.latitude}
+            longitude={form.longitude}
+            required
+            onChange={(field, value) => setForm(current => ({ ...current, [field]: value }))}
+          />
+
           <label>
             <span>Effective from</span>
             <input
@@ -282,6 +306,7 @@ export default function RegionsPage() {
                   <th>Display name</th>
                   <th>Branches inside</th>
                   <th>Status</th>
+                  <th>Map position</th>
                   <th>Effective from</th>
                   <th>Actions</th>
                 </tr>
@@ -300,6 +325,11 @@ export default function RegionsPage() {
                       <td>
                         <span className={region.status === "ACTIVE" ? "status-active" : "status-pending"}>
                           {region.status}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={hasRecordedEthiopianCoordinates(region.latitude, region.longitude) ? "coordinate-status is-recorded" : "coordinate-status"}>
+                          {hasRecordedEthiopianCoordinates(region.latitude, region.longitude) ? "Recorded" : "Needed"}
                         </span>
                       </td>
                       <td><small>{new Date(region.effectiveFrom).toLocaleDateString()}</small></td>

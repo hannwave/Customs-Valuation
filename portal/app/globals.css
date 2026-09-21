@@ -1,3 +1,9 @@
+@import "leaflet/dist/leaflet.css";
+@import "@/styles/organization.css";
+@import "@/styles/hs-catalogue.css";
+@import "@/styles/hs-catalogue-polish.css";
+@import "@/styles/system-overview.css";
+
 :root{--navy:#102a56;--blue:#0d5eae;--pale:#eaf2fb;--ink:#172f50;--muted:#64748b;--line:#dce2ea;--surface:#fafbfe;--font:"Segoe UI","Noto Sans Ethiopic",Arial,sans-serif;color:var(--ink);background:var(--surface);font-family:var(--font);font-synthesis:none}
 
 *{box-sizing:border-box}
@@ -98,7 +104,7 @@ h3{font-size:18px;line-height:1.4}
 .back-link{display:inline-flex;gap:7px;align-items:center;font-size:12px;text-decoration:none}
 .auth-error{border:1px solid #efd2d2;background:#fff4f4;color:#a52e38;padding:13px 15px;border-radius:8px;font-size:13px;line-height:1.6}
 .auth-success{border:1px solid #c5e3d6;background:#eff9f3;color:#246444;padding:13px 15px;border-radius:8px}
-.registration-page .auth-card{margin:30px auto;max-width:590px;padding:32px}
+.registration-page .auth-card{margin:30px auto;max-width:990px;padding:32px}
 .registration-page .auth-side{padding-left:clamp(24px,3vw,48px);padding-right:clamp(24px,3vw,48px)}
 .signup-form h1{font-size:30px;margin:0 0 9px}
 .registration-note{margin:20px 0 25px}
@@ -1009,6 +1015,12 @@ tbody tr:hover{background:#f5f9fe}
 .management-form textarea,.review-actions textarea{resize:vertical}
 .management-form input:hover,.management-form select:hover,.management-form textarea:hover,.management-table input:hover,.management-table select:hover,.review-actions textarea:hover{border-color:#90adce}
 .management-form label small{font-weight:400;color:var(--muted);line-height:1.5}
+.coordinate-fields{min-width:0;margin:2px 0 0;padding:16px;border:1px solid #c9dfda;border-radius:11px;background:linear-gradient(135deg,#f7fcfa,#fbfdff)}
+.coordinate-fields legend{padding:0 7px;color:#166d61;font-size:12px;font-weight:700}.coordinate-fields legend span{margin-left:5px;color:#b5502d;font-size:9px;text-transform:uppercase;letter-spacing:.5px}
+.coordinate-fields>p{margin:0 0 13px;color:#617890;font-size:11px;line-height:1.55}.coordinate-input-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.coordinate-input-grid label{display:flex;flex-direction:column;gap:7px;min-width:0;color:#324d6e;font-size:12px;font-weight:600}.coordinate-input-grid input{width:100%;min-width:0;min-height:44px;border:1px solid #b9d8d1;border-radius:8px;background:#fff;color:var(--navy);padding:11px 12px;font-size:13px;line-height:1.45}.coordinate-input-grid input:focus{outline:0;border-color:#128775;box-shadow:0 0 0 3px #12877519}
+.coordinate-feedback{display:block;margin-top:10px;color:var(--muted);font-size:10px;line-height:1.45}.coordinate-feedback.is-ready{color:#176d55}.coordinate-feedback.is-warning{color:#9a5822}.coordinate-status{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid #ead7bd;border-radius:20px;background:#fff8ed;color:#92622e;font-size:10px;font-weight:700}.coordinate-status.is-recorded{border-color:#bee2d3;background:#eff9f4;color:#246b51}
+.coordinate-picker{position:relative;overflow:hidden;margin-top:14px;border:1px solid #cae3dc;border-radius:10px;background:#fff}.coordinate-picker-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 11px;border-bottom:1px solid #deeee9;background:#f2faf7}.coordinate-picker-heading strong{color:#176d55;font-size:10px}.coordinate-picker-heading span,.coordinate-picker>small{color:#6c8297;font-size:9px}.coordinate-picker .leaflet-container{font-family:var(--font);background:#e4edf0}.coordinate-picker .leaflet-tile-pane{filter:saturate(.72) brightness(1.04)}.coordinate-picker .leaflet-control-zoom{border:0!important;box-shadow:0 3px 10px #102a5626!important}.coordinate-picker .leaflet-control-zoom a{width:26px;height:26px;line-height:24px;border-color:#d7e4ee!important;background:#ffffffed!important;color:#176d55!important;font-size:15px}.coordinate-picker>small{display:block;padding:8px 11px;line-height:1.45}.coordinate-picker-loading{display:grid;place-items:center;min-height:220px;margin-top:14px;border:1px solid #cae3dc;border-radius:10px;background:#f7fcfa;color:#6c8297;font-size:10px}
 .management-form .checkbox-field{display:grid;grid-template-columns:auto 1fr;align-content:center;align-items:center;column-gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
 .management-form .checkbox-field input{width:17px;height:17px;min-height:0;grid-row:1/3}
 .management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:1/-1}
@@ -1051,6 +1063,7 @@ tbody tr:hover{background:#f5f9fe}
 .decision-details dd{margin:0;font-size:12px;line-height:1.65;color:#324d6e;white-space:pre-wrap}
 .review-actions{display:grid;grid-template-columns:1fr auto;align-items:end;gap:14px;border-top:1px solid #e7edf4;padding-top:16px}
 @media(max-width:900px){.management-form{grid-template-columns:1fr}.management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:auto}.decision-details{grid-template-columns:1fr}.review-actions{grid-template-columns:1fr}.role-banner .badge{margin-left:0}}
+@media(max-width:520px){.coordinate-input-grid{grid-template-columns:1fr}.coordinate-fields{padding:14px}}
 @media(max-width:600px){.decision-card-heading{flex-direction:column}.page-heading{align-items:flex-start;flex-direction:column}.form-actions{justify-content:stretch}.form-actions>button{width:100%}.capability-fields{display:grid;grid-template-columns:1fr 1fr}}
 
 /* Role-specific dashboards share one visual system and change emphasis by authority. */

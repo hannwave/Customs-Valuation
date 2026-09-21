@@ -23,6 +23,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
 {
     public static readonly string[] LocationTypes = ["REGION", "BRANCH"];
     public static readonly string[] LocationStatuses = ["ACTIVE", "INACTIVE", "TEMPORARILY_CLOSED", "PLANNED", "ARCHIVED"];
+    private const decimal EthiopiaMinimumLatitude = 3.35m;
+    private const decimal EthiopiaMaximumLatitude = 14.95m;
+    private const decimal EthiopiaMinimumLongitude = 33.00m;
+    private const decimal EthiopiaMaximumLongitude = 48.05m;
 
     [HttpGet("me")]
     public async Task<IActionResult> Me(CancellationToken ct)
@@ -157,7 +161,13 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(!string.IsNullOrWhiteSpace(value.Name) && value.Name.Length <= 200 && Regex.IsMatch(value.OfficialCode ?? "", "^[A-Za-z0-9_-]{1,40}$"), "Provide a name and unique official code (letters, digits, hyphen or underscore).");
         Validate(LocationTypes.Contains(value.LocationType) && LocationStatuses.Contains(value.Status), "Choose a valid location type and status.");
         Validate(input.Reason.Trim().Length >= 10, "Explain the change in at least 10 characters.");
-        Validate(value.Latitude is null or (>= -90 and <= 90) && value.Longitude is null or (>= -180 and <= 180), "Coordinates are outside the valid range.");
+        Validate(value.Latitude.HasValue && value.Longitude.HasValue, "Latitude and longitude are required for every customs region and branch.");
+        var latitude = value.Latitude.GetValueOrDefault();
+        var longitude = value.Longitude.GetValueOrDefault();
+        Validate(
+            latitude >= EthiopiaMinimumLatitude && latitude <= EthiopiaMaximumLatitude
+            && longitude >= EthiopiaMinimumLongitude && longitude <= EthiopiaMaximumLongitude,
+            "Coordinates must fall within Ethiopia.");
         Validate(value.EffectiveTo == null || value.EffectiveTo > value.EffectiveFrom, "The end date must follow the effective date.");
         var all = await db.CustomsLocations.ToListAsync(ct);
         var entity = id == null ? new CustomsLocation { Id = Guid.NewGuid(), CreatedBy = access.UserId.ToString() } : all.SingleOrDefault(l => l.Id == id) ?? throw new WorkspaceException(404, "Location not found.");
@@ -213,8 +223,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         // AccessRules.NormalizeRole into SQL. Keep the location restriction in SQL,
         // then apply the role visibility rule to the small result set in memory.
         var users = await query.OrderBy(u => u.FullName).ToListAsync(ct);
-        return Ok(users.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin &&
-                                   (access.IsSystem || AccessRules.NormalizeRole(u.Role) == AccessRules.Officer))
+        return Ok(users.Where(u => access.IsSystem
+                                   ? AccessRules.NormalizeRole(u.Role) == AccessRules.CustomsAdmin
+                                   : AccessRules.NormalizeRole(u.Role) == AccessRules.Officer)
             .Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId }));
     }
     [HttpPost("employees")]

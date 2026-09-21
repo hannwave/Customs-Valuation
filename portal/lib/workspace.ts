@@ -48,3 +48,13 @@ export async function workspaceApi<T>(path: string, init?: RequestInit): Promise
 
 export const roleLabel = (role?: string) => role?.replace(/([a-z])([A-Z])/g, "$1 $2") ?? "Workspace user";
 export const locationLabel = (location: CustomsLocation) => `${location.name} · ${location.officialCode}`;
+
+/** Client‑side helper mirroring AccessRules.NormalizeRole for System Administrator */
+export const isSystemAdmin = (role?: string | null): boolean => {
+  if (!role) return false;
+  const normalized = role
+    .replace(/[\s_-]/g, "")
+    .toUpperCase()
+    .replace(/^SYSTEMADMIN.*$/g, "SYSTEMADMINISTRATOR");
+  return normalized === "SYSTEMADMINISTRATOR";
+};

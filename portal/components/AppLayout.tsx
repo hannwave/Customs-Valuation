@@ -29,6 +29,7 @@ function navForRole(role: WorkspaceRole): NavGroup[] {
       { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
     ] },
     { label: "LOCATION MANAGEMENT", links: [
+      { href: "/administration/organization", key: "organization", label: "Organization", icon: FiMapPin },
       { href: "/administration/regions", key: "regions", label: "Regions", icon: FiMapPin },
       { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
     ] },

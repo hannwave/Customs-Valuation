@@ -35,13 +35,16 @@ export default function AdministrationPage() {
       const current = await workspaceApi<WorkspaceProfile>("/me");
       if (current.user.role === "CustomsOfficer") throw new Error("Customs Officers do not have user-administration access.");
       const employeeRows = await workspaceApi<EmployeeRecord[]>("/employees");
+      const visibleEmployees = current.user.role === "SystemAdministrator"
+        ? employeeRows.filter(row => row.user.role === "CustomsAdministrator")
+        : employeeRows;
       let pending: RegistrationRequest[] = [];
       if (current.user.role === "SystemAdministrator") {
         const response = await authApi<{ requests: RegistrationRequest[] }>("/registration-requests");
         pending = response.requests;
       }
-      setProfile(current); setEmployees(employeeRows); setRequests(pending);
-      setDrafts(Object.fromEntries(employeeRows.map(row => [row.user.id, {
+      setProfile(current); setEmployees(visibleEmployees); setRequests(pending);
+      setDrafts(Object.fromEntries(visibleEmployees.map(row => [row.user.id, {
         status: row.user.status || (row.user.active ? "ACTIVE" : "INACTIVE"),
         locationId: row.locationId ?? row.user.primaryLocationId ?? "",
         responsibilities: "",
@@ -84,20 +87,20 @@ export default function AdministrationPage() {
   const activeLocations = profile.locations.filter(location => location.status === "ACTIVE");
   return <div className="management-page">
     <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>{profile.user.role === "SystemAdministrator" ? "User and access control" : "Employees and regional access"}</h1><p className="lead">{profile.user.role === "SystemAdministrator" ? "Review employee registration requests and manage approved employee accounts." : "Manage Customs Officers assigned within your region."}</p></div>
-      {profile.user.role === "SystemAdministrator" && <Link className="primary-link" href="/administration/regions"><FiMapPin />Manage locations</Link>}
+      {profile.user.role === "SystemAdministrator" && <Link className="primary-link" href="/administration/organization"><FiMapPin />Open organization</Link>}
     </div>
     <div className="role-banner"><span className="badge">{roleLabel(profile.user.role)}</span><strong>{profile.user.role === "SystemAdministrator" ? "Nationwide authority" : `${profile.locations.length} assigned location${profile.locations.length === 1 ? "" : "s"}`}</strong><span>{profile.permissions.includes("users.manage_all") ? "May manage administrators and officers." : "May manage Customs Officers assigned to your location."}</span></div>
     {error && <DataState kind="error" compact title="Action could not be completed" description={error} onRetry={() => void load()} />}
     {notice && <p className="management-notice" role="status">{notice}</p>}
 
     {profile.user.role === "SystemAdministrator" && <section className="admin-panel">
-      <div className="panel-heading"><div><h2>Pending employee requests</h2><p>Employees submit their own credentials and requested branch. You can review the request, but passwords and usernames remain private.</p></div><button type="button" onClick={() => void load()}><FiRefreshCw /> Refresh</button></div>
+      <div className="panel-heading"><div><h2>Pending Customs Administrator requests</h2><p>Applicants submit their own credentials and requested branch. You can review the request, but passwords and usernames remain private.</p></div><button type="button" onClick={() => void load()}><FiRefreshCw /> Refresh</button></div>
       {requests.length === 0 ? <DataState kind="empty" compact title="No pending employee requests" description="New employee registration requests will appear here." /> : <div className="table-wrap"><table><thead><tr><th>Applicant</th><th>Department</th><th>Requested branch</th><th>Submitted</th><th>Review</th></tr></thead><tbody>{requests.map(request => { const requestedLocation = request.locationId ? profile.locations.find(location => location.id === request.locationId) : null; return <tr key={request.id}><td><strong>{request.fullName}</strong><small>{request.email}<br />{request.staffId}</small></td><td>{request.department || "—"}</td><td>{requestedLocation ? locationLabel(requestedLocation) : request.locationId ? request.locationId.slice(0, 8) : "Not selected"}</td><td>{new Date(request.submittedAt).toLocaleDateString()}</td><td><div className="request-review-actions"><button className="approve-button" type="button" disabled={busy === request.id} onClick={() => void approve(request.id)}>{busy === request.id ? "Approving…" : "Approve"}</button><input aria-label={`Denial reason for ${request.fullName}`} placeholder="Reason to deny (10+ characters)" value={reviewReasons[request.id] ?? ""} onChange={event => setReviewReasons(values => ({ ...values, [request.id]: event.target.value }))} /><button className="secondary-button danger-button" type="button" disabled={busy === `deny-${request.id}`} onClick={() => void deny(request.id)}>{busy === `deny-${request.id}` ? "Denying…" : "Deny"}</button></div></td></tr>; })}</tbody></table></div>}
     </section>}
 
     <section className="admin-panel">
-      <div className="panel-heading"><div><h2>Managed employees</h2><p>{employees.length} account{employees.length === 1 ? "" : "s"} visible in your assigned location.</p></div></div>
-      {employees.length === 0 ? <DataState kind="empty" compact title="No manageable employees" description="Officers and administrators appear here after an approved location assignment." /> : <div className="table-wrap"><table className="management-table"><thead><tr><th>Employee</th><th>Role</th><th>Status</th><th>Primary location</th><th>Responsibilities / reason</th><th>Action</th></tr></thead><tbody>{employees.map(row => {
+      <div className="panel-heading"><div><h2>{profile.user.role === "SystemAdministrator" ? "Customs Administrator accounts" : "Managed Customs Officers"}</h2><p>{employees.length} account{employees.length === 1 ? "" : "s"} visible in your assigned location.</p></div></div>
+      {employees.length === 0 ? <DataState kind="empty" compact title={profile.user.role === "SystemAdministrator" ? "No Customs Administrator accounts" : "No manageable employees"} description={profile.user.role === "SystemAdministrator" ? "Approved Customs Administrator accounts will appear here." : "Customs Officers appear here after an approved location assignment."} /> : <div className="table-wrap"><table className="management-table"><thead><tr><th>Employee</th><th>Role</th><th>Status</th><th>Primary location</th><th>Responsibilities / reason</th><th>Action</th></tr></thead><tbody>{employees.map(row => {
         const draft = drafts[row.user.id];
         return <tr key={row.user.id}><td><strong>{row.user.fullName}</strong><small>{row.user.email}</small></td><td>{roleLabel(row.user.role)}</td><td><select aria-label={`Status for ${row.user.fullName}`} value={draft?.status ?? "ACTIVE"} onChange={event => setDrafts(values => ({ ...values, [row.user.id]: { ...values[row.user.id], status: event.target.value } }))}><option>ACTIVE</option><option>SUSPENDED</option><option>INACTIVE</option><option>LOCKED</option></select></td><td><select aria-label={`Location for ${row.user.fullName}`} value={draft?.locationId ?? ""} onChange={event => setDrafts(values => ({ ...values, [row.user.id]: { ...values[row.user.id], locationId: event.target.value } }))}><option value="">Select</option>{activeLocations.map(location => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</select><small>{row.locationId ? "1 assigned location" : "No location assigned"}</small></td><td><input aria-label={`Responsibilities for ${row.user.fullName}`} placeholder="Responsibilities" value={draft?.responsibilities ?? ""} onChange={event => setDrafts(values => ({ ...values, [row.user.id]: { ...values[row.user.id], responsibilities: event.target.value } }))} /><input aria-label={`Change reason for ${row.user.fullName}`} placeholder="Reason (10+ characters)" value={draft?.reason ?? ""} onChange={event => setDrafts(values => ({ ...values, [row.user.id]: { ...values[row.user.id], reason: event.target.value } }))} /></td><td><button className="approve-button" type="button" disabled={busy === row.user.id || !draft?.locationId || (draft?.reason.length ?? 0) < 10} onClick={() => void updateEmployee(row.user.id)}>{busy === row.user.id ? "Saving…" : "Save"}</button></td></tr>;
       })}</tbody></table></div>}
