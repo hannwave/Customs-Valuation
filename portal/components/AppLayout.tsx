@@ -34,7 +34,6 @@ function navForRole(role: WorkspaceRole): NavGroup[] {
       { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
     ] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
-    { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation oversight", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
