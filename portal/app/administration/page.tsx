@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { FiActivity, FiArchive, FiDownload, FiMapPin, FiPlus, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
+import { FiActivity, FiArchive, FiCheck, FiDownload, FiMapPin, FiPlus, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { getSessionAccessToken } from "@/lib/auth/session";
 import { locationLabel, roleLabel, workspaceApi, type AuditRecord, type EmployeeRecord, type WorkspaceProfile } from "@/lib/workspace";
@@ -10,6 +10,7 @@ import { locationLabel, roleLabel, workspaceApi, type AuditRecord, type Employee
 type RegistrationRequest = { id: string; fullName: string; staffId: string; email: string; department: string; role: string; locationId: string | null; status: string; submittedAt: string };
 type EmployeeDraft = { status: string; locationId: string; includeChildren?: boolean; responsibilities: string; reason: string };
 type OfficerForm = { username: string; fullName: string; email: string; password: string; confirmPassword: string; employeeNumber: string; phone: string; locationId: string; responsibilities: string[]; reason: string };
+type OfficerReviewForm = { locationId: string; responsibilities: string[] };
 const responsibilityOptions = ["Valuation", "Inspection", "Import", "Export", "Transit"] as const;
 const blankOfficerForm = (locationId = ""): OfficerForm => ({ username: "", fullName: "", email: "", password: "", confirmPassword: "", employeeNumber: "", phone: "", locationId, responsibilities: [], reason: "" });
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
@@ -26,6 +27,8 @@ export default function AdministrationPage() {
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [requests, setRequests] = useState<RegistrationRequest[]>([]);
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
+  const [reviewRequest, setReviewRequest] = useState<RegistrationRequest | null>(null);
+  const [reviewForm, setReviewForm] = useState<OfficerReviewForm>({ locationId: "", responsibilities: [] });
   const [drafts, setDrafts] = useState<Record<string, EmployeeDraft>>({});
   const [search, setSearch] = useState("");
   const [activityEmployee, setActivityEmployee] = useState<EmployeeRecord | null>(null);
@@ -152,6 +155,38 @@ export default function AdministrationPage() {
     setCreateOpen(false); setCreateForm(blankOfficerForm());
   }
 
+  function requestLocationLabel(locationId: string | null) {
+    const location = profile?.locations.find(item => item.id === locationId);
+    return location ? locationLabel(location) : locationId ? locationId.slice(0, 8) : "Not selected";
+  }
+
+  function openOfficerReview(request: RegistrationRequest) {
+    const activeBranch = profile?.locations.find(location => location.id === request.locationId && location.status === "ACTIVE" && location.locationType === "BRANCH" && new Date(location.effectiveFrom).getTime() <= Date.now() && (!location.effectiveTo || new Date(location.effectiveTo).getTime() > Date.now()))?.id ?? "";
+    setReviewRequest(request);
+    setReviewForm({ locationId: activeBranch, responsibilities: [] });
+    setError(""); setNotice("");
+  }
+
+  function closeOfficerReview() {
+    setReviewRequest(null);
+    setReviewForm({ locationId: "", responsibilities: [] });
+  }
+
+  async function approveOfficerApplication(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!reviewRequest) return;
+    if (!reviewForm.locationId) { setError("Select the officer's approved branch."); return; }
+    if (reviewForm.responsibilities.length === 0) { setError("Select at least one responsibility for the Customs Officer."); return; }
+    setBusy(`approve-${reviewRequest.id}`); setError(""); setNotice("");
+    try {
+      await authApi(`/officer-registration-requests/${reviewRequest.id}/approve`, { method: "POST", body: JSON.stringify({ locationId: reviewForm.locationId, responsibilities: reviewForm.responsibilities.join(", ") }) });
+      setNotice("The Customs Officer application was approved with the selected branch and responsibilities.");
+      closeOfficerReview();
+      await load();
+    } catch (ex) { setError(ex instanceof Error ? ex.message : "Approval failed."); }
+    finally { setBusy(""); }
+  }
+
   async function createOfficer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (createForm.password !== createForm.confirmPassword) { setError("The password and confirmation do not match."); return; }
@@ -198,7 +233,14 @@ export default function AdministrationPage() {
 
     <section className="admin-panel customs-admin-table-panel">
       <div className="panel-heading"><div><h2>Pending Customs Officer applications</h2><p>Review officer applications for branches within your assigned region. Approved applicants receive Customs Officer access.</p></div><button type="button" onClick={() => void load()}><FiRefreshCw /> Refresh</button></div>
-      {requests.length === 0 ? <DataState kind="empty" compact title="No pending officer applications" description="New Customs Officer applications will appear here after submission." /> : <div className="table-wrap"><table><thead><tr><th>Applicant</th><th>Department</th><th>Requested branch</th><th>Submitted</th><th>Review</th></tr></thead><tbody>{requests.map(request => { const requestedLocation = request.locationId ? profile.locations.find(location => location.id === request.locationId) : null; return <tr key={request.id}><td><strong>{request.fullName}</strong><small>{request.email}<br />{request.staffId}</small></td><td>{request.department || "-"}</td><td>{requestedLocation ? locationLabel(requestedLocation) : request.locationId ? request.locationId.slice(0, 8) : "Not selected"}</td><td>{new Date(request.submittedAt).toLocaleDateString()}</td><td><div className="request-review-actions"><button className="approve-button" type="button" disabled={busy === request.id} onClick={() => void approve(request.id)}>{busy === request.id ? "Approving..." : "Approve"}</button><input aria-label={`Denial reason for ${request.fullName}`} placeholder="Reason to deny (10+ characters)" value={reviewReasons[request.id] ?? ""} onChange={event => setReviewReasons(values => ({ ...values, [request.id]: event.target.value }))} /><button className="secondary-button danger-button" type="button" disabled={busy === `deny-${request.id}`} onClick={() => void deny(request.id)}>{busy === `deny-${request.id}` ? "Denying..." : "Deny"}</button></div></td></tr>; })}</tbody></table></div>}
+      {requests.length === 0 ? <DataState kind="empty" compact title="No pending officer applications" description="New Customs Officer applications will appear here after submission." /> : <div className="table-wrap"><table><thead><tr><th>Applicant</th><th>Department</th><th>Requested branch</th><th>Submitted</th><th>Review</th></tr></thead><tbody>{requests.map(request => { const requestedLocation = request.locationId ? profile.locations.find(location => location.id === request.locationId) : null; return <tr key={request.id}><td><strong>{request.fullName}</strong><small>{request.email}<br />{request.staffId}</small></td><td>{request.department || "-"}</td><td>{requestedLocation ? locationLabel(requestedLocation) : request.locationId ? request.locationId.slice(0, 8) : "Not selected"}</td><td>{new Date(request.submittedAt).toLocaleDateString()}</td><td><div className="request-review-actions"><button className="approve-button" type="button" disabled={busy === `approve-${request.id}`} onClick={() => openOfficerReview(request)}>{busy === `approve-${request.id}` ? "Opening..." : "Review & approve"}</button><input aria-label={`Denial reason for ${request.fullName}`} placeholder="Reason to deny (10+ characters)" value={reviewReasons[request.id] ?? ""} onChange={event => setReviewReasons(values => ({ ...values, [request.id]: event.target.value }))} /><button className="secondary-button danger-button" type="button" disabled={busy === `deny-${request.id}`} onClick={() => void deny(request.id)}>{busy === `deny-${request.id}` ? "Denying..." : "Deny"}</button></div></td></tr>; })}</tbody></table></div>}
+      {reviewRequest && <form className="management-form officer-review-form" onSubmit={approveOfficerApplication} aria-label={`Review Customs Officer application for ${reviewRequest.fullName}`}>
+        <div className="officer-create-heading wide-field"><div><p className="eyebrow">Officer application review</p><h3>{reviewRequest.fullName}</h3><p>Confirm the final branch assignment and choose the responsibilities this account may perform.</p></div><button className="icon-button" type="button" aria-label="Close officer application review" onClick={closeOfficerReview}><FiX /></button></div>
+        <div className="officer-review-summary wide-field"><span><strong>Official email</strong>{reviewRequest.email}</span><span><strong>Employee ID</strong>{reviewRequest.staffId}</span><span><strong>Department</strong>{reviewRequest.department || "Not recorded"}</span><span><strong>Requested branch</strong>{requestLocationLabel(reviewRequest.locationId)}</span></div>
+        <label>Approved branch<select required value={reviewForm.locationId} onChange={event => setReviewForm(current => ({ ...current, locationId: event.target.value }))}><option value="">Select an active branch</option>{activeLocations.map(location => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</select><small>The final assignment may differ from the applicant's requested branch if operationally justified.</small></label>
+        <div className="wide-field"><span className="field-label">Responsibilities</span><div className="responsibility-options">{availableResponsibilities.map(option => <label className="checkbox-field" key={option}><input type="checkbox" checked={reviewForm.responsibilities.includes(option)} onChange={() => setReviewForm(current => ({ ...current, responsibilities: current.responsibilities.includes(option) ? current.responsibilities.filter(item => item !== option) : [...current.responsibilities, option] }))} /><span>{option}</span></label>)}</div><small>Select at least one responsibility before approving.</small></div>
+        <div className="form-actions"><button className="secondary-button" type="button" onClick={closeOfficerReview}>Cancel</button><button className="primary-button" type="submit" disabled={busy === `approve-${reviewRequest.id}`}><FiCheck />{busy === `approve-${reviewRequest.id}` ? "Approving..." : "Approve application"}</button></div>
+      </form>}
     </section>
 
     <section className="admin-panel customs-admin-table-panel">

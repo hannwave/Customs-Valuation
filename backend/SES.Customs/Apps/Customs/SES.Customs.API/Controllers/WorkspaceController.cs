@@ -135,6 +135,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var administrators = managedUsers.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.CustomsAdmin && u.Active);
         var submitted = decisions.Count(d => d.Status == "Submitted");
         var returned = decisions.Count(d => d.Status == "Returned");
+        var overdue = decisions.Count(d => d.Status == "Submitted" && d.SubmittedAt.HasValue && d.SubmittedAt.Value < now.AddHours(-48));
+        var pendingOfficerApplications = access.Role == AccessRules.CustomsAdmin
+            ? await db.RegistrationRequests.CountAsync(r => r.Status == "Pending" && r.Role == AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct)
+            : 0;
         var ownPending = decisions.Count(d => d.Status is "Draft" or "Returned");
         var todayCount = decisions.Count(d => d.RecordedAt >= today);
         var securityAlerts = allUsers.Count(u => u.Status is "SUSPENDED" or "LOCKED");
@@ -151,7 +155,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             AccessRules.CustomsAdmin => [
                 new { key = "locations", label = "Assigned branches", value = activeLocations.ToString("N0"), detail = $"{visibleBranches:N0} total visible", tone = "blue" },
                 new { key = "officers", label = "Active Officers", value = officers.ToString("N0"), detail = $"{dashboardEmployees.Count:N0} managed Officers", tone = "teal" },
+                new { key = "officerApplications", label = "Pending Officer Applications", value = pendingOfficerApplications.ToString("N0"), detail = "Awaiting your review", tone = pendingOfficerApplications > 0 ? "gold" : "green" },
                 new { key = "pending", label = "Pending valuations", value = submitted.ToString("N0"), detail = "Awaiting review", tone = submitted > 0 ? "gold" : "green" },
+                new { key = "overdue", label = "Overdue valuations", value = overdue.ToString("N0"), detail = "Submitted over 48 hours", tone = overdue > 0 ? "red" : "green" },
                 new { key = "returned", label = "Returned valuations", value = returned.ToString("N0"), detail = "Sent back for correction", tone = returned > 0 ? "gold" : "green" },
                 new { key = "today", label = "Decisions today", value = todayCount.ToString("N0"), detail = "Across my assigned location", tone = "blue" },
                 new { key = "suspended", label = "Suspended accounts", value = dashboardEmployees.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my assigned location", tone = "red" }
@@ -170,6 +176,18 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.Code ?? "" : "", product = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.DescriptionEn ?? "Unknown product" : "Product classification deferred to Phase 2", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
             sources = sources.Select(s => new { s.Id, s.Name, pool = s.Pool.ToString(), s.IsApproved }), audit
         });
+    }
+    [HttpGet("notifications")]
+    public async Task<IActionResult> Notifications(CancellationToken ct)
+    {
+        access.Require(AccessRules.CustomsAdmin);
+        var scope = await access.Locations(ct);
+        var submittedQuery = await VisibleDecisions(ct);
+        var now = DateTimeOffset.UtcNow;
+        var pendingOfficerApplications = await db.RegistrationRequests.CountAsync(r => r.Status == "Pending" && r.Role == AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct);
+        var submittedValuations = await submittedQuery.CountAsync(d => d.Status == "Submitted", ct);
+        var overdueValuations = await submittedQuery.CountAsync(d => d.Status == "Submitted" && d.SubmittedAt.HasValue && d.SubmittedAt.Value < now.AddHours(-48), ct);
+        return Ok(new { generatedAt = now, pendingOfficerApplications, submittedValuations, overdueValuations });
     }
     [HttpGet("locations")]
     public async Task<IActionResult> Locations(CancellationToken ct)

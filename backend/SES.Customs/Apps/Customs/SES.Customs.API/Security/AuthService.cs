@@ -285,26 +285,30 @@ public sealed class AuthService(CustomsDbContext db)
         await db.SaveChangesAsync(ct); return Map(user);
     }
 
-    public async Task<AuthUser> ApproveOfficerAsync(Guid id, Guid reviewerId, IReadOnlySet<Guid> locationScope, CancellationToken ct = default)
+    public async Task<AuthUser> ApproveOfficerAsync(Guid id, Guid reviewerId, IReadOnlySet<Guid> locationScope, Guid assignmentLocationId, string responsibilities, CancellationToken ct = default)
     {
         var scope = locationScope.ToArray();
         var request = await db.RegistrationRequests.FirstOrDefaultAsync(r => r.Id == id && r.Status == "Pending" && r.Role == SES.Customs.Core.Models.AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct) ?? throw new KeyNotFoundException("Officer application not found.");
         var now = DateTimeOffset.UtcNow;
-        var location = await db.CustomsLocations.FirstOrDefaultAsync(l => l.Id == request.LocationId!.Value && l.Status == "ACTIVE" && l.LocationType == "BRANCH" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now), ct);
-        if (location is null) throw new InvalidOperationException("The requested branch is no longer active.");
-        if (!location.SupportsValuation && !location.SupportsInspection) throw new InvalidOperationException("The requested branch no longer supports valuation or inspection work.");
+        if (!scope.Contains(assignmentLocationId)) throw new InvalidOperationException("Select a branch within your assigned region.");
+        var location = await db.CustomsLocations.FirstOrDefaultAsync(l => l.Id == assignmentLocationId && l.Status == "ACTIVE" && l.LocationType == "BRANCH" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now), ct);
+        if (location is null) throw new InvalidOperationException("The approved branch is no longer active.");
+        if (!location.SupportsValuation && !location.SupportsInspection) throw new InvalidOperationException("The approved branch does not support valuation or inspection work.");
+        var normalizedResponsibilities = NormalizeOfficerResponsibilities(responsibilities);
         var username = string.IsNullOrWhiteSpace(request.Username) ? request.Email.Split('@')[0].Replace(".", "", StringComparison.Ordinal).ToLowerInvariant() : request.Username.Trim();
         var email = request.Email.Trim().ToLowerInvariant();
         if (await db.AuthAccounts.AnyAsync(u => u.Username == username || u.Email == email, ct)) throw new InvalidOperationException("The requested username or email is already in use.");
         var locations = await db.CustomsLocations.AsNoTracking().ToListAsync(ct);
-        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = username, Email = email, FullName = request.FullName, EmployeeNumber = request.StaffId, Phone = request.Phone ?? "", Role = SES.Customs.Core.Models.AccessRules.Officer, Active = true, Status = "ACTIVE", PrimaryLocationId = location.Id, RegionKey = ResolveRegionKey(location, locations), RegionJoinedAt = now, PasswordHash = request.PasswordHash, CreatedAt = now };
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = username, Email = email, FullName = request.FullName, EmployeeNumber = request.StaffId, Phone = request.Phone ?? "", Responsibilities = normalizedResponsibilities, Role = SES.Customs.Core.Models.AccessRules.Officer, Active = true, Status = "ACTIVE", PrimaryLocationId = location.Id, RegionKey = ResolveRegionKey(location, locations), RegionJoinedAt = now, PasswordHash = request.PasswordHash, CreatedAt = now };
         db.AuthAccounts.Add(user);
-        db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = location.Id, IncludeChildLocations = true, Responsibilities = "Valuation and assessment officer", EffectiveFrom = now, CreatedBy = reviewerId.ToString() });
+        db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = location.Id, IncludeChildLocations = true, Responsibilities = normalizedResponsibilities, EffectiveFrom = now, CreatedBy = reviewerId.ToString() });
         request.Status = "Approved";
         request.ReviewedAt = now;
         request.ReviewedBy = reviewerId.ToString();
+        request.ReviewReason = $"Approved branch: {location.OfficialCode}; responsibilities: {normalizedResponsibilities}";
         var reviewerUsername = await db.AuthAccounts.AsNoTracking().Where(u => u.Id == reviewerId).Select(u => u.Username).SingleOrDefaultAsync(ct) ?? reviewerId.ToString();
-        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = reviewerId.ToString(), SubjectUserId = user.Id, Username = reviewerUsername, OccurredAt = now, Action = "REGISTRATION_APPROVED", Module = "Users", RecordId = user.Id, LocationId = location.Id, Justification = "Customs Officer application approved." });
+        var requestedLocation = request.LocationId.HasValue && request.LocationId.Value != location.Id ? $" Requested branch: {request.LocationId.Value}." : "";
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = reviewerId.ToString(), SubjectUserId = user.Id, Username = reviewerUsername, OccurredAt = now, Action = "REGISTRATION_APPROVED", Module = "Users", RecordId = user.Id, LocationId = location.Id, Justification = $"Customs Officer application approved.{requestedLocation} Assigned responsibilities: {normalizedResponsibilities}." });
         await db.SaveChangesAsync(ct);
         return Map(user);
     }
@@ -340,6 +344,16 @@ public sealed class AuthService(CustomsDbContext db)
             current = all.FirstOrDefault(item => item.Id == parent) ?? current;
         }
         return location.OfficialCode.Trim().ToUpperInvariant();
+    }
+    private static string NormalizeOfficerResponsibilities(string value)
+    {
+        var options = new[] { "Valuation", "Inspection", "Import", "Export", "Transit" };
+        var values = (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var invalid = values.Where(item => !options.Contains(item, StringComparer.OrdinalIgnoreCase)).ToArray();
+        if (invalid.Length > 0) throw new InvalidOperationException("Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
+        var selected = values.Select(item => options.First(option => option.Equals(item, StringComparison.OrdinalIgnoreCase))).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (selected.Length == 0) throw new InvalidOperationException("Select at least one responsibility for the Customs Officer.");
+        return string.Join(", ", selected);
     }
     private static RegistrationRequest Map(RegistrationRequestEntity r) => new(r.Id, r.FullName, r.StaffId, r.Email, r.Phone, r.Department, r.Role, r.LocationId, r.Status, r.SubmittedAt);
     public static string Hash(string password) { var salt = RandomNumberGenerator.GetBytes(16); var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 120_000, HashAlgorithmName.SHA256, 32); return $"pbkdf2.{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}"; }

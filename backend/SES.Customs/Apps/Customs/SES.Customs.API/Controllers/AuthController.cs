@@ -13,6 +13,7 @@ public sealed record LoginRequest(string Identity, string Password);
 public sealed record RegistrationRequestDto(string Username, string FullName, string StaffId, string Email, string? Phone, string Department, string Role, Guid LocationId, string Password, string ConfirmPassword);
 public sealed record AdministratorRegistrationRequestDto(string Username, string FullName, string StaffId, string Email, string? Phone, string Department, Guid RegionId, Guid BranchId, string Password, string ConfirmPassword);
 public sealed record RegistrationReviewDto(string? Reason);
+public sealed record OfficerRegistrationApprovalDto(Guid LocationId, string Responsibilities);
 public sealed record CreateUserRequest(string Username, string FullName, string Email, string Role, string Password);
 
 [ApiController, Route("api/auth")]
@@ -110,11 +111,12 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
     }
 
     [Authorize(Roles = "CustomsAdministrator"), HttpPost("officer-registration-requests/{id:guid}/approve")]
-    public async Task<IActionResult> ApproveOfficerRegistration(Guid id, CancellationToken ct)
+    public async Task<IActionResult> ApproveOfficerRegistration(Guid id, OfficerRegistrationApprovalDto input, CancellationToken ct)
     {
         try
         {
-            var user = await auth.ApproveOfficerAsync(id, access.UserId, await access.Locations(ct), ct);
+            if (input.LocationId == Guid.Empty) return BadRequest(new { message = "Select the officer's approved branch." });
+            var user = await auth.ApproveOfficerAsync(id, access.UserId, await access.Locations(ct), input.LocationId, input.Responsibilities ?? "", ct);
             return Ok(new { message = "Customs Officer application approved.", user = new { user.Id, user.Email, user.FullName, user.Role, user.Active, user.PrimaryLocationId } });
         }
         catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }

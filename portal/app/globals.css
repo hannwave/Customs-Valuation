@@ -346,10 +346,34 @@ h3{font-size:18px;line-height:1.4}
     box-shadow .15s ease;
 }
 
+.nav-group>a{
+  position:relative;
+}
+
 .nav-group>a>svg{
   font-size:17px;
   flex-shrink:0;
 }
+
+.nav-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:20px;
+  height:20px;
+  margin-left:auto;
+  padding:0 6px;
+  border:1px solid #f0c87a;
+  border-radius:999px;
+  background:#f6c65b;
+  color:#17385f;
+  font-size:10px;
+  font-weight:800;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+
+.nav-badge + .nav-arrow{margin-left:6px}
 
 .nav-group>a:hover{
   background:#ffffff0c;
@@ -491,6 +515,16 @@ h3{font-size:18px;line-height:1.4}
   opacity:0;
   overflow:hidden;
   margin-left:0;
+}
+
+.sidebar.is-collapsed .nav-badge{
+  position:absolute;
+  top:3px;
+  right:1px;
+  min-width:17px;
+  height:17px;
+  padding:0 4px;
+  font-size:8px;
 }
 
 /* Sidebar note */
@@ -1037,7 +1071,9 @@ tbody tr:hover{background:#f5f9fe}
 .role-banner .badge{margin-left:auto}
 .management-notice{padding:13px 16px;border:1px solid #bfe0cc;border-radius:9px;background:#eff9f3;color:#246444;font-size:13px;line-height:1.6}
 .officer-create-form{margin:0 0 22px;padding:20px;border:1px solid #d5e3f0;border-radius:12px;background:linear-gradient(135deg,#f8fbff,#fff)}
+.officer-review-form{margin:22px 0 0;padding:20px;border:1px solid #d5e3f0;border-radius:12px;background:linear-gradient(135deg,#f8fbff,#fff)}
 .officer-create-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.officer-create-heading h3{margin:4px 0 5px;color:var(--navy);font-size:18px}.officer-create-heading p:not(.eyebrow){margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+.officer-review-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px;padding:12px;border:1px solid #dce7ef;border-radius:9px;background:#fbfdff}.officer-review-summary span{display:grid;gap:4px;min-width:0;color:var(--muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}.officer-review-summary strong{color:var(--navy);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
 .icon-button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #c7d9ee;border-radius:8px;background:#fff;color:var(--blue);cursor:pointer}.icon-button:hover{background:var(--pale)}
 .field-label{display:block;margin-bottom:8px;color:#324d6e;font-size:12px;font-weight:600}.responsibility-options{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.responsibility-options .checkbox-field{min-width:0;background:#fff;cursor:pointer}.responsibility-options .checkbox-field:has(input:checked){border-color:#7aaed9;background:#eef6ff}.officer-create-form .wide-field>small{display:block;margin-top:7px;color:var(--muted);font-size:11px;font-weight:400;line-height:1.5}
 .management-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px}
@@ -1096,9 +1132,9 @@ tbody tr:hover{background:#f5f9fe}
 .decision-details dt{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#71839b;margin-bottom:7px}
 .decision-details dd{margin:0;font-size:12px;line-height:1.65;color:#324d6e;white-space:pre-wrap}
 .review-actions{display:grid;grid-template-columns:1fr auto;align-items:flex-end;gap:14px;border-top:1px solid #e7edf4;padding-top:16px}
-@media(max-width:900px){.management-form{grid-template-columns:1fr}.management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:auto}.decision-details{grid-template-columns:1fr}.review-actions{grid-template-columns:1fr}.role-banner .badge{margin-left:0}}
+@media(max-width:900px){.management-form{grid-template-columns:1fr}.management-form .wide-field,.management-form .capability-fields,.management-form .form-actions{grid-column:auto}.decision-details{grid-template-columns:1fr}.review-actions{grid-template-columns:1fr}.role-banner .badge{margin-left:0}.officer-review-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.coordinate-input-grid{grid-template-columns:1fr}.coordinate-fields{padding:14px}}
-@media(max-width:600px){.decision-card-heading{flex-direction:column}.page-heading{align-items:flex-start;flex-direction:column}.form-actions{justify-content:stretch}.form-actions>button{width:100%}.capability-fields{display:grid;grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.decision-card-heading{flex-direction:column}.page-heading{align-items:flex-start;flex-direction:column}.form-actions{justify-content:stretch}.form-actions>button{width:100%}.capability-fields{display:grid;grid-template-columns:1fr 1fr}.officer-review-summary{grid-template-columns:1fr}}
 @media(max-width:900px){.employee-table-form-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.employee-table-form-grid{grid-template-columns:1fr}.employee-table-form-heading{padding-left:14px;padding-right:14px}.employee-table-form{padding-left:14px;padding-right:14px}}
 
@@ -1124,7 +1160,7 @@ tbody tr:hover{background:#f5f9fe}
 .dashboard-quick-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .dashboard-quick-actions a{display:inline-flex;align-items:center;gap:7px;padding:9px 11px;border:1px solid #cfdeee;border-radius:7px;background:#fff;text-decoration:none;color:#365b84;font-size:11px;font-weight:600;white-space:nowrap}
 .dashboard-quick-actions a:hover{background:var(--pale);border-color:#a8c2df}
-.dashboard-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:13px;margin-bottom:22px}
+.dashboard-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:13px;margin-bottom:22px}
 .dashboard-kpi{position:relative;overflow:hidden;min-height:125px;padding:18px 18px 16px;border:1px solid var(--line);border-radius:13px;background:#fff;box-shadow:0 3px 14px #102a5604}
 .dashboard-kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#68a0d9}
 .dashboard-kpi>span{display:block;min-height:33px;font-size:10px;line-height:1.55;letter-spacing:.35px;text-transform:uppercase;font-weight:700;color:#6c7f97}

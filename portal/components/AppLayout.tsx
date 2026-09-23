@@ -12,10 +12,10 @@ import {
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
+import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceNotifications, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession } from "@/lib/valuation-session";
 
-type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid };
+type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid; notificationKey?: keyof WorkspaceNotifications };
 type NavGroup = { label: string; links: NavLink[] };
 const evidenceLinks: NavLink[] = [
     { href: "/international-prices", key: "international", label: "Global market", icon: FiGlobe },
@@ -41,7 +41,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "overview", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "overview", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers, notificationKey: "pendingOfficerApplications" }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare, notificationKey: "submittedValuations" }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
@@ -66,6 +66,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [hasValuationSession, setHasValuationSession] = useState(false);
+  const [notifications, setNotifications] = useState<WorkspaceNotifications | null>(null);
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
@@ -98,6 +99,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("profile-updated", refreshProfile);
     return () => window.removeEventListener("profile-updated", refreshProfile);
   }, [authorized, isAuthPage]);
+
+  useEffect(() => {
+    if (isAuthPage || !authorized || profile?.user.role !== "CustomsAdministrator") {
+      setNotifications(null);
+      return;
+    }
+    let cancelled = false;
+    const refreshNotifications = () => {
+      void workspaceApi<WorkspaceNotifications>("/notifications")
+        .then(current => { if (!cancelled) setNotifications(current); })
+        .catch(() => { if (!cancelled) setNotifications(null); });
+    };
+    refreshNotifications();
+    const interval = window.setInterval(refreshNotifications, 60_000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [authorized, isAuthPage, profile?.user.role]);
 
   useEffect(() => {
     const syncSession = () => setHasValuationSession(Boolean(readValuationSession()));
@@ -145,8 +162,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           const Icon = link.icon;
           const active = current?.href === link.href;
           const label = t(link.key, link.label);
-          return <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined} aria-label={sidebarCollapsed ? label : undefined} title={sidebarCollapsed ? label : undefined}>
-            <Icon aria-hidden="true" /><span className="nav-text">{label}</span>{active && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
+          const badgeCount = link.notificationKey ? notifications?.[link.notificationKey] ?? 0 : 0;
+          const accessibleLabel = badgeCount > 0 ? `${label}, ${badgeCount} pending` : label;
+          return <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined} aria-label={sidebarCollapsed ? accessibleLabel : undefined} title={sidebarCollapsed ? accessibleLabel : undefined}>
+            <Icon aria-hidden="true" /><span className="nav-text">{label}</span>{badgeCount > 0 && <span className="nav-badge" aria-label={`${badgeCount} pending`}>{badgeCount > 99 ? "99+" : badgeCount}</span>}{active && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
           </Link>;
         })}
       </div>)}</nav>
