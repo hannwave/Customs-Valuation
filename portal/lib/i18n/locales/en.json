@@ -2,6 +2,8 @@
   "title": "Customs reference workspace",
   "subtitle": "HS classification and valuation decision support",
   "dashboard": "Valuation search",
+  "overview": "Operational overview",
+  "systemOverview": "System overview",
   "hsCodes": "HS codes",
   "international": "Global market",
   "local": "Local market",

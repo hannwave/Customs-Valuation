@@ -271,10 +271,9 @@ function SystemDashboard({ data, profile }: { data: WorkspaceDashboard; profile:
 }
 
 function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
-  const root = data.locations.find(location => !location.parentLocationId) ?? data.locations[0];
   const statusCounts = ["Submitted", "Draft", "Returned", "Approved", "Rejected"].map(status => ({ status, count: data.decisions.filter(decision => decision.status === status).length }));
   return <>
-    <DashboardHeader profile={profile} eyebrow="Branch and district management" title={root?.displayName || root?.name || "My operational location"} description="People, office assignments, valuation workload, and cases requiring attention." actions={<div className="dashboard-quick-actions"><Link href="/administration"><FiUsers />Manage Officers</Link><Link href="/valuation-decisions"><FiCheckCircle />Review valuations</Link></div>} />
+    <DashboardHeader profile={profile} eyebrow="Customs Administrator · Overview" title="Overview" description="People, office assignments, valuation workload, and cases requiring attention." actions={<div className="dashboard-quick-actions"><Link href="/administration"><FiUsers />Manage Officers</Link><Link href="/valuation-decisions"><FiCheckCircle />Review valuations</Link></div>} />
     <KpiGrid data={data} />
     <div className="dashboard-main-grid">
       <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">My assigned organization</p><h2>Assigned offices</h2><span>Locations available for your operational responsibilities</span></div></div><LocationTree locations={data.locations} /></section>

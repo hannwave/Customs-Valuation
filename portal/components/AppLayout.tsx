@@ -28,7 +28,7 @@ const officerOnlyPaths = evidenceLinks.map(link => link.href);
 const officerSessionPaths = [...officerOnlyPaths, "/analytics"];
 function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[] {
   if (role === "SystemAdministrator") return [
-    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid },
+    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "systemOverview", label: "System overview", icon: FiGrid },
       { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
     ] },
     { label: "LOCATION MANAGEMENT", links: [
@@ -41,7 +41,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "overview", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
