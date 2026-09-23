@@ -4,7 +4,9 @@ namespace SES.Customs.Core.Models;
 public sealed class ValuationDecision
 {
     public Guid Id { get; set; }
-    public Guid HsCodeId { get; set; }
+    // Classification is intentionally deferred to Phase 2. Phase 1 evaluates
+    // the product and supporting price evidence without requiring an HS code.
+    public Guid? HsCodeId { get; set; }
     public decimal SelectedReferenceValue { get; set; }
     public string Currency { get; set; } = "";
     // Phase 1 may populate this explicitly. The Phase 2 handoff falls back to

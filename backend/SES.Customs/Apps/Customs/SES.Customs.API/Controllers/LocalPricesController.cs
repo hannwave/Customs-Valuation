@@ -194,7 +194,7 @@ public sealed class LocalPricesController(
         var fetched = await localMarket.SearchAsync(query, ParseSources(request.Sources), ct);
         await PersistRawSnapshotsAsync(hsCode.Id, query, fetched, ct);
         var target = new TargetProductProfile(
-            hsCode.Code, query, request.Category, request.ProductType, request.Brand, null,
+            hsCode.Code!, query, request.Category, request.ProductType, request.Brand, null,
             request.Model, request.Variant, null, null, null, null,
             ParseEnum(request.Condition, ProductCondition.New), 1, "piece",
             ParseEnum(request.PriceType, MarketPriceType.Retail));
@@ -222,7 +222,7 @@ public sealed class LocalPricesController(
             item.ListingDate, item.ThumbnailUrl, item.RawCategory, ParseCondition(item.Condition), MarketPriceType.Retail)).ToArray();
         var analysis = LocalMarketClassificationEngine.Analyze(target, listings, options);
         analysis = await PersistObservationsAsync(hsCode.Id, analysis, ct);
-        return new LocalMarketAnalysisResponse(hsCode.Id, hsCode.Code, hsCode.DescriptionEn, fetched.Sources, analysis);
+        return new LocalMarketAnalysisResponse(hsCode.Id, hsCode.Code!, hsCode.DescriptionEn, fetched.Sources, analysis);
     }
 
     private async Task PersistRawSnapshotsAsync(Guid hsCodeId, string query, LocalMarketSearchDto fetched, CancellationToken ct)

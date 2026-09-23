@@ -21,6 +21,8 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
         if (string.IsNullOrWhiteSpace(request.Identity) || string.IsNullOrWhiteSpace(request.Password)) return BadRequest(new { message = "Username/email and password are required." });
         var user = await auth.FindAsync(request.Identity, ct);
         if (user is null || !AuthService.Verify(user, request.Password)) return Unauthorized(new { message = "Invalid username or password." });
+        if (!user.Active || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "ACCOUNT_PENDING_VALIDATION", message = $"This account is {LoginStatus(user.Status)}. A System Administrator must validate the officer account before sign-in." });
         await auth.RecordLoginAsync(user.Id, ct);
         return Ok(new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Username, user.Email, user.FullName, user.Role } });
     }
@@ -72,4 +74,13 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
         var token = new JwtSecurityToken(settings["Issuer"] ?? "SES.Customs", settings["Audience"] ?? "SES.Customs.Portal", claims, DateTime.UtcNow, DateTime.UtcNow.AddHours(1), credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    private static string LoginStatus(string status) => status switch
+    {
+        "PENDING_VALIDATION" or "Pending" => "pending validation",
+        "SUSPENDED" => "suspended",
+        "LOCKED" => "locked",
+        "INACTIVE" => "inactive",
+        _ => "not active"
+    };
 }

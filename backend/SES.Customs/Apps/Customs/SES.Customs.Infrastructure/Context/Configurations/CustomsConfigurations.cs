@@ -140,6 +140,12 @@ public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<Valu
     {
         b.ToTable("valuation_phase2"); b.HasKey(x => x.Id);
         b.HasIndex(x => x.ValuationDecisionId).IsUnique();
+        b.Property(x => x.CustomsValueAmount).HasPrecision(24, 8);
+        b.Property(x => x.CustomsValueCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.OriginCountry).HasMaxLength(120).IsRequired();
+        b.Property(x => x.ProductCategory).HasMaxLength(120).IsRequired();
+        b.Property(x => x.ExemptionCodes).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.AdjustmentReason).HasMaxLength(2000).IsRequired();
         b.Property(x => x.InitialDutyAmount).HasPrecision(24, 8);
         b.Property(x => x.ExchangeRate).HasPrecision(24, 12);
         b.Property(x => x.ExemptionAmount).HasPrecision(24, 8);
@@ -147,6 +153,7 @@ public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<Valu
         b.Property(x => x.ManualAdjustmentAmount).HasPrecision(24, 8);
         b.Property(x => x.TotalAdditionalTax).HasPrecision(24, 8);
         b.Property(x => x.FinalAmount).HasPrecision(24, 8);
+        b.Property(x => x.TotalTax).HasPrecision(24, 8);
         b.Property(x => x.InitialDutyCurrency).HasMaxLength(3).IsRequired();
         b.Property(x => x.TargetCurrency).HasMaxLength(3).IsRequired();
         b.Property(x => x.Status).HasMaxLength(30).IsRequired();
@@ -165,10 +172,13 @@ public sealed class ValuationPhase2TaxLineConfiguration : IEntityTypeConfigurati
         b.Property(x => x.Value).HasPrecision(24, 8);
         b.Property(x => x.BaseAmount).HasPrecision(24, 8);
         b.Property(x => x.CalculatedAmount).HasPrecision(24, 8);
+        b.Property(x => x.RecommendedValue).HasPrecision(24, 8);
         b.Property(x => x.Name).HasMaxLength(120).IsRequired();
         b.Property(x => x.CalculationType).HasMaxLength(30).IsRequired();
         b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
         b.Property(x => x.CalculationBasis).HasMaxLength(40).IsRequired();
+        b.Property(x => x.Status).HasMaxLength(40).IsRequired();
+        b.Property(x => x.SourceReference).HasMaxLength(1000).IsRequired();
         b.HasIndex(x => new { x.ValuationPhase2Id, x.Order });
     }
 }

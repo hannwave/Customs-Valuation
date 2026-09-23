@@ -141,7 +141,7 @@ export function HsCodeDetailsModal({
                     letterSpacing: "0.6px",
                   }}
                 >
-                  {hsCode.code}
+                  {hsCode.code || t("hsCatalogue.noCode", "No HS code assigned")}
                 </span>
 
                 {revision?.status && (
@@ -166,7 +166,7 @@ export function HsCodeDetailsModal({
                   color: "var(--navy)",
                 }}
               >
-                {hsCode.code}
+                {hsCode.code || t("hsCatalogue.noCode", "No HS code assigned")}
               </Title>
 
               <Text
@@ -178,6 +178,13 @@ export function HsCodeDetailsModal({
                   "Detailed information provided by the HS code.",
                 )}
               </Text>
+              <Group gap="xs" mt="sm" wrap="wrap">
+                <Badge variant="light" color="blue">{hsCode.sectionNumber || "Section —"}</Badge>
+                <Badge variant="light" color="indigo">Chapter {hsCode.chapterNumber ?? "—"}</Badge>
+                <Badge variant="light" color="cyan">{hsCode.headingNumber || "Heading —"}</Badge>
+                {hsCode.tariffItemNo && <Badge variant="outline">Tariff item {hsCode.tariffItemNo}</Badge>}
+              </Group>
+              {hsCode.hsUpdateStatus && <Text size="xs" c="orange" mt="sm">{hsCode.hsUpdateStatus === "SPLIT_REVIEW_REQUIRED" ? "This classification requires officer mapping review." : hsCode.hsUpdateStatus}</Text>}
             </div>
 
             <div

@@ -1,6 +1,7 @@
 export type PricePool = "International" | "Local" | "HistoricalCustoms";
-export interface HsCode { id: string; revisionId: string; code: string; descriptionEn: string; descriptionAm: string | null; duty: string | null }
-export interface HsRevision { id: string; name: string; number: number; effectiveDate: string; endDate: string | null; status: string }
+export interface HsCodeCandidate { hsCode: string; description: string }
+export interface HsCode { id: string; revisionId: string; code: string | null; descriptionEn: string; descriptionAm: string | null; duty: string | null; tariffItemNo?: string | null; unit?: string; sectionNumber?: string; sectionName?: string; chapterNumber?: number | null; chapterName?: string; headingNumber?: string; hsUpdateStatus?: string | null; hsUpdateNote?: string | null; hsUpdateCandidates?: HsCodeCandidate[] | null }
+export interface HsRevision { id: string; name: string; number: number; effectiveDate: string; endDate: string | null; status: string; originalHsVersion?: string; updatedHsVersion?: string; totalRecords?: number }
 export interface PagedResult<T> { items: T[]; totalCount: number; page: number; pageSize: number }
 export interface PriceOutlier {
   title: string;
@@ -166,15 +167,19 @@ export interface Phase2TaxLine {
   currency: string;
   order: number;
   calculationBasis: string;
+  recommendedValue: number;
   baseAmount: number;
   calculatedAmount: number;
   notes: string;
+  status: "Recommended" | "OfficerAdjusted" | "NotApplicable" | "ReviewRequired" | string;
+  sourceReference: string;
+  isApplicable: boolean;
 }
 
 export interface Phase2Response {
   decisionId: string;
   phase1: {
-    hsCodeId: string;
+    hsCodeId: string | null;
     initialDuty: number;
     initialDutyCurrency: string;
     source: string;
@@ -182,8 +187,19 @@ export interface Phase2Response {
   phase2: {
     id: string;
     status: Phase2Status;
-    originalHsCodeId: string;
+    originalHsCodeId: string | null;
     selectedHsCodeId: string | null;
+    customsValueAmount: number;
+    customsValueCurrency: string;
+    originCountry: string;
+    productCategory: string;
+    exemptionCodes: string[];
+    originPreferenceClaimed: boolean;
+    exciseTaxApplicable: boolean;
+    isCommercialImport: boolean;
+    withholdingApplicable: boolean;
+    adjustmentReason: string;
+    officerConfirmed: boolean;
     initialDutyAmount: number;
     initialDutyCurrency: string;
     targetCurrency: string;
@@ -196,6 +212,8 @@ export interface Phase2Response {
     manualAdjustmentType: "Fixed" | "Percentage";
     notes: string;
     totalAdditionalTax: number;
+    totalTax: number;
+    finalPayableAmount: number;
     finalAmount: number;
     calculationRuleVersion: string;
     calculatedAt: string | null;
@@ -212,6 +230,12 @@ export interface Phase2TaxLineRequest {
   order: number;
   calculationBasis: string;
   notes: string;
+  recommendedValue?: number;
+  baseAmount?: number;
+  calculatedAmount?: number;
+  status?: string;
+  sourceReference?: string;
+  isApplicable?: boolean;
 }
 
 export interface Phase2Request {
@@ -226,5 +250,16 @@ export interface Phase2Request {
   manualAdjustmentType: "Fixed" | "Percentage";
   notes: string;
   taxLines: Phase2TaxLineRequest[];
+  customsValueAmount: number;
+  customsValueCurrency: string;
+  originCountry: string;
+  productCategory: string;
+  exemptionCodes: string[];
+  originPreferenceClaimed: boolean;
+  exciseTaxApplicable: boolean;
+  isCommercialImport: boolean;
+  withholdingApplicable: boolean;
+  adjustmentReason: string;
+  officerConfirmation: boolean;
   expectedVersion?: string;
 }

@@ -1,13 +1,17 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using SES.Customs.API.Security;
 using SES.Customs.API.Integrations.SerpApi;
 using SES.Customs.API.Integrations.LocalMarket;
+using SES.Customs.API.Integrations.PriceWatcha;
+using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.Core.Features.HsCodes.Contract.Query;
 using SES.Customs.Infrastructure.Dependency;
+using SES.Customs.Infrastructure.Context;
 
 var builder = WebApplication.CreateBuilder(args);
 // Console logging works in local, CI and container environments without Event Log privileges.
@@ -42,7 +46,18 @@ builder.Services.AddHttpClient<SerpApiClient>((services, client) =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
 builder.Services.Configure<LocalMarketOptions>(builder.Configuration.GetSection(LocalMarketOptions.SectionName));
+builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));
+builder.Services.AddHttpClient<PriceWatchaClient>((services, client) => { var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PriceWatchaOptions>>().Value; client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/"); client.Timeout = TimeSpan.FromSeconds(45); if (!string.IsNullOrWhiteSpace(o.ApiKey)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", o.ApiKey); });
 builder.Services.AddScoped<LocalMarketSearchService>();
+builder.Services.AddScoped<LocalSnapshotStore>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
+    client.BaseAddress = new Uri("https://api.pricesapi.io/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(100);
+    var key = services.GetRequiredService<IConfiguration>()["PRICES_API_KEY"];
+    if (!string.IsNullOrWhiteSpace(key)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+});
+builder.Services.AddHttpClient<HistoricalFxClient>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("JijiEthiopia", (services, client) =>
 {
     var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalMarketOptions>>().Value;
@@ -81,6 +96,12 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
         .AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
+if (!demo)
+{
+    using var migrationScope = app.Services.CreateScope();
+    var db = migrationScope.ServiceProvider.GetRequiredService<CustomsDbContext>();
+    db.Database.Migrate();
+}
 app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();

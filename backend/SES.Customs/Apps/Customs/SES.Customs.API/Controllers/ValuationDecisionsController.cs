@@ -22,8 +22,9 @@ public sealed class ValuationDecisionsController(CustomsDbContext db) : Controll
         var decisions = await db.ValuationDecisions.AsNoTracking()
             .Where(x => string.IsNullOrEmpty(x.OfficerSubjectId) || x.OfficerSubjectId == subject || x.OfficerSubjectId == username)
             .OrderByDescending(x => x.RecordedAt).Take(100).ToListAsync(ct);
-        var hsCodes = await db.HsCodes.AsNoTracking().Where(x => decisions.Select(d => d.HsCodeId).Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
-        return Ok(decisions.Select(x => Map(x, hsCodes.GetValueOrDefault(x.HsCodeId)?.Code)));
+        var hsIds = decisions.Where(d => d.HsCodeId.HasValue).Select(d => d.HsCodeId!.Value).ToList();
+        var hsCodes = await db.HsCodes.AsNoTracking().Where(x => hsIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        return Ok(decisions.Select(x => Map(x, x.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(x.HsCodeId.Value)?.Code : null)));
     }
 
     [HttpGet("{id:guid}")]
@@ -32,17 +33,16 @@ public sealed class ValuationDecisionsController(CustomsDbContext db) : Controll
         var decision = await db.ValuationDecisions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (decision is null) return NotFound(new { message = "Valuation case was not found." });
         if (!CanAccess(decision)) return Forbid();
-        var code = await db.HsCodes.AsNoTracking().Where(x => x.Id == decision.HsCodeId).Select(x => x.Code).FirstOrDefaultAsync(ct);
+        var code = decision.HsCodeId.HasValue ? await db.HsCodes.AsNoTracking().Where(x => x.Id == decision.HsCodeId.Value).Select(x => x.Code).FirstOrDefaultAsync(ct) : null;
         return Ok(Map(decision, code));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(ValuationDecisionRequest request, CancellationToken ct)
     {
-        if (request.HsCodeId == Guid.Empty) return BadRequest(new { message = "Select an HS code for Phase 1." });
         if (request.SelectedReferenceValue < 0 || request.InitialDuty < 0) return BadRequest(new { message = "Reference value and initial duty cannot be negative." });
         if (string.IsNullOrWhiteSpace(request.Currency) || request.Currency.Trim().Length != 3) return BadRequest(new { message = "Currency must be a three-letter ISO code." });
-        if (!await db.HsCodes.AnyAsync(x => x.Id == request.HsCodeId, ct)) return BadRequest(new { message = "The selected HS code was not found." });
+        if (request.HsCodeId.HasValue && !await db.HsCodes.AnyAsync(x => x.Id == request.HsCodeId.Value, ct)) return BadRequest(new { message = "The selected HS code was not found." });
         var decision = new ValuationDecision
         {
             Id = Guid.NewGuid(), HsCodeId = request.HsCodeId, SelectedReferenceValue = request.SelectedReferenceValue,
@@ -63,7 +63,7 @@ public sealed class ValuationDecisionsController(CustomsDbContext db) : Controll
 }
 
 public sealed record ValuationDecisionRequest(
-    Guid HsCodeId,
+    Guid? HsCodeId,
     decimal SelectedReferenceValue,
     string Currency,
     decimal InitialDuty,
