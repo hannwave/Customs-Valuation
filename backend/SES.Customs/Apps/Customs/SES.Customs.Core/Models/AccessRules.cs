@@ -17,7 +17,7 @@ public static class AccessRules
     {
         SystemAdmin => [.. Shared, "users.manage_all", "roles.manage", "permissions.manage", "customs_admin.manage", "locations.manage", "hs_codes.manage", "hs_revisions.manage", "price_sources.manage", "exchange_rates.configure", "integrations.manage", "system_settings.manage", "audit.view_global", "valuations.review_global"],
         CustomsAdmin => [.. Shared, "locations.view_assigned", "operations.view_assigned", "workload.view_assigned", "valuations.review_assigned", "audit.view_assigned"],
-        Officer => [.. Shared, "reference_prices.view", "local_prices.view", "historical_prices.view", "statistics.view", "trends.view", "country_analysis.view", "outliers.view", "outliers.review", "locations.view_assigned", "valuation.create", "valuation.update_own", "valuation.submit", "valuation.view_authorized", "audit.view_own"],
+        Officer => [.. Shared, "reference_prices.view", "local_prices.view", "historical_prices.view", "outliers.view", "outliers.review", "locations.view_assigned", "valuation.create", "valuation.update_own", "valuation.submit", "audit.view_own"],
         _ => []
     };
     private static readonly string[] Shared = ["hs_codes.view", "hs_revisions.view"];

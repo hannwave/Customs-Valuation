@@ -580,6 +580,35 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("DeclaredPriceAmount")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("DeclaredPriceCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<decimal?>("DeclaredPriceConvertedAmount")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("DeclaredPriceConvertedCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<decimal?>("DeclaredPriceExchangeRate")
+                        .HasPrecision(24, 12)
+                        .HasColumnType("numeric(24,12)");
+
+                    b.Property<DateOnly?>("DeclaredPriceExchangeRateDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("DeclaredPriceExchangeRateSource")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("ListingId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -815,6 +844,34 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<DateTimeOffset>("RecordedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte[]>("ReceiptData")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ReceiptContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReceiptFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<long?>("ReceiptFileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReceiptSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("ReceiptUploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReceiptUploadedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("ReviewJustification")
                         .HasColumnType("text");
 
@@ -870,6 +927,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<decimal>("CustomsValueAmount")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
                     b.Property<string>("CustomsValueCurrency")
                         .IsRequired()

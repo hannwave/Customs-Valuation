@@ -7,6 +7,37 @@ namespace SES.Customs.API.Controllers;
 [ApiController, Route("api/exchange-rates"), Authorize(Policy = "OfficerOnly")]
 public sealed class ExchangeRatesController(HistoricalFxClient fx) : ControllerBase
 {
+    [HttpGet("convert")]
+    public async Task<IActionResult> Convert([FromQuery] decimal amount, [FromQuery] string? from, [FromQuery] string? to, CancellationToken ct)
+    {
+        var sourceCurrency = (from ?? "").Trim().ToUpperInvariant();
+        var targetCurrency = (to ?? "").Trim().ToUpperInvariant();
+        if (amount <= 0) return BadRequest(new { message = "Enter a positive price paid." });
+        if (!IsCurrency(sourceCurrency) || !IsCurrency(targetCurrency))
+            return BadRequest(new { message = "Use three-letter ISO currency codes." });
+
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (sourceCurrency == targetCurrency)
+            return Ok(new { originalAmount = amount, from = sourceCurrency, convertedAmount = amount, to = targetCurrency, rate = 1m, source = "Same currency", date });
+
+        var rates = await fx.RatesAsync(date, ct);
+        if (!rates.TryGetValue(sourceCurrency, out var sourceEtb) || sourceEtb <= 0 ||
+            !rates.TryGetValue(targetCurrency, out var targetEtb) || targetEtb <= 0)
+            return NotFound(new { message = $"An approved {sourceCurrency} to {targetCurrency} exchange rate is unavailable." });
+
+        var rate = sourceEtb / targetEtb;
+        return Ok(new
+        {
+            originalAmount = amount,
+            from = sourceCurrency,
+            convertedAmount = Math.Round(amount * rate, 2, MidpointRounding.AwayFromZero),
+            to = targetCurrency,
+            rate = Math.Round(rate, 12),
+            source = "Approved ETB cross-rate (exchange.et / configured fallback)",
+            date
+        });
+    }
+
     [HttpGet]
     public async Task<IActionResult> Get([FromQuery] string? to, CancellationToken ct)
     {
@@ -59,4 +90,6 @@ public sealed class ExchangeRatesController(HistoricalFxClient fx) : ControllerB
 
         return NotFound(new { message = $"No exchange rate is available for {target}." });
     }
+
+    private static bool IsCurrency(string value) => value.Length == 3 && value.All(char.IsLetter);
 }

@@ -131,6 +131,14 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
     {
         b.ToTable("valuation_decisions"); b.HasKey(x => x.Id);
         b.Property(x => x.SelectedReferenceValue).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceAmount).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceConvertedAmount).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceExchangeRate).HasPrecision(24, 12);
+        b.Property(x => x.DeclaredPriceCurrency).HasMaxLength(3);
+        b.Property(x => x.DeclaredPriceConvertedCurrency).HasMaxLength(3);
+        b.Property(x => x.ReceiptFileName).HasMaxLength(260);
+        b.Property(x => x.ReceiptContentType).HasMaxLength(100);
+        b.Property(x => x.ReceiptSha256).HasMaxLength(64);
         b.Property(x => x.LocationSnapshotJson).HasColumnType("jsonb");
         b.Property(x => x.InitialDuty).HasPrecision(24, 8);
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
@@ -145,6 +153,8 @@ public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<Valu
         b.HasIndex(x => x.ValuationDecisionId).IsUnique();
         b.Property(x => x.CustomsValueAmount).HasPrecision(24, 8);
         b.Property(x => x.CustomsValueCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.Quantity).HasPrecision(24, 8);
+        b.Property(x => x.Unit).HasMaxLength(40).IsRequired();
         b.Property(x => x.OriginCountry).HasMaxLength(120).IsRequired();
         b.Property(x => x.ProductCategory).HasMaxLength(120).IsRequired();
         b.Property(x => x.ExemptionCodes).HasMaxLength(1000).IsRequired();

@@ -1,9 +1,11 @@
 using System.Text;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.API.Security;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
@@ -20,10 +22,25 @@ public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal Sel
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public sealed record DecisionTransition(Guid Version, string? Justification, string Outcome = "Approved");
+public sealed class DecisionReceiptForm
+{
+    public Guid? HsCodeId { get; set; }
+    public Guid? LocationId { get; set; }
+    public decimal SelectedReferenceValue { get; set; }
+    public string Currency { get; set; } = "";
+    public string Decision { get; set; } = "";
+    public string? Justification { get; set; }
+    public string? Evidence { get; set; }
+    public decimal DeclaredPriceAmount { get; set; }
+    public string DeclaredPriceCurrency { get; set; } = "";
+    public IFormFile? Receipt { get; set; }
+}
 
 [ApiController, Route("api/workspace"), Authorize, ServiceFilter(typeof(WorkspaceExceptionFilter))]
-public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess access) : ControllerBase
+public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess access, HistoricalFxClient fx) : ControllerBase
 {
+    private const long MaximumReceiptBytes = 8 * 1024 * 1024;
+    private static readonly HashSet<string> ReceiptTypes = new(StringComparer.OrdinalIgnoreCase) { "application/pdf", "image/jpeg", "image/png" };
     // REGION and BRANCH are retained for compatibility with the existing
     // organization data and database constraint. New locations can continue
     // using the more specific operational types below.
@@ -94,6 +111,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpGet("dashboard")]
     public async Task<IActionResult> Dashboard(CancellationToken ct)
     {
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         var scope = await access.Locations(ct);
         var locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct);
         var now = DateTimeOffset.UtcNow; var today = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
@@ -174,7 +192,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             role = access.Role, generatedAt = now, kpis, activeRevision = revision == null ? null : new { revision.Id, revision.Name, revision.Number, revision.EffectiveDate, revision.Status, codeCount = activeHs },
             locations = locations.Select(l => new { l.Id, l.OfficialCode, l.Name, l.DisplayName, l.LocationType, l.ParentLocationId, l.Status, l.SupportsImport, l.SupportsExport, l.SupportsTransit, l.SupportsValuation, l.SupportsInspection }),
             employees = dashboardEmployees.Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId, assignments = grants.Where(g => g.UserId == u.Id).Select(g => new { g.CustomsLocationId, g.IncludeChildLocations, g.Responsibilities }) }),
-            decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.Code ?? "" : "", product = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.DescriptionEn ?? "Unknown product" : "Product classification deferred to Phase 2", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
+            decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.Code ?? "" : "", product = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.DescriptionEn ?? "Unknown product" : "Product classification deferred to Phase 2", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId, d.DeclaredPriceAmount, d.DeclaredPriceCurrency, d.DeclaredPriceConvertedAmount, d.DeclaredPriceConvertedCurrency, d.ReceiptFileName }),
             sources = sources.Select(s => new { s.Id, s.Name, pool = s.Pool.ToString(), s.IsApproved }), audit
         });
     }
@@ -433,11 +451,44 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     }
     [HttpPost("decisions")]
     public Task<IActionResult> CreateDecision(DecisionInput input, CancellationToken ct) => SaveDecision(null, input, ct);
-    [HttpPut("decisions/{id:guid}")]
-    public Task<IActionResult> UpdateDecision(Guid id, DecisionInput input, CancellationToken ct) => SaveDecision(id, input, ct);
-    private async Task<IActionResult> SaveDecision(Guid? id, DecisionInput input, CancellationToken ct)
+    [HttpPost("decisions/with-receipt"), RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> CreateDecisionWithReceipt([FromForm] DecisionReceiptForm form, CancellationToken ct)
     {
         access.Require(AccessRules.Officer);
+        Validate(form.DeclaredPriceAmount > 0, "Enter the positive price paid by the customer.");
+        var sourceCurrency = NormalizeCurrency(form.DeclaredPriceCurrency);
+        var targetCurrency = NormalizeCurrency(form.Currency);
+        Validate(sourceCurrency is not null && targetCurrency is not null, "Use three-letter ISO currencies for the paid price and system value.");
+        Validate(form.Receipt is { Length: > 0 }, "Attach the customer's PDF, JPG, or PNG receipt.");
+        Validate(form.Receipt!.Length <= MaximumReceiptBytes, "The receipt must be 8 MB or smaller.");
+        Validate(ReceiptTypes.Contains(form.Receipt.ContentType), "Receipt format must be PDF, JPG, or PNG.");
+
+        await using var stream = new MemoryStream();
+        await form.Receipt.CopyToAsync(stream, ct);
+        var bytes = stream.ToArray();
+        Validate(IsValidReceiptSignature(bytes, form.Receipt.ContentType), "The receipt content does not match its declared PDF or image format.");
+        var conversion = await ConvertDeclaredPrice(form.DeclaredPriceAmount, sourceCurrency!, targetCurrency!, ct);
+        var input = new DecisionInput(form.HsCodeId, form.LocationId, form.SelectedReferenceValue, targetCurrency!, form.Decision, form.Justification, form.Evidence, null);
+        var receipt = new ReceiptEvidence(
+            form.DeclaredPriceAmount, sourceCurrency!, conversion.Amount, targetCurrency!, conversion.Rate,
+            conversion.Source, conversion.Date, Path.GetFileName(form.Receipt.FileName), form.Receipt.ContentType,
+            bytes.LongLength, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), DateTimeOffset.UtcNow,
+            access.UserId.ToString(), bytes);
+        return await SaveDecision(null, input, ct, receipt);
+    }
+    [HttpGet("decisions/{id:guid}/receipt")]
+    public async Task<IActionResult> Receipt(Guid id, CancellationToken ct)
+    {
+        var decision = await VisibleDecisions().AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        if (decision.ReceiptData is not { Length: > 0 }) return NotFound(new { message = "No receipt was captured for this legacy valuation record." });
+        return File(decision.ReceiptData, decision.ReceiptContentType, decision.ReceiptFileName);
+    }
+    [HttpPut("decisions/{id:guid}")]
+    public Task<IActionResult> UpdateDecision(Guid id, DecisionInput input, CancellationToken ct) => SaveDecision(id, input, ct);
+    private async Task<IActionResult> SaveDecision(Guid? id, DecisionInput input, CancellationToken ct, ReceiptEvidence? receipt = null)
+    {
+        access.Require(AccessRules.Officer);
+        Validate(id.HasValue || receipt is not null, "Attach the customer's PDF, JPG, or PNG receipt when creating a valuation record.");
         CustomsLocation? office = null;
         if (input.LocationId.HasValue)
         {
@@ -447,6 +498,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
         Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
+        var officerNoteIssue = OfficerNoteQuality.Check(input.Justification);
+        Validate(officerNoteIssue is null, officerNoteIssue ?? "");
         if (input.HsCodeId.HasValue)
             Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId.Value, ct), "The selected HS code was not found.");
         var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
@@ -461,6 +514,15 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
         entity.EvidenceNotes = input.Evidence?.Trim() ?? "";
+        if (receipt is not null)
+        {
+            entity.DeclaredPriceAmount = receipt.OriginalAmount; entity.DeclaredPriceCurrency = receipt.OriginalCurrency;
+            entity.DeclaredPriceConvertedAmount = receipt.ConvertedAmount; entity.DeclaredPriceConvertedCurrency = receipt.ConvertedCurrency;
+            entity.DeclaredPriceExchangeRate = receipt.ExchangeRate; entity.DeclaredPriceExchangeRateSource = receipt.ExchangeRateSource;
+            entity.DeclaredPriceExchangeRateDate = receipt.ExchangeRateDate; entity.ReceiptFileName = receipt.FileName;
+            entity.ReceiptContentType = receipt.ContentType; entity.ReceiptFileSize = receipt.FileSize; entity.ReceiptSha256 = receipt.Sha256;
+            entity.ReceiptUploadedAt = receipt.UploadedAt; entity.ReceiptUploadedBy = receipt.UploadedBy; entity.ReceiptData = receipt.Data;
+        }
         if (id == null) db.ValuationDecisions.Add(entity);
         access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, entity.Justification, input.LocationId);
         await db.SaveChangesAsync(ct); return Ok(entity);
@@ -471,6 +533,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         access.Require(AccessRules.Officer);
         var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(decision.OfficerSubjectId == access.UserId.ToString() && decision.Status == "Draft" && decision.Version == input.Version, "Only your current saved draft may be submitted.");
+        Validate(decision.DeclaredPriceAmount > 0 && decision.ReceiptData is { Length: > 0 }, "Capture the customer's price paid and attach a PDF, JPG, or PNG receipt before submission.");
         if (decision.LocationId.HasValue)
             await access.RequireLocation(decision.LocationId.Value, true, ct);
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
@@ -593,4 +656,35 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             return null;
         }
     }
+
+    private async Task<DeclaredPriceConversion> ConvertDeclaredPrice(decimal amount, string from, string to, CancellationToken ct)
+    {
+        var date = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (from == to) return new(amount, 1m, "Same currency", date);
+        var rates = await fx.RatesAsync(date, ct);
+        rates.TryGetValue(from, out var sourceEtb);
+        rates.TryGetValue(to, out var targetEtb);
+        Validate(sourceEtb > 0 && targetEtb > 0, $"An approved {from} to {to} exchange rate is unavailable.");
+        var rate = sourceEtb / targetEtb;
+        return new(Math.Round(amount * rate, 2, MidpointRounding.AwayFromZero), Math.Round(rate, 12), "Approved ETB cross-rate (exchange.et / configured fallback)", date);
+    }
+
+    private static string? NormalizeCurrency(string? value)
+    {
+        var currency = value?.Trim().ToUpperInvariant() ?? "";
+        return currency.Length == 3 && currency.All(char.IsLetter) ? currency : null;
+    }
+
+    private static bool IsValidReceiptSignature(byte[] data, string contentType) => contentType.ToLowerInvariant() switch
+    {
+        "application/pdf" => data.Length >= 5 && data[0] == '%' && data[1] == 'P' && data[2] == 'D' && data[3] == 'F' && data[4] == '-',
+        "image/jpeg" => data.Length >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff,
+        "image/png" => data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a }),
+        _ => false
+    };
+
+    private sealed record DeclaredPriceConversion(decimal Amount, decimal Rate, string Source, DateOnly Date);
+    private sealed record ReceiptEvidence(decimal OriginalAmount, string OriginalCurrency, decimal ConvertedAmount, string ConvertedCurrency,
+        decimal ExchangeRate, string ExchangeRateSource, DateOnly ExchangeRateDate, string FileName, string ContentType,
+        long FileSize, string Sha256, DateTimeOffset UploadedAt, string UploadedBy, byte[] Data);
 }

@@ -20,6 +20,15 @@ public class HistoricalComparisonTests
     public void StandardVariantMatchesModelWithoutStorage()
         => Assert.True(HistoricalComparison.Matches(new("Sony", "WH-1000XM5", "standard"), "Sony WH-1000XM5 Wireless Headphones", null));
 
+    [Theory]
+    [InlineData("Apple iPhone 15 128GB", "Apple iPhone 15 128GB smartphone", true)]
+    [InlineData("Apple iPhone 15 128GB", "Apple iPhone 15 Pro 128GB", false)]
+    [InlineData("Apple iPhone 15 128GB", "Apple iPhone 15 256GB", false)]
+    [InlineData("Apple iPhone 15", "Apple iPhone 15 128GB", false)]
+    [InlineData("Apple iPhone 15", "Apple iPhone 15 case", false)]
+    public void SavedHistoryQueryDoesNotMixModelsVariantsOrAccessories(string query, string title, bool expected)
+        => Assert.Equal(expected, HistoricalComparison.MatchesQuery(query, title, "New"));
+
     [Fact]
     public void MissingValuesAreNotZerosAndMedianIsNotMean()
     {

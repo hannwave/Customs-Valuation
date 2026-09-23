@@ -10,6 +10,8 @@ public sealed class ValuationPhase2
     public Guid? SelectedHsCodeId { get; set; }
     public decimal CustomsValueAmount { get; set; }
     public string CustomsValueCurrency { get; set; } = "ETB";
+    public decimal Quantity { get; set; } = 1m;
+    public string Unit { get; set; } = "PCS";
     public string OriginCountry { get; set; } = "";
     public string ProductCategory { get; set; } = "";
     public string ExemptionCodes { get; set; } = "";

@@ -157,7 +157,7 @@ export interface LocalMarketSyncResponse {
 }
 
 export type Phase2Status = "InProgress" | "Completed" | "RequiresReview";
-export type Phase2CalculationType = "Percentage" | "Fixed";
+export type Phase2CalculationType = "Percentage" | "Fixed" | "PerUnit";
 
 export interface Phase2TaxLine {
   id: string;
@@ -183,6 +183,18 @@ export interface Phase2Response {
     initialDuty: number;
     initialDutyCurrency: string;
     source: string;
+    declaredPriceAmount: number | null;
+    declaredPriceCurrency: string;
+    declaredPriceConvertedAmount: number | null;
+    declaredPriceConvertedCurrency: string;
+    declaredPriceExchangeRate: number | null;
+    declaredPriceExchangeRateSource: string;
+    declaredPriceExchangeRateDate: string | null;
+    receiptFileName: string;
+    receiptContentType: string;
+    receiptFileSize: number | null;
+    receiptSha256: string;
+    receiptUploadedAt: string | null;
   };
   phase2: {
     id: string;
@@ -191,6 +203,8 @@ export interface Phase2Response {
     selectedHsCodeId: string | null;
     customsValueAmount: number;
     customsValueCurrency: string;
+    quantity: number;
+    unit: string;
     originCountry: string;
     productCategory: string;
     exemptionCodes: string[];
@@ -252,6 +266,8 @@ export interface Phase2Request {
   taxLines: Phase2TaxLineRequest[];
   customsValueAmount: number;
   customsValueCurrency: string;
+  quantity: number;
+  unit: string;
   originCountry: string;
   productCategory: string;
   exemptionCodes: string[];

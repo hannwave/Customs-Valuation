@@ -10,6 +10,29 @@ public sealed record ExactProduct(string Brand, string Model, string Variant)
 public static class HistoricalComparison
 {
     private static string Normal(string value) => Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9]", "");
+
+    public static bool MatchesQuery(string query, string title, string? condition)
+    {
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(title)) return false;
+        var text = title.ToLowerInvariant();
+        if (Regex.IsMatch(text + " " + condition, @"\b(refurbished|renewed|used|second.hand|pre.owned|case|cover|protector|replacement|adapter|cable|charger|strap|earpads|ear cushions|bundle|replica)\b", RegexOptions.IgnoreCase)) return false;
+
+        var queryTokens = Regex.Matches(query.ToLowerInvariant(), @"[a-z0-9]+")
+            .Select(match => Normal(match.Value)).Where(token => token.Length > 0).Distinct().ToArray();
+        var normalizedTitle = Normal(title);
+        if (queryTokens.Length == 0 || queryTokens.Any(token => !normalizedTitle.Contains(token, StringComparison.Ordinal))) return false;
+
+        // A broad query must not pull another model, storage size, or suffix variant
+        // into the same historical median.
+        var requestedNumbers = Regex.Matches(query, @"\d+").Select(match => match.Value).ToHashSet();
+        var titleNumbers = Regex.Matches(title, @"\d+").Select(match => match.Value).ToHashSet();
+        if (!requestedNumbers.SetEquals(titleNumbers)) return false;
+        foreach (var suffix in new[] { "pro", "max", "plus", "ultra", "mini", "lite", "fe" })
+            if (Regex.IsMatch(text, $@"\b{suffix}\b") != Regex.IsMatch(query, $@"\b{suffix}\b", RegexOptions.IgnoreCase)) return false;
+
+        return true;
+    }
+
     public static bool Matches(ExactProduct target, string title, string? condition)
     {
         var text = title.ToLowerInvariant();

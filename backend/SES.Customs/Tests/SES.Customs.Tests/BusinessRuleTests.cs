@@ -22,10 +22,16 @@ public sealed class BusinessRuleTests
     [Fact]
     public void Price_analysis_permissions_are_exclusive_to_customs_officers()
     {
-        var pricePermissions = new[] { "reference_prices.view", "local_prices.view", "historical_prices.view", "statistics.view", "trends.view", "country_analysis.view", "outliers.view" };
+        var pricePermissions = new[] { "reference_prices.view", "local_prices.view", "historical_prices.view", "outliers.view" };
         Assert.All(pricePermissions, permission => Assert.Contains(permission, AccessRules.Permissions(AccessRules.Officer)));
         Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.CustomsAdmin)));
         Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.SystemAdmin)));
+    }
+    [Fact]
+    public void Officers_do_not_receive_dashboard_reporting_or_valuation_register_permissions()
+    {
+        var removedPermissions = new[] { "statistics.view", "trends.view", "country_analysis.view", "valuation.view_authorized" };
+        Assert.All(removedPermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.Officer)));
     }
     private static ComparableObservation Observation(decimal value, PricePool pool = PricePool.International,
         string unit = "piece", string key = "reviewed-group-v1", string currency = "ETB") => new(pool, value, currency, unit, key);
@@ -50,6 +56,47 @@ public sealed class BusinessRuleTests
     { var result = PriceStatisticsCalculator.Calculate([]); Assert.Equal(0, result.Count); Assert.Null(result.Mean); }
     [Fact] public void EvenMedianIsMiddleAverage()
     { Assert.Equal(15m, PriceStatisticsCalculator.Calculate([Observation(10), Observation(20)]).Median); }
+    [Fact] public void SequentialImportTaxExampleCompoundsSurtaxBeforeVat()
+    {
+        var result = SequentialImportTaxCalculator.Calculate(10_000m, 30m, 10m, 10m, 15m);
+
+        Assert.Equal(3_000m, result.Duty);
+        Assert.Equal(13_000m, result.ExciseBase);
+        Assert.Equal(1_300m, result.Excise);
+        Assert.Equal(14_300m, result.SurtaxBase);
+        Assert.Equal(1_430m, result.Surtax);
+        Assert.Equal(15_730m, result.VatBase);
+        Assert.Equal(2_359.50m, result.Vat);
+        Assert.Equal(8_089.50m, result.Total);
+        Assert.Equal(18_089.50m, result.LandedCost(10_000m));
+    }
+    [Fact] public void SpecificExciseIsIncludedBeforeSurtaxAndVat()
+    {
+        var result = SequentialImportTaxCalculator.Calculate(10_000m, 35m, 30m, 10m, 15m, exciseSpecificAmount: 644m);
+
+        Assert.Equal(13_500m, result.ExciseBase);
+        Assert.Equal(4_694m, result.Excise);
+        Assert.Equal(18_194m, result.SurtaxBase);
+        Assert.Equal(1_819.40m, result.Surtax);
+        Assert.Equal(20_013.40m, result.VatBase);
+    }
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("Receipt verified against the invoice", true)]
+    [InlineData("Reviewed", true)]
+    [InlineData("የዋጋ ማስረጃ ተመርመረ", true)]
+    [InlineData("asdf", false)]
+    [InlineData("qwerty uiop", false)]
+    [InlineData("good good good", false)]
+    [InlineData("!!!!!", false)]
+    [InlineData("xjskdf", false)]
+    public void OptionalOfficerNotesAllowReadableTextAndRejectObviousNoise(string note, bool expected)
+        => Assert.Equal(expected, OfficerNoteQuality.Check(note) is null);
+
+    [Fact]
+    public void OptionalOfficerNoteEnforcesFieldLength()
+        => Assert.NotNull(OfficerNoteQuality.Check(new string('a', 501)));
+
     [Fact] public void ConversionPreservesOriginalAndProvenance()
     {
         var rate = new ExchangeRate { Id = Guid.NewGuid(), OriginalCurrency = "USD", Rate = 100m,

@@ -6,6 +6,7 @@ import { DataState } from "@/components/DataState";
 import { getSessionAccessToken } from "@/lib/auth/session";
 import type { HsCode } from "@/lib/types/customs";
 import { locationLabel, roleLabel, workspaceApi, type ValuationDecision, type WorkspaceProfile } from "@/lib/workspace";
+import { officerNoteIssue } from "@/lib/officer-note-quality";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
 export default function ValuationDecisionsPage() {
@@ -13,6 +14,7 @@ export default function ValuationDecisionsPage() {
   const [decisions, setDecisions] = useState<ValuationDecision[]>([]);
   const [hsCodes, setHsCodes] = useState<Record<string, HsCode>>({});
   const [reviewReasons, setReviewReasons] = useState<Record<string, string>>({});
+  const [officerNote, setOfficerNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -38,14 +40,20 @@ export default function ValuationDecisionsPage() {
   useEffect(() => { void load(); }, [load]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy("create"); setError(""); setNotice("");
+    event.preventDefault(); setError(""); setNotice("");
+    const noteIssue = officerNoteIssue(officerNote);
+    if (noteIssue) { setError(noteIssue); return; }
+    setBusy("create");
     const form = new FormData(event.currentTarget);
     try {
-      await workspaceApi("/decisions", { method: "POST", body: JSON.stringify({
-        hsCodeId: null, locationId: form.get("locationId"), selectedReferenceValue: Number(form.get("selectedReferenceValue")),
-        currency: String(form.get("currency")).toUpperCase(), decision: form.get("decision"), justification: form.get("justification"), evidence: form.get("evidence"), version: null,
-      }) });
-      event.currentTarget.reset(); setNotice("Draft saved with an immutable location snapshot and audit entry."); await load();
+      const upload = new FormData();
+      for (const key of ["locationId", "selectedReferenceValue", "currency", "decision", "justification", "evidence", "declaredPriceAmount", "declaredPriceCurrency", "receipt"]) {
+        const value = form.get(key); if (value != null) upload.append(key, value);
+      }
+      const response = await fetch(`${apiBase}/api/workspace/decisions/with-receipt`, { method: "POST", headers: { Authorization: `Bearer ${getSessionAccessToken()}` }, body: upload });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message ?? "The valuation draft could not be saved.");
+      event.currentTarget.reset(); setOfficerNote(""); setNotice("Draft saved with an immutable location snapshot and audit entry."); await load();
     } catch (ex) { setError(ex instanceof Error ? ex.message : "The draft could not be saved."); }
     finally { setBusy(""); }
   }
@@ -60,6 +68,14 @@ export default function ValuationDecisionsPage() {
     try { await workspaceApi(`/decisions/${decision.id}/review`, { method: "POST", body: JSON.stringify({ version: decision.version, justification: reviewReasons[decision.id] ?? "", outcome }) }); setNotice(`Decision ${outcome.toLowerCase()}.`); await load(); }
     catch (ex) { setError(ex instanceof Error ? ex.message : "Review failed."); }
     finally { setBusy(""); }
+  }
+  async function downloadReceipt(decision: ValuationDecision) {
+    setBusy(decision.id); setError("");
+    try {
+      const response = await fetch(`${apiBase}/api/workspace/decisions/${decision.id}/receipt`, { headers: { Authorization: `Bearer ${getSessionAccessToken()}` } });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message ?? "Receipt could not be opened.");
+      const url = URL.createObjectURL(await response.blob()); const anchor = document.createElement("a"); anchor.href = url; anchor.download = decision.receiptFileName; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (ex) { setError(ex instanceof Error ? ex.message : "Receipt could not be opened."); } finally { setBusy(""); }
   }
 
   if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying your role and assigned location to the decision register." />;
@@ -85,10 +101,13 @@ export default function ValuationDecisionsPage() {
         <label><span>Decision location</span><select name="locationId" required defaultValue=""><option value="" disabled>Select assigned office</option>{operationalLocations.map(location => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</select></label>
         <label><span>Selected reference value</span><input name="selectedReferenceValue" type="number" min="0.01" step="0.01" required /></label>
         <label><span>Currency</span><input name="currency" defaultValue="USD" pattern="[A-Za-z]{3}" maxLength={3} required /></label>
+        <label><span>Original price paid by customer</span><input name="declaredPriceAmount" type="number" min="0.01" step="0.01" required /></label>
+        <label><span>Currency on receipt</span><select name="declaredPriceCurrency" defaultValue="USD" required>{["ETB", "USD", "EUR", "GBP", "AED", "ZAR"].map(code => <option key={code}>{code}</option>)}</select></label>
+        <label className="wide-field"><span>Customer invoice receipt (PDF/JPG/PNG, up to 8 MB)</span><input name="receipt" type="file" accept="application/pdf,image/jpeg,image/png" required /></label>
         <label className="wide-field"><span>Decision</span><input name="decision" required placeholder="Accepted, adjusted, or further examination required" /></label>
         <label className="wide-field"><span>Evidence references (optional)</span><textarea name="evidence" rows={4} placeholder="Record observation IDs, source URLs, dates, comparable goods, and exclusions." /></label>
-        <label className="wide-field"><span>Officer note (optional)</span><textarea name="justification" rows={4} placeholder="Add an optional explanation for the selected value." /></label>
-        <div className="form-actions"><button className="primary-button" type="submit" disabled={busy === "create"}>{busy === "create" ? "Saving…" : "Save draft"}</button></div>
+        <label className="wide-field"><span>Officer note (optional)</span><textarea name="justification" rows={4} maxLength={500} value={officerNote} aria-invalid={Boolean(officerNoteIssue(officerNote))} onChange={event => setOfficerNote(event.currentTarget.value)} placeholder="Add an optional explanation for the selected value." />{officerNoteIssue(officerNote) && <small className="field-validation-error" role="alert">{officerNoteIssue(officerNote)}</small>}</label>
+        <div className="form-actions"><button className="primary-button" type="submit" disabled={busy === "create" || Boolean(officerNoteIssue(officerNote))}>{busy === "create" ? "Saving…" : "Save draft"}</button></div>
       </form>}
     </section>}
 
@@ -99,7 +118,7 @@ export default function ValuationDecisionsPage() {
         const hs = decision.hsCodeId ? hsCodes[decision.hsCodeId] : null; const location = profile.locations.find(item => item.id === decision.locationId);
         const canReview = !isOfficer && decision.status === "Submitted"; const reason = reviewReasons[decision.id] ?? "";
         return <article className="decision-card" key={decision.id}><div className="decision-card-heading"><div><span className={`decision-status decision-status--${decision.status.toLowerCase()}`}>{decision.status}</span><h3>{hs ? `${hs.code} · ${hs.descriptionEn}` : "HS classification deferred to Phase 2"}</h3><small>{location?.displayName ?? location?.name ?? "Historical location"} · {new Date(decision.recordedAt).toLocaleString()}</small></div><strong>{decision.currency} {decision.selectedReferenceValue.toLocaleString()}</strong></div>
-          <dl className="decision-details"><div><dt>Decision</dt><dd>{decision.decision}</dd></div><div><dt>Officer justification</dt><dd>{decision.justification}</dd></div><div><dt>Evidence snapshot</dt><dd>{detailId === decision.id && detailEvidence ? `${detailEvidence.product ?? "Product"} · ${detailEvidence.internationalEvidence?.length ?? 0} global records · ${detailEvidence.localEvidence?.length ?? 0} local records` : "Stored evidence, statistics, outliers, and tariff calculation"}</dd></div>{decision.reviewJustification && <div><dt>Review</dt><dd>{decision.reviewJustification}</dd></div>}</dl>
+          <dl className="decision-details"><div><dt>Decision</dt><dd>{decision.decision}</dd></div><div><dt>Price paid</dt><dd>{decision.declaredPriceAmount != null ? `${decision.declaredPriceCurrency} ${decision.declaredPriceAmount.toLocaleString()} → ${decision.declaredPriceConvertedCurrency} ${decision.declaredPriceConvertedAmount?.toLocaleString()}` : "Not captured (legacy record)"}</dd></div><div><dt>Receipt</dt><dd>{decision.receiptFileName ? <button className="link-button" type="button" onClick={() => void downloadReceipt(decision)}>{decision.receiptFileName}</button> : "Not captured (legacy record)"}</dd></div><div><dt>Officer justification</dt><dd>{decision.justification}</dd></div><div><dt>Evidence snapshot</dt><dd>{detailId === decision.id && detailEvidence ? `${detailEvidence.product ?? "Product"} · ${detailEvidence.internationalEvidence?.length ?? 0} global records · ${detailEvidence.localEvidence?.length ?? 0} local records` : "Stored evidence, statistics, outliers, and tariff calculation"}</dd></div>{decision.reviewJustification && <div><dt>Review</dt><dd>{decision.reviewJustification}</dd></div>}</dl>
           {detailId === decision.id && <div className="record-detail-panel"><p><strong>Product:</strong> {detailEvidence?.product ?? "Not provided"}</p><p><strong>Search:</strong> {detailEvidence?.searchQuery ?? "Not provided"}</p><p><strong>Officer:</strong> {detailEvidence?.officer?.name ?? profile.user.fullName}</p><p><strong>Tariff:</strong> {detailEvidence?.tariff?.rate != null ? `${detailEvidence.tariff.rate}% · ${detailEvidence.tariff.amount ?? "—"} ${decision.currency}` : detailEvidence?.tariff?.source ?? "Unavailable"}</p><pre>{JSON.stringify({ statistics: detailEvidence?.statistics, outliers: detailEvidence?.outliers }, null, 2)}</pre></div>}
           <div className="row-actions"><button className="secondary-button" type="button" onClick={() => setDetailId(current => current === decision.id ? null : decision.id)}><FiEye />{detailId === decision.id ? "Hide details" : "View details"}</button></div>
           {isOfficer && decision.status === "Draft" && decision.locationId && <div className="row-actions"><button className="approve-button" type="button" disabled={busy === decision.id} onClick={() => void submit(decision)}><FiSend />{busy === decision.id ? "Submitting…" : "Submit for review"}</button></div>}

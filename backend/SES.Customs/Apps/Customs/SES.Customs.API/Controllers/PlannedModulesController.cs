@@ -20,14 +20,6 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned11() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("hs-codes/{id:guid}/historical-customs-prices"), Authorize(Policy = "OfficerOnly")]
     public IActionResult Planned12() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("hs-codes/{id:guid}/statistics"), Authorize(Policy = "OfficerOnly")]
-    public IActionResult Planned13() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("hs-codes/{id:guid}/trend"), Authorize(Policy = "OfficerOnly")]
-    public IActionResult Planned14() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("hs-codes/{id:guid}/country-comparison"), Authorize(Policy = "OfficerOnly")]
-    public IActionResult Planned15() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpGet("hs-codes/{id:guid}/local-vs-international"), Authorize(Policy = "OfficerOnly")]
-    public IActionResult Planned16() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/hs/sync"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned17() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/comtrade/sync"), Authorize(Policy = "SystemAdministrator")]
@@ -46,6 +38,4 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned28() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpGet("audit-logs"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned29() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpPost("reports/{reportType}/exports"), Authorize(Policy = "CustomsOfficer")]
-    public IActionResult Planned30() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
 }
