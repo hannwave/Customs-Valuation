@@ -46,7 +46,7 @@ export function LoginForm() {
       const role = normalizeWorkspaceRole(body.user?.role);
       const isCustomsAdministrator = role === "CustomsAdministrator";
       const safeRequestedPath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : null;
-      router.replace(isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/");
+      router.replace(isCustomsAdministrator ? "/" : safeRequestedPath ?? "/");
     } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.invalid", "Unable to sign in. Please try again.")); }
     finally { setBusy(false); }
   }

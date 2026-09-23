@@ -91,12 +91,15 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         List<AuthAccountEntity> allUsers = access.Role == AccessRules.Officer ? [] : await db.AuthAccounts.AsNoTracking().OrderBy(u => u.FullName).ToListAsync(ct);
         var managedUsers = allUsers.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin &&
             (access.IsSystem || u.PrimaryLocationId.HasValue && scope.Contains(u.PrimaryLocationId.Value))).ToList();
+        var dashboardEmployees = access.Role == AccessRules.CustomsAdmin
+            ? managedUsers.Where(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer).ToList()
+            : managedUsers;
         // Legacy databases may contain incomplete draft rows from before HS-code
         // validation was enforced. Keep those rows out of dashboard projections;
         // they cannot be displayed or used as valuation records safely.
         var decisions = await (await VisibleDecisions(ct)).AsNoTracking()
             .Where(d => d.HsCodeId != Guid.Empty)
-            .OrderByDescending(d => d.RecordedAt).Take(100).ToListAsync(ct);
+            .OrderByDescending(d => d.RecordedAt).ToListAsync(ct);
         var hsIds = decisions.Select(d => d.HsCodeId).Distinct().ToList();
         var hsCodes = await db.HsCodes.AsNoTracking().Where(h => hsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
         var auditQuery = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == access.UserId.ToString());
@@ -105,8 +108,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var activeHs = revision == null ? 0 : await db.HsCodes.CountAsync(h => h.RevisionId == revision.Id, ct);
         var sources = await db.PriceSources.AsNoTracking().OrderBy(s => s.Pool).ThenBy(s => s.Name).ToListAsync(ct);
         var outliers = await db.LocalMarketObservations.CountAsync(o => o.IsPotentialOutlier && o.ManualReviewStatus == ManualReviewStatus.Unreviewed, ct);
-        var activeLocations = locations.Count(l => l.Status == "ACTIVE" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now));
-        var officers = managedUsers.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer && u.Active);
+        var visibleBranches = locations.Count(l => l.LocationType == "BRANCH");
+        var activeLocations = locations.Count(l => (access.Role != AccessRules.CustomsAdmin || l.LocationType == "BRANCH") && l.Status == "ACTIVE" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now));
+        var officers = dashboardEmployees.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer && u.Active);
         var administrators = managedUsers.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.CustomsAdmin && u.Active);
         var submitted = decisions.Count(d => d.Status == "Submitted");
         var returned = decisions.Count(d => d.Status == "Returned");
@@ -124,12 +128,12 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                 new { key = "security", label = "Security alerts", value = securityAlerts.ToString("N0"), detail = "Suspended or locked", tone = securityAlerts > 0 ? "red" : "green" }
             ],
             AccessRules.CustomsAdmin => [
-                new { key = "locations", label = "Assigned offices", value = activeLocations.ToString("N0"), detail = $"{locations.Count:N0} total visible", tone = "blue" },
-                new { key = "officers", label = "Active Officers", value = officers.ToString("N0"), detail = $"{managedUsers.Count:N0} managed accounts", tone = "teal" },
+                new { key = "locations", label = "Assigned branches", value = activeLocations.ToString("N0"), detail = $"{visibleBranches:N0} total visible", tone = "blue" },
+                new { key = "officers", label = "Active Officers", value = officers.ToString("N0"), detail = $"{dashboardEmployees.Count:N0} managed Officers", tone = "teal" },
                 new { key = "pending", label = "Pending valuations", value = submitted.ToString("N0"), detail = "Awaiting review", tone = submitted > 0 ? "gold" : "green" },
                 new { key = "returned", label = "Returned valuations", value = returned.ToString("N0"), detail = "Sent back for correction", tone = returned > 0 ? "gold" : "green" },
                 new { key = "today", label = "Decisions today", value = todayCount.ToString("N0"), detail = "Across my assigned location", tone = "blue" },
-                new { key = "suspended", label = "Suspended accounts", value = managedUsers.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my assigned location", tone = "red" }
+                new { key = "suspended", label = "Suspended accounts", value = dashboardEmployees.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my assigned location", tone = "red" }
             ],
             _ => [
                 new { key = "pending", label = "My pending cases", value = ownPending.ToString("N0"), detail = "Draft or returned", tone = "blue" },
@@ -141,8 +145,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         return Ok(new {
             role = access.Role, generatedAt = now, kpis, activeRevision = revision == null ? null : new { revision.Id, revision.Name, revision.Number, revision.EffectiveDate, revision.Status, codeCount = activeHs },
             locations = locations.Select(l => new { l.Id, l.OfficialCode, l.Name, l.DisplayName, l.LocationType, l.ParentLocationId, l.Status, l.SupportsImport, l.SupportsExport, l.SupportsTransit, l.SupportsValuation, l.SupportsInspection }),
-            employees = managedUsers.Take(12).Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId }),
-            decisions = decisions.Take(12).Select(d => new { d.Id, d.HsCodeId, hsCode = hsCodes.GetValueOrDefault(d.HsCodeId)?.Code ?? "", product = hsCodes.GetValueOrDefault(d.HsCodeId)?.DescriptionEn ?? "Unknown product", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
+            employees = dashboardEmployees.Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId }),
+            decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = hsCodes.GetValueOrDefault(d.HsCodeId)?.Code ?? "", product = hsCodes.GetValueOrDefault(d.HsCodeId)?.DescriptionEn ?? "Unknown product", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
             sources = sources.Select(s => new { s.Id, s.Name, pool = s.Pool.ToString(), s.IsApproved }), audit
         });
     }
@@ -422,7 +426,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     {
         access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         var decision = await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
-        Validate(decision.Status == "Submitted" && decision.Version == input.Version && input.Outcome is "Approved" or "Returned", "Only a current submitted decision may be approved or returned.");
+        Validate(decision.Status == "Submitted" && decision.Version == input.Version && (input.Outcome is "Approved" or "Returned" || access.Role == AccessRules.CustomsAdmin && input.Outcome == "Rejected"), "Only a current submitted decision may be approved or returned; Customs Administrators may also reject a submitted decision.");
         Validate(input.Justification.Trim().Length >= 10, "A review justification is required.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = input.Justification; decision.Version = Guid.NewGuid();
         access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, input.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);

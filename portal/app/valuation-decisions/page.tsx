@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { FiCheck, FiFileText, FiSend, FiRotateCcw } from "react-icons/fi";
+import { FiCheck, FiFileText, FiSend, FiRotateCcw, FiXCircle } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { getSessionAccessToken } from "@/lib/auth/session";
 import type { HsCode, PagedResult } from "@/lib/types/customs";
@@ -63,7 +63,7 @@ export default function ValuationDecisionsPage() {
     catch (ex) { setError(ex instanceof Error ? ex.message : "Submission failed."); }
     finally { setBusy(""); }
   }
-  async function review(decision: ValuationDecision, outcome: "Approved" | "Returned") {
+  async function review(decision: ValuationDecision, outcome: "Approved" | "Returned" | "Rejected") {
     setBusy(decision.id); setError(""); setNotice("");
     try { await workspaceApi(`/decisions/${decision.id}/review`, { method: "POST", body: JSON.stringify({ version: decision.version, justification: reviewReasons[decision.id] ?? "", outcome }) }); setNotice(`Decision ${outcome.toLowerCase()} with reviewer justification.`); await load(); }
     catch (ex) { setError(ex instanceof Error ? ex.message : "Review failed."); }
@@ -73,6 +73,7 @@ export default function ValuationDecisionsPage() {
   if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying your role and assigned location to the decision register." />;
   if (!profile) return <DataState kind="error" title="Decisions are unavailable" description={error} onRetry={() => void load()} />;
   const isOfficer = profile.user.role === "CustomsOfficer";
+  const isCustomsAdministrator = profile.user.role === "CustomsAdministrator";
   const operationalLocations = profile.locations.filter(location => location.status === "ACTIVE" && (location.supportsValuation || location.supportsInspection));
   return <div className="management-page">
     <div className="page-heading"><div><p className="eyebrow">Decision workflow</p><h1>Valuation decisions</h1><p className="lead">{isOfficer ? "Prepare evidence-based determinations and submit them for review." : "Review submitted determinations from your assigned locations."}</p></div><span className="workspace-tag"><FiFileText />{roleLabel(profile.user.role)}</span></div>
@@ -102,7 +103,7 @@ export default function ValuationDecisionsPage() {
           <dl className="decision-details"><div><dt>Decision</dt><dd>{decision.decision}</dd></div><div><dt>Officer justification</dt><dd>{decision.justification}</dd></div><div><dt>Evidence</dt><dd>{decision.evidenceNotes}</dd></div>{decision.reviewJustification && <div><dt>Review</dt><dd>{decision.reviewJustification}</dd></div>}</dl>
           {isOfficer && decision.status === "Draft" && decision.locationId && <div className="row-actions"><button className="approve-button" type="button" disabled={busy === decision.id} onClick={() => void submit(decision)}><FiSend />{busy === decision.id ? "Submitting…" : "Submit for review"}</button></div>}
           {isOfficer && decision.status === "Draft" && !decision.locationId && <p className="unassigned-decision-note">Personal officer draft. Assign an office before formal submission and review.</p>}
-          {canReview && <div className="review-actions"><label><span>Reviewer justification</span><textarea minLength={10} rows={3} value={reason} onChange={event => setReviewReasons(values => ({ ...values, [decision.id]: event.target.value }))} /></label><div className="row-actions"><button className="secondary-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Returned")}><FiRotateCcw />Return</button><button className="approve-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Approved")}><FiCheck />Approve</button></div></div>}
+          {canReview && <div className="review-actions"><label><span>Reviewer justification</span><textarea minLength={10} rows={3} value={reason} onChange={event => setReviewReasons(values => ({ ...values, [decision.id]: event.target.value }))} /></label><div className="row-actions"><button className="secondary-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Returned")}><FiRotateCcw />Return</button>{isCustomsAdministrator && <button className="secondary-button danger-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Rejected")}><FiXCircle />Reject</button>}<button className="approve-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Approved")}><FiCheck />Approve</button></div></div>}
         </article>;
       })}</div>}
     </section>

@@ -22,6 +22,34 @@ export interface DashboardEmployee { user: WorkspaceUser; locationId: string | n
 export interface DashboardDecision { id: string; hsCodeId: string; hsCode: string; product: string; selectedReferenceValue: number; currency: string; decision: string; status: string; recordedAt: string; locationId: string | null }
 export interface DashboardSource { id: string; name: string; pool: string; isApproved: boolean }
 export interface WorkspaceDashboard { role: WorkspaceRole; generatedAt: string; kpis: DashboardKpi[]; activeRevision: { id: string; name: string; number: number; effectiveDate: string; status: string; codeCount: number } | null; locations: DashboardLocation[]; employees: DashboardEmployee[]; decisions: DashboardDecision[]; sources: DashboardSource[]; audit: AuditRecord[] }
+export interface CustomsAdminAnalytics {
+  generatedAt: string;
+  scope: { region: string; branchCount: number; activeBranches: number };
+  filters: { dateFrom: string; dateTo: string; locationId: string | null; officerId: string | null; status: string; hsChapter: string; currency: string };
+  scopeNote: string;
+  summary: {
+    activeOffices: number; totalOffices: number; activeOfficers: number; managedOfficers: number;
+    pendingValuations: number; returnedValuations: number; approvedValuations: number; rejectedValuations: number;
+    decisions: number; decisionsToday: number; suspendedAccounts: number; averageReviewHours: number | null;
+    overdueReviews: number; approvalRate: number; returnRate: number; rejectionRate: number; evidenceCoverage: number; justificationCoverage: number;
+  };
+  statusBreakdown: Array<{ status: string; count: number; percentage: number }>;
+  trends: Array<{ period: string; label: string; decisions: number; submitted: number; approved: number; returned: number; averageReviewHours: number | null }>;
+  branchPerformance: Array<{ locationId: string; name: string; officialCode: string; status: string; active: boolean; officers: number; decisions: number; pending: number; submitted: number; approved: number; returned: number; rejected: number; averageReviewHours: number | null; lastDecisionAt: string | null }>;
+  officerPerformance: Array<{ userId: string; name: string; employeeNumber: string; status: string; active: boolean; branch: string; responsibilities: string; lastLoginAt: string | null; decisions: number; pending: number; submitted: number; approved: number; returned: number; rejected: number; averageReviewHours: number | null; lastDecisionAt: string | null }>;
+  topHsCodes: Array<{ hsCode: string; description: string; decisions: number; approved: number; returned: number; currencies: string; averageReferenceValue: number | null }>;
+  quality: {
+    missingEvidence: number; missingJustification: number; validLocalObservations: number; potentialOutliers: number;
+    unreviewedOutliers: number; confirmedOutliers: number; rejectedOutliers: number;
+    outlierTrend: Array<{ period: string; label: string; count: number }>;
+    sharedReferenceData: boolean; localMedianEtb: number | null; internationalMedianEtb: number | null;
+    localVsInternationalVariancePercent: number | null; localObservationCount: number; internationalObservationCount: number;
+  };
+  sourceCoverage: Array<{ sourceId: string; name: string; pool: string; approved: boolean; records: number }>;
+  auditSummary: Array<{ action: string; count: number }>;
+  auditActivity: Array<{ id: string; occurredAt: string; actor: string; action: string; module: string; location: string; recordId: string; justification: string | null }>;
+  alerts: Array<{ severity: string; title: string; detail: string }>;
+}
 
 export async function workspaceApi<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getSessionAccessToken();
