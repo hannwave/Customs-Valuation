@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
@@ -11,8 +12,9 @@ using static SES.Customs.API.Security.WorkspaceAccess;
 namespace SES.Customs.API.Controllers;
 
 public sealed record LocationChange(CustomsLocation Location, string Reason);
-public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, string EmployeeNumber, string Phone);
+public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, string EmployeeNumber, string Phone, string Responsibilities, string Reason);
 public sealed record EmployeeChange(string Status, Guid LocationId, string Responsibilities, string Reason);
+public sealed record EmployeeArchive(string Reason);
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public sealed record DecisionInput(Guid HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
@@ -27,13 +29,14 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     private const decimal EthiopiaMaximumLatitude = 14.95m;
     private const decimal EthiopiaMinimumLongitude = 33.00m;
     private const decimal EthiopiaMaximumLongitude = 48.05m;
+    public static readonly string[] EmployeeResponsibilityOptions = ["Valuation", "Inspection", "Import", "Export", "Transit"];
 
     [HttpGet("me")]
     public async Task<IActionResult> Me(CancellationToken ct)
     {
         var user = await db.AuthAccounts.AsNoTracking().SingleAsync(u => u.Id == access.UserId, ct);
         var scope = await access.Locations(ct);
-        return Ok(new { user = PublicUser(user), permissions = AccessRules.Permissions(access.Role), locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct), locationTypes = LocationTypes, locationStatuses = LocationStatuses });
+        return Ok(new { user = PublicUser(user), permissions = AccessRules.Permissions(access.Role), locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct), locationTypes = LocationTypes, locationStatuses = LocationStatuses, employeeResponsibilities = EmployeeResponsibilityOptions });
     }
     [HttpGet("profile")]
     public async Task<IActionResult> Profile(CancellationToken ct)
@@ -235,14 +238,29 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var role = AccessRules.NormalizeRole(input.Role);
         Validate(role == AccessRules.Officer || access.IsSystem && role == AccessRules.CustomsAdmin, "Customs Administrators can create Customs Officers only.");
-        await access.RequireLocation(input.LocationId, true, ct);
-        Validate(Regex.IsMatch(input.Username ?? "", "^[a-zA-Z0-9_.-]{3,120}$") && !string.IsNullOrWhiteSpace(input.FullName) && System.Net.Mail.MailAddress.TryCreate(input.Email, out _), "Provide a valid username, name and email.");
-        Validate(Regex.IsMatch(input.Password ?? "", "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
+        await RequireEmployeeLocation(input.LocationId, ct);
+        var username = (input.Username ?? "").Trim();
+        var email = (input.Email ?? "").Trim().ToLowerInvariant();
+        var fullName = (input.FullName ?? "").Trim();
+        var employeeNumber = (input.EmployeeNumber ?? "").Trim();
+        var password = input.Password ?? "";
+        var reason = (input.Reason ?? "").Trim();
+        Validate(Regex.IsMatch(username, "^[a-zA-Z0-9_.-]{3,120}$") && fullName.Length > 0 && System.Net.Mail.MailAddress.TryCreate(email, out _), "Provide a valid username, name and email.");
+        Validate(employeeNumber.Length > 0 && employeeNumber.Length <= 80, "Provide an employee or staff ID.");
+        Validate(Regex.IsMatch(password, "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
+        Validate(reason.Length >= 10, "Explain the account creation in at least 10 characters.");
+        var (responsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
+        Validate(invalidResponsibilities.Length == 0, "Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
+        Validate(role != AccessRules.Officer || responsibilities.Length > 0, "Select at least one responsibility for a Customs Officer.");
+        var phone = (input.Phone ?? "").Trim();
+        Validate(phone.Length <= 40, "Phone number is too long.");
+        Validate(!await db.AuthAccounts.AnyAsync(u => u.Username == username || u.Email == email, ct), "That username or email is already used.");
+        Validate(!await db.AuthAccounts.AnyAsync(u => u.EmployeeNumber == employeeNumber, ct), "That employee or staff ID is already used.");
         var now = DateTimeOffset.UtcNow;
         var region = await access.RegionKey(input.LocationId, ct);
-        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = input.Username!, FullName = input.FullName.Trim(), Email = input.Email.Trim().ToLowerInvariant(), Role = role!, Active = true, PasswordHash = AuthService.Hash(input.Password!), CreatedAt = now, PrimaryLocationId = input.LocationId, RegionKey = region, RegionJoinedAt = now, EmployeeNumber = input.EmployeeNumber?.Trim() ?? "", Phone = input.Phone?.Trim() ?? "" };
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = username, FullName = fullName, Email = email, Role = role!, Active = true, Status = "ACTIVE", PasswordHash = AuthService.Hash(password), CreatedAt = now, PrimaryLocationId = input.LocationId, RegionKey = region, RegionJoinedAt = now, EmployeeNumber = employeeNumber, Phone = phone, Responsibilities = responsibilities };
         db.AuthAccounts.Add(user);
-        access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), "Created account and initial office assignment.", input.LocationId);
+        access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), reason, input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
     [HttpPatch("employees/{id:guid}")]
@@ -255,14 +273,95 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
         Validate(new[] { "ACTIVE", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
         Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
-        await access.RequireLocation(input.LocationId, true, ct);
+        await RequireEmployeeLocation(input.LocationId, ct);
+        var (requestedResponsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
+        Validate(invalidResponsibilities.Length == 0, "Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
+        var responsibilities = string.IsNullOrWhiteSpace(input.Responsibilities) ? user.Responsibilities : requestedResponsibilities;
+        Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.Officer || responsibilities.Length > 0, "Select at least one responsibility for a Customs Officer.");
         var before = PublicUser(user);
         var now = DateTimeOffset.UtcNow;
         var nextRegion = await access.RegionKey(input.LocationId, ct);
         user.RegionJoinedAt = string.Equals(user.RegionKey, nextRegion, StringComparison.OrdinalIgnoreCase) ? user.RegionJoinedAt ?? now : now;
-        user.RegionKey = nextRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
-        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason!.Trim(), input.LocationId);
+        user.RegionKey = nextRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.Responsibilities = responsibilities; user.UpdatedAt = now;
+        if (user.Active) { user.ArchivedAt = null; user.ArchivedBy = null; user.ArchiveReason = null; }
+        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, PublicUser(user), input.Reason!.Trim(), input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
+    }
+
+    [HttpPost("employees/{id:guid}/archive")]
+    public async Task<IActionResult> ArchiveEmployee(Guid id, EmployeeArchive input, CancellationToken ct)
+    {
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Employee not found.");
+        await access.RequireEmployee(user, ct);
+        Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be archived here.");
+        var reason = (input.Reason ?? "").Trim();
+        Validate(reason.Length >= 10, "Explain the archive in at least 10 characters.");
+        var before = PublicUser(user);
+        var now = DateTimeOffset.UtcNow;
+        user.Active = false; user.Status = "INACTIVE"; user.ArchivedAt = now; user.ArchivedBy = access.UserId; user.ArchiveReason = reason; user.UpdatedAt = now; user.Version = Guid.NewGuid();
+        access.Audit("USER_ARCHIVED", "Users", id, before, PublicUser(user), reason, user.PrimaryLocationId);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
+    }
+
+    [HttpGet("employees/{id:guid}/audit")]
+    public async Task<IActionResult> EmployeeAudit(Guid id, CancellationToken ct)
+    {
+        var employee = await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, ct) ?? throw new WorkspaceException(404, "Employee not found.");
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        await access.RequireEmployee(employee, ct);
+        return Ok(await EmployeeAuditQuery(id, employee).OrderByDescending(a => a.OccurredAt).Take(500).ToListAsync(ct));
+    }
+
+    [HttpGet("employees/{id:guid}/audit/export")]
+    public async Task<IActionResult> ExportEmployeeAudit(Guid id, CancellationToken ct)
+    {
+        var employee = await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, ct) ?? throw new WorkspaceException(404, "Employee not found.");
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        await access.RequireEmployee(employee, ct);
+        var rows = await EmployeeAuditQuery(id, employee).OrderByDescending(a => a.OccurredAt).Take(500).ToListAsync(ct);
+        var csv = new StringBuilder("Occurred at,Actor,Action,Module,Record ID,Location ID,Reason\r\n");
+        foreach (var row in rows)
+            csv.AppendJoin(',', Csv(row.OccurredAt.ToString("O")), Csv(row.Username), Csv(row.Action), Csv(row.Module), Csv(row.RecordId.ToString()), Csv(row.LocationId?.ToString() ?? ""), Csv(row.Justification ?? "")).Append("\r\n");
+        return File(Encoding.UTF8.GetBytes(csv.ToString()), "text/csv", $"employee-{id:N}-activity.csv");
+    }
+
+    private IQueryable<AuditLog> EmployeeAuditQuery(Guid id, AuthAccountEntity employee)
+    {
+        var query = db.AuditLogs.AsNoTracking().Where(a => a.SubjectUserId == id || (a.UserId == id.ToString() && a.Module != "Users"));
+        if (!access.IsSystem && employee.RegionJoinedAt is DateTimeOffset joinedAt)
+            query = query.Where(a => a.OccurredAt >= joinedAt);
+        return query;
+    }
+
+    private async Task RequireEmployeeLocation(Guid locationId, CancellationToken ct)
+    {
+        await access.RequireLocation(locationId, true, ct);
+        var location = await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == locationId, ct);
+        Validate(location?.LocationType == "BRANCH", "Employees must be assigned to an active branch.");
+    }
+
+    private static (string Normalized, string[] Invalid) NormalizeResponsibilities(string? value)
+    {
+        var values = (value ?? "")
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => item.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var selected = values
+            .Where(item => EmployeeResponsibilityOptions.Contains(item, StringComparer.OrdinalIgnoreCase))
+            .Select(item => EmployeeResponsibilityOptions.First(option => option.Equals(item, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        var invalid = values.Where(item => !EmployeeResponsibilityOptions.Contains(item, StringComparer.OrdinalIgnoreCase)).ToArray();
+        return (string.Join(", ", selected), invalid);
+    }
+
+    private static string Csv(string value)
+    {
+        var trimmed = value.TrimStart();
+        var safe = trimmed.Length > 0 && "=+-@".Contains(trimmed[0]) ? "'" + value : value;
+        return $"\"{safe.Replace("\"", "\"\"")}\"";
     }
 
     private async Task<IQueryable<ValuationDecision>> VisibleDecisions(CancellationToken ct)

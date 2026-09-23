@@ -22,7 +22,7 @@ dotnet ef migrations add DescriptiveMigrationName `
 
 Apply reviewed migrations with `dotnet ef database update` using the same project, startup-project and context arguments. Never rewrite an already-applied shared migration; add a corrective migration instead.
 
-The regional employee/audit change is in `AddRegionalEmployeeAudit`. Before starting the updated API against a persistent database, set `ConnectionStrings__Customs` for that database and apply this migration. The design-time factory otherwise uses an inert localhost connection. Existing employees are backfilled with a conservative join boundary based on their latest active assignment; verify legacy transfers with the responsible System Administrator.
+The regional employee/audit change is in `AddRegionalEmployeeAudit`, followed by the employee-responsibility field in `AddEmployeeResponsibilities`. Before starting the updated API against a persistent database, set `ConnectionStrings__Customs` for that database and apply all pending migrations. The design-time factory otherwise uses an inert localhost connection. Existing employees are backfilled with a conservative join boundary based on their latest active assignment; verify legacy transfers with the responsible System Administrator.
 
 ## HS-code import
 

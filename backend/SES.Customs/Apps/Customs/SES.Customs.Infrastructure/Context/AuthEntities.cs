@@ -18,6 +18,7 @@ public sealed class AuthAccountEntity
     public Guid Version { get; set; } = Guid.NewGuid();
     public string EmployeeNumber { get; set; } = "";
     public string Phone { get; set; } = "";
+    public string Responsibilities { get; set; } = "";
     public DateTimeOffset? UpdatedAt { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
     public string PasswordHash { get; set; } = "";

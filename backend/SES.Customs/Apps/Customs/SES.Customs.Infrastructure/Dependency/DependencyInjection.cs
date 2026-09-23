@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using SES.Customs.Core.Features.HsCodes.Contract.Repository;
 using SES.Customs.Infrastructure.Context;
@@ -8,7 +9,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string? connectionString, bool useDemoData)
     {
-        if (useDemoData) return services.AddSingleton<IHsCodeRepository, DemoHsCodeRepository>();
+        if (useDemoData)
+        {
+            services.AddDbContext<CustomsDbContext>(options => options
+                .UseInMemoryDatabase("SES.Customs.Demo")
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            return services.AddSingleton<IHsCodeRepository, DemoHsCodeRepository>();
+        }
         if (string.IsNullOrWhiteSpace(connectionString)) throw new InvalidOperationException("Configure ConnectionStrings:Customs.");
         services.AddDbContext<CustomsDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IHsCodeRepository, HsCodeRepository>();

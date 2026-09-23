@@ -899,6 +899,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Responsibilities")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("PrimaryLocationId")
                         .HasColumnType("uuid");
 
@@ -1131,6 +1135,11 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.Property<DateTimeOffset>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.HasKey("Id");
 

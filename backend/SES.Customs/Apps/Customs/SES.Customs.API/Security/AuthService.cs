@@ -80,9 +80,14 @@ public sealed class AuthService(CustomsDbContext db)
     public async Task<AuthUser> ApproveAsync(Guid id, CancellationToken ct = default)
     {
         var request = await db.RegistrationRequests.FirstOrDefaultAsync(r => r.Id == id && r.Status == "Pending", ct) ?? throw new KeyNotFoundException("Registration request not found.");
-        if (request.LocationId is null || !await db.CustomsLocations.AnyAsync(l => l.Id == request.LocationId && l.Status == "ACTIVE" && l.LocationType == "BRANCH", ct)) throw new InvalidOperationException("The requested branch is no longer active.");
+        var branch = request.LocationId is Guid branchId
+            ? await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == branchId && l.Status == "ACTIVE" && l.LocationType == "BRANCH", ct)
+            : null;
+        if (branch is null) throw new InvalidOperationException("The requested branch is no longer active.");
         if (await db.AuthAccounts.AnyAsync(u => u.Username == request.Username || u.Email == request.Email, ct)) throw new InvalidOperationException("The requested username or email is already in use.");
-        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = request.Username, Email = request.Email, FullName = request.FullName, EmployeeNumber = request.StaffId, Phone = request.Phone ?? "", Role = request.Role, Active = true, Status = "ACTIVE", PrimaryLocationId = request.LocationId, PasswordHash = request.PasswordHash, CreatedAt = DateTimeOffset.UtcNow };
+        var now = DateTimeOffset.UtcNow;
+        var locations = await db.CustomsLocations.AsNoTracking().ToListAsync(ct);
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = request.Username, Email = request.Email, FullName = request.FullName, EmployeeNumber = request.StaffId, Phone = request.Phone ?? "", Role = request.Role, Active = true, Status = "ACTIVE", PrimaryLocationId = branch.Id, RegionKey = ResolveRegionKey(branch, locations), RegionJoinedAt = now, PasswordHash = request.PasswordHash, CreatedAt = now };
         db.AuthAccounts.Add(user); request.Status = "Approved"; request.ReviewedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); return Map(user);
     }
     public async Task DenyAsync(Guid id, string reason, Guid reviewerId, CancellationToken ct = default)
@@ -93,6 +98,17 @@ public sealed class AuthService(CustomsDbContext db)
 
     private static AuthAccountEntity Seed(string username, string email, string fullName, string role, string password) => new() { Id = Guid.NewGuid(), Username = username, Email = email, FullName = fullName, Role = role, Active = true, PasswordHash = Hash(password), CreatedAt = DateTimeOffset.UtcNow };
     private static AuthUser Map(AuthAccountEntity u) => new(u.Id, u.Username, u.Email, u.FullName, SES.Customs.Core.Models.AccessRules.NormalizeRole(u.Role) ?? u.Role, u.Active, u.Status, u.PrimaryLocationId, u.PasswordHash);
+    private static string ResolveRegionKey(CustomsLocation location, IReadOnlyCollection<CustomsLocation> all)
+    {
+        var current = location; var visited = new HashSet<Guid>();
+        while (visited.Add(current.Id))
+        {
+            if (!string.IsNullOrWhiteSpace(current.Region)) return current.Region.Trim().ToUpperInvariant();
+            if (current.ParentLocationId is not Guid parent) return current.OfficialCode.Trim().ToUpperInvariant();
+            current = all.FirstOrDefault(item => item.Id == parent) ?? current;
+        }
+        return location.OfficialCode.Trim().ToUpperInvariant();
+    }
     private static RegistrationRequest Map(RegistrationRequestEntity r) => new(r.Id, r.FullName, r.StaffId, r.Email, r.Phone, r.Department, r.Role, r.LocationId, r.Status, r.SubmittedAt);
     public static string Hash(string password) { var salt = RandomNumberGenerator.GetBytes(16); var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 120_000, HashAlgorithmName.SHA256, 32); return $"pbkdf2.{Convert.ToBase64String(salt)}.{Convert.ToBase64String(hash)}"; }
 }
