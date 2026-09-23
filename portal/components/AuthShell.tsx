@@ -57,7 +57,7 @@ export function LoginForm() {
     <PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.passwordPlaceholder", "Enter your password")} autoComplete="current-password"/>
     <button className="auth-primary" type="submit" disabled={busy}>{busy ? t("auth.signingIn", "Signing in…") : t("auth.signInAction", "Sign in to workspace")}<FiArrowRight aria-hidden="true"/></button>
     <details className="access-help"><summary>{t("auth.help", "Need help signing in?")}</summary><p>{t("auth.helpBody", "Contact your system administrator for account approval or password assistance.")}</p></details>
-    <div className="auth-register"><span>{t("auth.noAccount", "New to the workspace?")}</span><Link href="/signup">{t("auth.request", "Request an account")}<FiArrowRight aria-hidden="true"/></Link><Link href="/employee-registration">Apply as Customs Administrator<FiArrowRight aria-hidden="true"/></Link></div>
+    <div className="auth-register"><span>{t("auth.noAccount", "New to the workspace?")}</span><Link href="/signup">Apply as Customs Officer<FiArrowRight aria-hidden="true"/></Link><Link href="/employee-registration">Apply as Customs Administrator<FiArrowRight aria-hidden="true"/></Link></div>
     <div className="auth-assurance"><FiShield aria-hidden="true"/><p>{t("auth.assurance", "Access is assigned by role. Valuation evidence supports the judgment of an authorized customs officer.")}</p></div>
   </form>;
 }
@@ -83,10 +83,10 @@ export function SignupForm() {
     } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.registrationError", "Unable to submit registration.")); }
     finally { setBusy(false); }
   }
-  if (sent) return <div className="registration-success" role="status"><span className="form-heading-icon"><FiCheck/></span><p className="eyebrow">{t("auth.submitted", "REQUEST SUBMITTED")}</p><h1>{t("auth.pending", "Your request is in review")}</h1><p className="lead">{t("auth.pendingBody", "Your system administrator will review your details and approve access before you can sign in.")}</p><Link className="primary-link" href="/login">{t("auth.back", "Back to sign in")}<FiArrowRight/></Link></div>;
+  if (sent) return <div className="registration-success" role="status"><span className="form-heading-icon"><FiCheck/></span><p className="eyebrow">{t("auth.submitted", "APPLICATION SUBMITTED")}</p><h1>{t("auth.pending", "Your application is in review")}</h1><p className="lead">A Customs Administrator will review your Customs Officer application and approve access before you can sign in.</p><Link className="primary-link" href="/login">{t("auth.back", "Back to sign in")}<FiArrowRight/></Link></div>;
   return <form className="auth-form signup-form paper-form" onSubmit={submit} aria-busy={busy}>
-    <p className="eyebrow">{t("auth.join", "JOIN THE WORKSPACE")}</p><h1>{t("auth.create", "Request an account")}</h1><p className="auth-subtitle">{t("auth.createBody", "Complete your official staff details and request your assigned customs branch.")}</p>
-    <div className="paper-form-note"><FiShield aria-hidden="true"/><div><strong>Employee registration request</strong><p>Your username and password are private. Administrators review your request without seeing your password.</p></div></div>
+    <p className="eyebrow">{t("auth.join", "JOIN THE WORKSPACE")}</p><h1>Apply as a Customs Officer</h1><p className="auth-subtitle">Submit your official staff details and requested customs branch. A Customs Administrator reviews this application before access is activated.</p>
+    <div className="paper-form-note"><FiShield aria-hidden="true"/><div><strong>Customs Administrator review</strong><p>Your username and password are private. The reviewing administrator will only see your official application details.</p></div></div>
     {error && <p className="auth-error" role="alert">{error}</p>}
     <div className="form-grid">
       <div className="field-group"><label htmlFor="username">Username<span className="required-mark"> *</span></label><input id="username" name="username" required minLength={3} maxLength={120} autoComplete="username" placeholder="Choose your username" /></div>
@@ -101,7 +101,7 @@ export function SignupForm() {
       <div className="wide"><PasswordField name="confirm" label={t("auth.confirm", "Confirm password")} placeholder={t("auth.repeatPassword", "Re-enter your password")}/></div>
     </div>
     <div className="password-requirements"><FiLock aria-hidden="true"/><p>{t("auth.passwordError", "Use at least 8 characters with uppercase, lowercase, a number and a special character.")}</p></div>
-    <button className="auth-primary" type="submit" disabled={busy || locationsLoading || locations.length === 0}>{busy ? t("auth.submitting", "Submitting request…") : t("auth.submit", "Submit account request")}<FiArrowRight aria-hidden="true"/></button>
+    <button className="auth-primary" type="submit" disabled={busy || locationsLoading || locations.length === 0}>{busy ? "Submitting application..." : "Submit officer application"}<FiArrowRight aria-hidden="true"/></button>
     <p className="auth-register">{t("auth.haveAccount", "Already have an account?")} <Link href="/login">{t("auth.signInShort", "Sign in")}</Link></p>
   </form>;
 }

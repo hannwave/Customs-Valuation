@@ -16,7 +16,7 @@ public sealed record RegistrationReviewDto(string? Reason);
 public sealed record CreateUserRequest(string Username, string FullName, string Email, string Role, string Password);
 
 [ApiController, Route("api/auth")]
-public sealed class AuthController(AuthService auth, IConfiguration configuration, SES.Customs.Infrastructure.Context.CustomsDbContext db) : ControllerBase
+public sealed class AuthController(AuthService auth, IConfiguration configuration, SES.Customs.Infrastructure.Context.CustomsDbContext db, WorkspaceAccess access) : ControllerBase
 {
     [AllowAnonymous, HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken ct)
@@ -40,7 +40,7 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
         if (!System.Text.RegularExpressions.Regex.IsMatch(request.Password, "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z]).{8,}$")) return BadRequest(new { message = "Password does not meet the requirements." });
         try { await auth.AddRegistrationAsync(request.Username?.Trim() ?? "", request.FullName?.Trim() ?? "", request.StaffId?.Trim() ?? "", request.Email?.Trim().ToLowerInvariant() ?? "", request.Phone?.Trim(), request.Department?.Trim() ?? "", request.Role ?? "", request.LocationId, request.Password ?? "", ct); }
         catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
-        return Accepted(new { message = "Registration request submitted for administrator approval." });
+        return Accepted(new { message = "Customs Officer application submitted for Customs Administrator review." });
     }
 
     [AllowAnonymous, HttpPost("register-administrator")]
@@ -99,6 +99,38 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
     public async Task<IActionResult> DenyRegistration(Guid id, RegistrationReviewDto input, CancellationToken ct)
     {
         try { await auth.DenyAsync(id, input.Reason?.Trim() ?? "", Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!), ct); return Ok(new { message = "Registration denied." }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+    }
+
+    [Authorize(Roles = "CustomsAdministrator"), HttpGet("officer-registration-requests")]
+    public async Task<IActionResult> OfficerRegistrationRequests(CancellationToken ct)
+    {
+        var scope = await access.Locations(ct);
+        return Ok(new { requests = (await auth.PendingOfficerAsync(scope, ct)).Select(r => new { r.Id, r.FullName, r.StaffId, r.Email, r.Phone, r.Department, r.Role, locationId = r.LocationId, r.Status, r.SubmittedAt }) });
+    }
+
+    [Authorize(Roles = "CustomsAdministrator"), HttpPost("officer-registration-requests/{id:guid}/approve")]
+    public async Task<IActionResult> ApproveOfficerRegistration(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var user = await auth.ApproveOfficerAsync(id, access.UserId, await access.Locations(ct), ct);
+            return Ok(new { message = "Customs Officer application approved.", user = new { user.Id, user.Email, user.FullName, user.Role, user.Active, user.PrimaryLocationId } });
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+    }
+
+    [Authorize(Roles = "CustomsAdministrator"), HttpPost("officer-registration-requests/{id:guid}/deny")]
+    public async Task<IActionResult> DenyOfficerRegistration(Guid id, RegistrationReviewDto input, CancellationToken ct)
+    {
+        var reason = input.Reason?.Trim() ?? "";
+        if (reason.Length < 10) return BadRequest(new { message = "Provide a denial reason of at least 10 characters." });
+        try
+        {
+            await auth.DenyOfficerAsync(id, reason, access.UserId, await access.Locations(ct), ct);
+            return Ok(new { message = "Customs Officer application denied." });
+        }
         catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
     }
 

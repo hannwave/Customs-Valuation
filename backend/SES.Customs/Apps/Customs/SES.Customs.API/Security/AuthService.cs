@@ -222,9 +222,12 @@ public sealed class AuthService(CustomsDbContext db)
 
     public async Task<RegistrationRequest> AddRegistrationAsync(string username, string fullName, string staffId, string email, string? phone, string department, string role, Guid locationId, string password, CancellationToken ct = default)
     {
-        var location = await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == locationId && l.Status == "ACTIVE", ct) ?? throw new InvalidOperationException("Choose an active customs branch.");
-        if (await db.AuthAccounts.AnyAsync(u => u.Username == username || u.Email == email, ct) || await db.RegistrationRequests.AnyAsync(r => r.Status == "Pending" && (r.Username == username || r.Email == email), ct)) throw new InvalidOperationException("That username or email is already in use or awaiting review.");
         var normalizedRole = SES.Customs.Core.Models.AccessRules.NormalizeRole(role) ?? throw new InvalidOperationException("Invalid requested role.");
+        var now = DateTimeOffset.UtcNow;
+        var location = await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == locationId && l.Status == "ACTIVE" && l.LocationType == "BRANCH" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now), ct) ?? throw new InvalidOperationException("Choose an active customs branch.");
+        if (normalizedRole == SES.Customs.Core.Models.AccessRules.Officer && !location.SupportsValuation && !location.SupportsInspection)
+            throw new InvalidOperationException("Choose a branch that supports valuation or inspection work.");
+        if (await db.AuthAccounts.AnyAsync(u => u.Username == username || u.Email == email, ct) || await db.RegistrationRequests.AnyAsync(r => r.Status == "Pending" && (r.Username == username || r.Email == email), ct)) throw new InvalidOperationException("That username or email is already in use or awaiting review.");
         var request = new RegistrationRequestEntity { Id = Guid.NewGuid(), Username = username, FullName = fullName, StaffId = staffId, Email = email, Phone = phone, Department = department, Role = normalizedRole, LocationId = location.Id, PasswordHash = Hash(password), Status = "Pending", SubmittedAt = DateTimeOffset.UtcNow };
         db.RegistrationRequests.Add(request); await db.SaveChangesAsync(ct); return Map(request);
     }
@@ -232,6 +235,16 @@ public sealed class AuthService(CustomsDbContext db)
     public async Task<IReadOnlyCollection<RegistrationRequest>> PendingAsync(CancellationToken ct = default)
     {
         var requests = await db.RegistrationRequests.AsNoTracking().Where(r => r.Status == "Pending").OrderByDescending(r => r.SubmittedAt).ToListAsync(ct);
+        return requests.Select(Map).ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<RegistrationRequest>> PendingOfficerAsync(IReadOnlySet<Guid> locationScope, CancellationToken ct = default)
+    {
+        var scope = locationScope.ToArray();
+        var requests = await db.RegistrationRequests.AsNoTracking()
+            .Where(r => r.Status == "Pending" && r.Role == SES.Customs.Core.Models.AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value))
+            .OrderByDescending(r => r.SubmittedAt)
+            .ToListAsync(ct);
         return requests.Select(Map).ToArray();
     }
     public async Task<IReadOnlyCollection<AuthUser>> UsersAsync(CancellationToken ct = default)
@@ -271,10 +284,48 @@ public sealed class AuthService(CustomsDbContext db)
         request.Status = "Approved"; request.ReviewedAt = now;
         await db.SaveChangesAsync(ct); return Map(user);
     }
+
+    public async Task<AuthUser> ApproveOfficerAsync(Guid id, Guid reviewerId, IReadOnlySet<Guid> locationScope, CancellationToken ct = default)
+    {
+        var scope = locationScope.ToArray();
+        var request = await db.RegistrationRequests.FirstOrDefaultAsync(r => r.Id == id && r.Status == "Pending" && r.Role == SES.Customs.Core.Models.AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct) ?? throw new KeyNotFoundException("Officer application not found.");
+        var now = DateTimeOffset.UtcNow;
+        var location = await db.CustomsLocations.FirstOrDefaultAsync(l => l.Id == request.LocationId!.Value && l.Status == "ACTIVE" && l.LocationType == "BRANCH" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now), ct);
+        if (location is null) throw new InvalidOperationException("The requested branch is no longer active.");
+        if (!location.SupportsValuation && !location.SupportsInspection) throw new InvalidOperationException("The requested branch no longer supports valuation or inspection work.");
+        var username = string.IsNullOrWhiteSpace(request.Username) ? request.Email.Split('@')[0].Replace(".", "", StringComparison.Ordinal).ToLowerInvariant() : request.Username.Trim();
+        var email = request.Email.Trim().ToLowerInvariant();
+        if (await db.AuthAccounts.AnyAsync(u => u.Username == username || u.Email == email, ct)) throw new InvalidOperationException("The requested username or email is already in use.");
+        var locations = await db.CustomsLocations.AsNoTracking().ToListAsync(ct);
+        var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = username, Email = email, FullName = request.FullName, EmployeeNumber = request.StaffId, Phone = request.Phone ?? "", Role = SES.Customs.Core.Models.AccessRules.Officer, Active = true, Status = "ACTIVE", PrimaryLocationId = location.Id, RegionKey = ResolveRegionKey(location, locations), RegionJoinedAt = now, PasswordHash = request.PasswordHash, CreatedAt = now };
+        db.AuthAccounts.Add(user);
+        db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = location.Id, IncludeChildLocations = true, Responsibilities = "Valuation and assessment officer", EffectiveFrom = now, CreatedBy = reviewerId.ToString() });
+        request.Status = "Approved";
+        request.ReviewedAt = now;
+        request.ReviewedBy = reviewerId.ToString();
+        var reviewerUsername = await db.AuthAccounts.AsNoTracking().Where(u => u.Id == reviewerId).Select(u => u.Username).SingleOrDefaultAsync(ct) ?? reviewerId.ToString();
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = reviewerId.ToString(), SubjectUserId = user.Id, Username = reviewerUsername, OccurredAt = now, Action = "REGISTRATION_APPROVED", Module = "Users", RecordId = user.Id, LocationId = location.Id, Justification = "Customs Officer application approved." });
+        await db.SaveChangesAsync(ct);
+        return Map(user);
+    }
     public async Task DenyAsync(Guid id, string reason, Guid reviewerId, CancellationToken ct = default)
     {
         var request = await db.RegistrationRequests.FirstOrDefaultAsync(r => r.Id == id && r.Status == "Pending", ct) ?? throw new KeyNotFoundException("Registration request not found.");
         request.Status = "Denied"; request.ReviewedAt = DateTimeOffset.UtcNow; request.ReviewedBy = reviewerId.ToString(); request.ReviewReason = reason;
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DenyOfficerAsync(Guid id, string reason, Guid reviewerId, IReadOnlySet<Guid> locationScope, CancellationToken ct = default)
+    {
+        var scope = locationScope.ToArray();
+        var request = await db.RegistrationRequests.FirstOrDefaultAsync(r => r.Id == id && r.Status == "Pending" && r.Role == SES.Customs.Core.Models.AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct) ?? throw new KeyNotFoundException("Officer application not found.");
+        var now = DateTimeOffset.UtcNow;
+        request.Status = "Denied";
+        request.ReviewedAt = now;
+        request.ReviewedBy = reviewerId.ToString();
+        request.ReviewReason = reason;
+        var reviewerUsername = await db.AuthAccounts.AsNoTracking().Where(u => u.Id == reviewerId).Select(u => u.Username).SingleOrDefaultAsync(ct) ?? reviewerId.ToString();
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = reviewerId.ToString(), Username = reviewerUsername, OccurredAt = now, Action = "REGISTRATION_DENIED", Module = "Users", RecordId = request.Id, LocationId = request.LocationId, Justification = reason });
         await db.SaveChangesAsync(ct);
     }
     private static AuthAccountEntity Seed(Guid id, string username, string email, string fullName, string role, string password) => new() { Id = id, Username = username, Email = email, FullName = fullName, Role = role, Active = true, Status = "ACTIVE", PasswordHash = Hash(password), CreatedAt = DateTimeOffset.UtcNow };
