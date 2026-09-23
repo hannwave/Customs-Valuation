@@ -16,6 +16,9 @@ public sealed class HsCodeConfiguration : IEntityTypeConfiguration<HsCode>
     public void Configure(EntityTypeBuilder<HsCode> b)
     {
         b.ToTable("hs_codes"); b.HasKey(x => x.Id); b.Property(x => x.Code).HasMaxLength(6);
+        b.Property(x => x.OfficialLetterFileName).HasMaxLength(255).IsRequired();
+        b.Property(x => x.OfficialLetterContentType).HasMaxLength(120).IsRequired();
+        b.Property(x => x.OfficialLetterContent).HasColumnType("bytea").IsRequired();
         b.HasIndex(x => new { x.RevisionId, x.Code }).IsUnique();
         b.HasOne<HsRevision>().WithMany().HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Restrict);
     }

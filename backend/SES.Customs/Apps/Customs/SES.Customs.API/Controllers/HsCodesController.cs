@@ -6,12 +6,13 @@ using SES.Customs.Core.Features.HsCodes.Contract.Query;
 using SES.Customs.Core.Dtos;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
+using SES.Customs.API.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 namespace SES.Customs.API.Controllers;
 [ApiController]
 [Route("api")]
-public sealed class HsCodesController(IMediator mediator, IConfiguration configuration, IWebHostEnvironment environment, IServiceScopeFactory scopeFactory) : ControllerBase
+public sealed class HsCodesController(IMediator mediator, IConfiguration configuration, IWebHostEnvironment environment, IServiceScopeFactory scopeFactory, WorkspaceAccess access) : ControllerBase
 {
     private bool CanRead() => (environment.IsDevelopment() && configuration.GetValue<bool>("Skeleton:UseDemoData"))
         || User.IsInRole("CustomsOfficer") || User.IsInRole("CustomsAdministrator") || User.IsInRole("SystemAdministrator");
@@ -132,41 +133,81 @@ public sealed class HsCodesController(IMediator mediator, IConfiguration configu
         return Ok(new HsCodeDetailDto(code.Id, code.RevisionId, code.Code, code.DescriptionEn, code.DescriptionAm, lines));
     }
 
-    [Authorize(Policy = "SystemAdministrator"), HttpPost("hs-codes")]
+    [AllowAnonymous, HttpGet("hs-codes/{id:guid}/official-letter")]
+    public async Task<IActionResult> OfficialLetter(Guid id, CancellationToken ct)
+    {
+        if (!CanRead()) return Challenge();
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CustomsDbContext>();
+        var letter = await db.HsCodes.AsNoTracking().Where(x => x.Id == id)
+            .Select(x => new { x.OfficialLetterContent, x.OfficialLetterContentType, x.OfficialLetterFileName })
+            .SingleOrDefaultAsync(ct);
+        if (letter is null || letter.OfficialLetterContent.Length == 0) return NotFound(new { message = "No official letter is attached to this HS code." });
+        return File(letter.OfficialLetterContent, letter.OfficialLetterContentType, letter.OfficialLetterFileName);
+    }
+
+    [Authorize(Policy = "SystemAdministrator"), RequestSizeLimit(20_000_000), HttpPost("hs-codes")]
     public async Task<IActionResult> Create([FromBody] HsCodeWriteRequest request, CancellationToken ct)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var code = NormalizeWriteCode(request.Code);
         if (code.Length != 6 || !code.All(char.IsDigit)) return BadRequest(new { message = "HS code must contain exactly 6 digits." });
+        var letter = ReadOfficialLetter(request);
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CustomsDbContext>();
         if (!await db.HsRevisions.AnyAsync(x => x.Id == request.RevisionId, ct)) return BadRequest(new { message = "Select a valid HS revision." });
         if (await db.HsCodes.AnyAsync(x => x.RevisionId == request.RevisionId && x.Code == code, ct)) return Conflict(new { message = "That HS code already exists in this revision." });
-        var entity = new HsCode { Id = Guid.NewGuid(), RevisionId = request.RevisionId, Code = code, DescriptionEn = request.DescriptionEn.Trim(), DescriptionAm = request.DescriptionAm?.Trim() };
+        var entity = new HsCode { Id = Guid.NewGuid(), RevisionId = request.RevisionId, Code = code, DescriptionEn = request.DescriptionEn.Trim(), DescriptionAm = request.DescriptionAm?.Trim(), OfficialLetterFileName = letter.FileName, OfficialLetterContentType = letter.ContentType, OfficialLetterContent = letter.Content };
         db.HsCodes.Add(entity);
         AddTariffLine(db, entity.Id, request, code);
         await db.SaveChangesAsync(ct);
+        access.Audit("HS_CODE_CREATED", "HS Codes", entity.Id, null, Snapshot(entity, request), $"Created HS code with official letter: {letter.FileName}");
+        await access.SaveChangesAsync(ct);
         return Created($"/api/hs-codes/{entity.Id}/detail", new { id = entity.Id });
     }
 
-    [Authorize(Policy = "SystemAdministrator"), HttpPut("hs-codes/{id:guid}")]
+    [Authorize(Policy = "SystemAdministrator"), RequestSizeLimit(20_000_000), HttpPut("hs-codes/{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] HsCodeWriteRequest request, CancellationToken ct)
     {
         var code = NormalizeWriteCode(request.Code);
         if (code.Length != 6 || !code.All(char.IsDigit)) return BadRequest(new { message = "HS code must contain exactly 6 digits." });
+        var letter = ReadOfficialLetter(request);
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CustomsDbContext>();
         var entity = await db.HsCodes.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (entity is null) return NotFound();
         if (await db.HsCodes.AnyAsync(x => x.Id != id && x.RevisionId == request.RevisionId && x.Code == code, ct)) return Conflict(new { message = "That HS code already exists in this revision." });
-        entity.RevisionId = request.RevisionId; entity.Code = code; entity.DescriptionEn = request.DescriptionEn.Trim(); entity.DescriptionAm = request.DescriptionAm?.Trim();
         var line = await db.NationalTariffLines.Where(x => x.HsCodeId == id).OrderByDescending(x => x.EffectiveDate).FirstOrDefaultAsync(ct);
+        var before = Snapshot(entity, line);
+        entity.RevisionId = request.RevisionId; entity.Code = code; entity.DescriptionEn = request.DescriptionEn.Trim(); entity.DescriptionAm = request.DescriptionAm?.Trim(); entity.OfficialLetterFileName = letter.FileName; entity.OfficialLetterContentType = letter.ContentType; entity.OfficialLetterContent = letter.Content;
         if (line is null) AddTariffLine(db, id, request, code); else { line.Code = NormalizeWriteCode(request.TariffItemNo ?? line.Code); line.DescriptionEn = request.TariffDescription?.Trim() ?? line.DescriptionEn; line.Unit = request.Unit?.Trim() ?? line.Unit; line.Duty = request.Duty?.Trim() ?? line.Duty; line.SourceReference = request.SourceReference?.Trim() ?? line.SourceReference; line.EffectiveDate = request.EffectiveDate ?? line.EffectiveDate; }
         await db.SaveChangesAsync(ct);
+        access.Audit("HS_CODE_UPDATED", "HS Codes", entity.Id, before, Snapshot(entity, request), $"Updated HS code with official letter: {letter.FileName}");
+        await access.SaveChangesAsync(ct);
         return NoContent();
     }
 
+    private sealed record HsAuditSnapshot(Guid RevisionId, string Code, string DescriptionEn, string? DescriptionAm, string TariffItemNo, string TariffDescription, string Unit, string Duty, string SourceReference, DateOnly EffectiveDate, string OfficialLetterFileName, string OfficialLetterContentType);
+    private static HsAuditSnapshot Snapshot(HsCode entity, NationalTariffLine? line) => new(entity.RevisionId, entity.Code ?? "", entity.DescriptionEn, entity.DescriptionAm, line?.Code ?? "", line?.DescriptionEn ?? "", line?.Unit ?? "", line?.Duty ?? "", line?.SourceReference ?? "", line?.EffectiveDate ?? DateOnly.MinValue, entity.OfficialLetterFileName, entity.OfficialLetterContentType);
+    private static HsAuditSnapshot Snapshot(HsCode entity, HsCodeWriteRequest request) => new(entity.RevisionId, entity.Code ?? "", entity.DescriptionEn, entity.DescriptionAm, NormalizeWriteCode(request.TariffItemNo ?? entity.Code ?? ""), request.TariffDescription?.Trim() ?? request.DescriptionEn.Trim(), request.Unit?.Trim() ?? "", request.Duty?.Trim() ?? "", request.SourceReference?.Trim() ?? "", request.EffectiveDate ?? DateOnly.FromDateTime(DateTime.UtcNow), entity.OfficialLetterFileName, entity.OfficialLetterContentType);
     private static void AddTariffLine(CustomsDbContext db, Guid hsCodeId, HsCodeWriteRequest request, string fallbackCode) => db.NationalTariffLines.Add(new NationalTariffLine { Id = Guid.NewGuid(), HsCodeId = hsCodeId, Code = NormalizeWriteCode(request.TariffItemNo ?? fallbackCode), DescriptionEn = request.TariffDescription?.Trim() ?? request.DescriptionEn.Trim(), DescriptionAm = request.DescriptionAm?.Trim(), Unit = request.Unit?.Trim() ?? "", Duty = request.Duty?.Trim() ?? "", SourceReference = request.SourceReference?.Trim() ?? "", EffectiveDate = request.EffectiveDate ?? DateOnly.FromDateTime(DateTime.UtcNow) });
+
+    private static (string FileName, string ContentType, byte[] Content) ReadOfficialLetter(HsCodeWriteRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.OfficialLetterFileName) || string.IsNullOrWhiteSpace(request.OfficialLetterBase64))
+            throw new WorkspaceException(400, "An official supporting letter is required.");
+        var fileName = Path.GetFileName(request.OfficialLetterFileName.Trim());
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        var contentType = request.OfficialLetterContentType?.Trim() ?? "";
+        var allowed = extension is ".pdf" or ".doc" or ".docx" or ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".tif" or ".tiff" or ".svg" or ".heic" or ".heif" or ".avif" || contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+        if (!allowed) throw new WorkspaceException(400, "The official letter must be a PDF, DOC, DOCX, or image file.");
+        byte[] content;
+        try { content = Convert.FromBase64String(request.OfficialLetterBase64); }
+        catch (FormatException) { throw new WorkspaceException(400, "The official letter file is invalid."); }
+        if (content.Length == 0) throw new WorkspaceException(400, "The official letter file is empty.");
+        if (content.Length > 10_000_000) throw new WorkspaceException(400, "The official letter must be 10 MB or smaller.");
+        return (fileName, contentType.Length <= 120 ? contentType : contentType[..120], content);
+    }
 
     private static string NormalizeWriteCode(string value) => value.Replace(".", "", StringComparison.Ordinal).Trim();
     private static bool IsSixDigitHsCode(string value) => value.Length == 6 && value.All(char.IsDigit);

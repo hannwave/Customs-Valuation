@@ -452,6 +452,7 @@ export default function BranchesPage() {
           )}
         </section>
       )}
+
     </div>
   );
 }

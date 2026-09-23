@@ -376,6 +376,7 @@ export default function RegionsPage() {
           )}
         </section>
       )}
+
     </div>
   );
 }

@@ -84,6 +84,11 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         phase2.Status = status;
         phase2.OfficerConfirmed = status == "Completed";
         var previous = loaded.Existing is null ? null : JsonSerializer.Serialize(new { loaded.Existing.Status, loaded.Existing.FinalAmount, loaded.Existing.TotalTax, loaded.Existing.Version });
+        var originalHs = decision.HsCodeId.HasValue
+            ? await db.HsCodes.AsNoTracking().Where(x => x.Id == decision.HsCodeId.Value).Select(x => new { x.Code, x.DescriptionEn }).SingleOrDefaultAsync(ct)
+            : null;
+        var selectedHs = await db.HsCodes.AsNoTracking().Where(x => x.Id == phase2.SelectedHsCodeId).Select(x => new { x.Code, x.DescriptionEn }).SingleOrDefaultAsync(ct);
+        var hsCodeChanged = decision.HsCodeId.HasValue && phase2.SelectedHsCodeId.HasValue && decision.HsCodeId.Value != phase2.SelectedHsCodeId.Value;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (loaded.Existing is null) db.ValuationPhase2s.Add(phase2);
         else { db.ValuationPhase2TaxLines.RemoveRange(oldTaxLines); db.Entry(phase2).State = EntityState.Modified; db.ValuationPhase2TaxLines.AddRange(phase2.TaxLines); }
@@ -92,7 +97,48 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
             Id = Guid.NewGuid(), UserId = CurrentSubject(), SubjectUserId = Guid.TryParse(CurrentSubject(), out var officerId) ? officerId : null, Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow,
             Action = status == "Completed" ? "ETHIOPIAN_IMPORT_TAX_ASSESSMENT_COMPLETED" : "ETHIOPIAN_IMPORT_TAX_ASSESSMENT_SAVED",
             Module = "EthiopianImportTaxAssessment", RecordId = phase2.Id, PreviousValueJson = previous,
-            NewValueJson = JsonSerializer.Serialize(new { phase2.Status, phase2.CustomsValueAmount, phase2.TotalTax, phase2.FinalAmount, phase2.TaxLines, phase2.ExemptionCodes, phase2.OriginCountry }),
+            NewValueJson = JsonSerializer.Serialize(new
+            {
+                phase2.ValuationDecisionId,
+                    itemName = ProductName(decision.EvidenceNotes),
+                    itemDescription = string.IsNullOrWhiteSpace(tariff.DescriptionEn) ? selectedHs?.DescriptionEn : tariff.DescriptionEn,
+                phase1 = new
+                {
+                    selectedCustomsValue = decision.SelectedReferenceValue,
+                    currency = decision.Currency,
+                    reason = decision.Justification,
+                    hsCode = originalHs?.Code,
+                    hsDescription = originalHs?.DescriptionEn
+                },
+                phase2 = new
+                {
+                    originalHsCode = originalHs?.Code,
+                    originalHsDescription = originalHs?.DescriptionEn,
+                    selectedHsCode = selectedHs?.Code,
+                    selectedHsDescription = selectedHs?.DescriptionEn,
+                    hsCodeChanged,
+                    customsValue = phase2.CustomsValueAmount,
+                    customsValueCurrency = phase2.CustomsValueCurrency,
+                    applicableDutiesTaxes = phase2.TaxLines,
+                    finalReason = string.IsNullOrWhiteSpace(phase2.AdjustmentReason) ? phase2.Notes : phase2.AdjustmentReason,
+                    adjustmentReason = phase2.AdjustmentReason,
+                    notes = phase2.Notes,
+                    totalTax = phase2.TotalTax,
+                    finalMoney = phase2.FinalAmount,
+                    status = phase2.Status
+                },
+                phase1SelectedReferenceValue = decision.SelectedReferenceValue,
+                phase1Reason = decision.Justification,
+                phase2.Status,
+                phase2.CustomsValueAmount,
+                phase2.TotalTax,
+                phase2.FinalAmount,
+                phase2.TaxLines,
+                phase2.ExemptionCodes,
+                phase2.OriginCountry,
+                phase2.AdjustmentReason,
+                phase2.Notes
+            }),
             Justification = string.IsNullOrWhiteSpace(phase2.AdjustmentReason) ? phase2.Notes : phase2.AdjustmentReason
         });
         await db.SaveChangesAsync(ct); await transaction.CommitAsync(ct);
@@ -278,6 +324,20 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
     private string CurrentSubject() => User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";
     private static decimal GetInitialDuty(ValuationDecision decision) => decision.InitialDuty ?? decision.SelectedReferenceValue;
     private static string GetInitialDutyCurrency(ValuationDecision decision) => string.IsNullOrWhiteSpace(decision.InitialDutyCurrency) ? (string.IsNullOrWhiteSpace(decision.Currency) ? "ETB" : decision.Currency) : decision.InitialDutyCurrency;
+    private static string? ProductName(string? evidenceNotes)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceNotes)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(evidenceNotes);
+            return document.RootElement.TryGetProperty("product", out var product) ? product.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static decimal Money(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }
 

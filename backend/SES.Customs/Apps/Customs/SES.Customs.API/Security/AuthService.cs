@@ -28,7 +28,7 @@ public sealed class AuthService(CustomsDbContext db)
                 OfficialCode = "ET-KAL-001",
                 Name = "Kality Customs Station",
                 DisplayName = "Addis Ababa Kality Customs Station",
-                LocationType = "CUSTOMS_STATION",
+                LocationType = "BRANCH",
                 Region = "Addis Ababa",
                 CityWoreda = "Akaki Kality",
                 Status = "ACTIVE",
@@ -136,6 +136,8 @@ public sealed class AuthService(CustomsDbContext db)
             await db.SaveChangesAsync(ct);
         }
 
+        await EnsureRegionBranchesAndAdminsAsync(ct);
+
         if (!await db.HsCodes.AnyAsync(ct))
         {
             var revId = Guid.Parse("11111111-1111-4111-8111-111111111111");
@@ -189,6 +191,72 @@ public sealed class AuthService(CustomsDbContext db)
 
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    private async Task EnsureRegionBranchesAndAdminsAsync(CancellationToken ct)
+    {
+        var systemAdmin = await db.AuthAccounts.AsNoTracking().Where(u => u.Role == AccessRules.SystemAdmin && u.Active && !string.IsNullOrWhiteSpace(u.PasswordHash)).OrderBy(u => u.CreatedAt).FirstOrDefaultAsync(ct);
+        if (systemAdmin is null) return;
+
+        var regions = await db.CustomsLocations.Where(l => l.LocationType == "REGION" && l.Status == "ACTIVE").OrderBy(l => l.Name).ToListAsync(ct);
+        foreach (var region in regions)
+        {
+            var regionKey = string.IsNullOrWhiteSpace(region.Region) ? region.OfficialCode : region.Region;
+            var slug = new string(regionKey.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(slug)) slug = region.OfficialCode.ToLowerInvariant();
+            var branches = await db.CustomsLocations.Where(l => l.ParentLocationId == region.Id && l.LocationType == "BRANCH" && l.Status == "ACTIVE").OrderBy(l => l.CreatedAt).ToListAsync(ct);
+
+            for (var index = branches.Count; index < 2; index++)
+            {
+                var branchNumber = index + 1;
+                var code = $"{region.OfficialCode}-BR-{branchNumber:00}".ToUpperInvariant();
+                while (await db.CustomsLocations.AnyAsync(l => l.OfficialCode == code, ct)) code = $"{region.OfficialCode}-BR-{branchNumber:00}-{Guid.NewGuid().ToString("N")[..4]}".ToUpperInvariant();
+                var branch = new CustomsLocation
+                {
+                    Id = Guid.NewGuid(), OfficialCode = code,
+                    Name = $"{region.Name} Branch {branchNumber}", DisplayName = $"{region.Name} Branch {branchNumber}",
+                    LocationType = "BRANCH", ParentLocationId = region.Id, Region = region.Region,
+                    Status = "ACTIVE", EffectiveFrom = DateTimeOffset.UtcNow, SupportsImport = true,
+                    SupportsExport = true, SupportsTransit = true, SupportsValuation = true, SupportsInspection = true,
+                    Latitude = region.Latitude, Longitude = region.Longitude, Source = "System setup",
+                    CreatedBy = "system", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+                };
+                db.CustomsLocations.Add(branch);
+                branches.Add(branch);
+            }
+
+            foreach (var branch in branches.Take(2))
+            {
+                var branchNumber = branches.IndexOf(branch) + 1;
+                var username = $"{slug}branch{branchNumber}";
+                var email = $"{username}@customs.gov.et";
+                var admin = await db.AuthAccounts.FirstOrDefaultAsync(u => u.Username == username || u.Email == email, ct);
+                if (admin is null)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    admin = new AuthAccountEntity
+                    {
+                        Id = Guid.NewGuid(), Username = username, Email = email,
+                        FullName = $"{region.Name} Branch {branchNumber} Customs Administrator",
+                        Role = AccessRules.CustomsAdmin, Active = true, Status = "ACTIVE",
+                        PrimaryLocationId = branch.Id, RegionKey = region.Region, RegionJoinedAt = now,
+                        PasswordHash = systemAdmin.PasswordHash, EmployeeNumber = $"{region.OfficialCode}-ADMIN-{branchNumber:00}",
+                        CreatedAt = now, UpdatedAt = now
+                    };
+                    db.AuthAccounts.Add(admin);
+                }
+                else
+                {
+                    admin.Role = AccessRules.CustomsAdmin; admin.Active = true; admin.Status = "ACTIVE";
+                    admin.PrimaryLocationId = branch.Id; admin.RegionKey = region.Region; admin.PasswordHash = systemAdmin.PasswordHash;
+                    admin.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+
+                if (!await db.UserLocationScopes.AnyAsync(s => s.UserId == admin.Id && s.CustomsLocationId == branch.Id && s.EffectiveTo == null, ct))
+                    db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = admin.Id, CustomsLocationId = branch.Id, IncludeChildLocations = true, Responsibilities = "Customs Administrator", EffectiveFrom = DateTimeOffset.UtcNow, CreatedBy = "system" });
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<AuthUser?> FindAsync(string identity, CancellationToken ct = default)

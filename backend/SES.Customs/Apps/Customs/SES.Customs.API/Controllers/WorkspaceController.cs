@@ -443,7 +443,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         {
             await access.RequireLocation(input.LocationId.Value, true, ct);
             office = await db.CustomsLocations.FindAsync([input.LocationId.Value], ct);
-            Validate(office!.SupportsValuation || office.SupportsInspection, "This office does not support valuation or inspection work.");
+            Validate(office is not null && office.Status == "ACTIVE" && office.LocationType == "BRANCH", "The valuation must use an active branch location.");
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
         Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
@@ -471,7 +471,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         access.Require(AccessRules.Officer);
         var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(decision.OfficerSubjectId == access.UserId.ToString() && decision.Status == "Draft" && decision.Version == input.Version, "Only your current saved draft may be submitted.");
-        await access.RequireLocation(decision.LocationId!.Value, true, ct);
+        if (decision.LocationId.HasValue)
+            await access.RequireLocation(decision.LocationId.Value, true, ct);
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
         access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
     }
@@ -489,8 +490,107 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpGet("audit")]
     public async Task<IActionResult> Audit(CancellationToken ct)
     {
-        var scope = await access.Locations(ct); var subject = access.UserId.ToString();
-        var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == subject);
-        return Ok(await query.OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct));
+        var subject = access.UserId.ToString();
+        var administratorBranchId = access.Role == AccessRules.CustomsAdmin
+            ? await db.AuthAccounts.AsNoTracking().Where(u => u.Id == access.UserId).Select(u => u.PrimaryLocationId).SingleOrDefaultAsync(ct)
+            : null;
+        var scopedDecisionIds = access.Role == AccessRules.CustomsAdmin
+            ? await db.ValuationDecisions.AsNoTracking().Where(d => d.LocationId.HasValue && administratorBranchId.HasValue && d.LocationId == administratorBranchId.Value).Select(d => d.Id).ToListAsync(ct)
+            : new List<Guid>();
+        var scopedPhase2Ids = access.Role == AccessRules.CustomsAdmin ? await db.ValuationPhase2s.AsNoTracking().Where(p => scopedDecisionIds.Contains(p.ValuationDecisionId)).Select(p => p.Id).ToListAsync(ct) : new List<Guid>();
+        var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && ((administratorBranchId.HasValue && a.LocationId == administratorBranchId.Value) || (a.Module == "EthiopianImportTaxAssessment" && scopedPhase2Ids.Contains(a.RecordId))) || access.Role == AccessRules.Officer && a.UserId == subject);
+        var records = await query.OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct);
+        if (access.Role == AccessRules.CustomsAdmin)
+        {
+            var actorIds = records.Select(r => r.UserId).Distinct().ToArray();
+            var actors = await db.AuthAccounts.AsNoTracking().Where(u => actorIds.Contains(u.Id.ToString())).ToDictionaryAsync(u => u.Id.ToString(), ct);
+            records = records.Where(r => actors.TryGetValue(r.UserId, out var actor) && AccessRules.NormalizeRole(actor.Role) == AccessRules.Officer).ToList();
+        }
+        var locations = await db.CustomsLocations.AsNoTracking().ToListAsync(ct);
+        var supervisors = await db.AuthAccounts.AsNoTracking().Where(u => u.Role == AccessRules.CustomsAdmin && u.Active).ToListAsync(ct);
+        var phase2Ids = records.Where(r => r.Module == "EthiopianImportTaxAssessment").Select(r => r.RecordId).ToArray();
+        var phase2Locations = await db.ValuationPhase2s.AsNoTracking().Where(p => phase2Ids.Contains(p.Id)).Join(db.ValuationDecisions.AsNoTracking(), p => p.ValuationDecisionId, d => d.Id, (p, d) => new { p.Id, d.LocationId }).ToDictionaryAsync(x => x.Id, x => x.LocationId, ct);
+        var phase2Details = await db.ValuationPhase2s.AsNoTracking().Include(p => p.TaxLines).Where(p => phase2Ids.Contains(p.Id)).ToListAsync(ct);
+        var phase2DecisionIds = phase2Details.Select(p => p.ValuationDecisionId).Distinct().ToArray();
+        var phase2Decisions = await db.ValuationDecisions.AsNoTracking().Where(d => phase2DecisionIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
+        var phase2HsIds = phase2Details.SelectMany(p => new[] { p.OriginalHsCodeId, p.SelectedHsCodeId }).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+        var phase2Hs = await db.HsCodes.AsNoTracking().Where(h => phase2HsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
+        var phase2Tariffs = await db.NationalTariffLines.AsNoTracking().Where(t => phase2HsIds.Contains(t.HsCodeId)).OrderByDescending(t => t.EffectiveDate).ToListAsync(ct);
+        return Ok(records.Select(record =>
+        {
+            var resolvedLocationId = record.LocationId ?? (phase2Locations.TryGetValue(record.RecordId, out var phase2LocationId) ? phase2LocationId : null);
+            var location = resolvedLocationId is Guid locationId ? locations.FirstOrDefault(l => l.Id == locationId) : null;
+            var region = location?.LocationType == "REGION" ? location : location?.ParentLocationId is Guid parent ? locations.FirstOrDefault(l => l.Id == parent) : null;
+            var supervisor = location is null ? null : supervisors.FirstOrDefault(u => u.PrimaryLocationId == location.Id || u.PrimaryLocationId == region?.Id);
+            var newValueJson = record.NewValueJson;
+            if (record.Module == "EthiopianImportTaxAssessment" && phase2Details.FirstOrDefault(p => p.Id == record.RecordId) is { } phase2 && phase2Decisions.TryGetValue(phase2.ValuationDecisionId, out var decision))
+            {
+                var originalHs = phase2.OriginalHsCodeId.HasValue && phase2Hs.TryGetValue(phase2.OriginalHsCodeId.Value, out var original) ? original : null;
+                var selectedHs = phase2.SelectedHsCodeId.HasValue && phase2Hs.TryGetValue(phase2.SelectedHsCodeId.Value, out var selected) ? selected : null;
+                var tariff = phase2Tariffs.FirstOrDefault(t => t.HsCodeId == phase2.SelectedHsCodeId);
+                newValueJson = JsonSerializer.Serialize(new
+                {
+                    phase2.ValuationDecisionId,
+                    itemName = ProductName(decision.EvidenceNotes),
+                    productPhoto = EvidenceValue(decision.EvidenceNotes, "productPhoto"),
+                    receiptPhoto = EvidenceValue(decision.EvidenceNotes, "receiptPhoto"),
+                    originalPrice = EvidenceValue(decision.EvidenceNotes, "originalPrice"),
+                    originalPriceCurrency = EvidenceValue(decision.EvidenceNotes, "originalPriceCurrency"),
+                    itemDescription = !string.IsNullOrWhiteSpace(tariff?.DescriptionEn) ? tariff!.DescriptionEn : selectedHs?.DescriptionEn ?? originalHs?.DescriptionEn,
+                    phase1 = new { selectedCustomsValue = decision.SelectedReferenceValue, currency = decision.Currency, reason = decision.Justification, hsCode = originalHs?.Code, hsDescription = originalHs?.DescriptionEn },
+                    phase2 = new
+                    {
+                        originalHsCode = originalHs?.Code,
+                        originalHsDescription = originalHs?.DescriptionEn,
+                        selectedHsCode = selectedHs?.Code,
+                        selectedHsDescription = selectedHs?.DescriptionEn,
+                        hsCodeChanged = decision.HsCodeId != phase2.SelectedHsCodeId,
+                        customsValue = phase2.CustomsValueAmount,
+                        customsValueCurrency = phase2.CustomsValueCurrency,
+                        applicableDutiesTaxes = phase2.TaxLines,
+                        finalReason = string.IsNullOrWhiteSpace(phase2.AdjustmentReason) ? phase2.Notes : phase2.AdjustmentReason,
+                        finalMoney = phase2.FinalAmount
+                    },
+                    phase1SelectedReferenceValue = decision.SelectedReferenceValue,
+                    phase1Reason = decision.Justification,
+                    phase2.CustomsValueAmount,
+                    phase2.TotalTax,
+                    phase2.FinalAmount,
+                    phase2.TaxLines,
+                    phase2.AdjustmentReason,
+                    phase2.Notes
+                });
+            }
+            return new { record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId, record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification, regionName = region?.DisplayName ?? region?.Name, branchName = location?.LocationType == "BRANCH" ? location.DisplayName ?? location.Name : null, supervisorName = supervisor?.FullName ?? supervisor?.Username };
+        }));
+    }
+
+    private static string? ProductName(string? evidenceNotes)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceNotes)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(evidenceNotes);
+            return document.RootElement.TryGetProperty("product", out var product) ? product.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? EvidenceValue(string? evidenceNotes, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceNotes)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(evidenceNotes);
+            if (!document.RootElement.TryGetProperty(propertyName, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return null;
+            return value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
-  FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
+  FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu,
   FiShield, FiShoppingBag, FiUser, FiUsers, FiX,
 } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
@@ -38,7 +38,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
       { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
     ] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
-    { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
+    { label: "AUDIT", links: [{ href: "/audit", key: "audit", label: "Audit trail", icon: FiActivity }] },
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [

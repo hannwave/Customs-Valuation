@@ -30,6 +30,9 @@ public sealed class HsCode
     public string? HsUpdateStatus { get; set; }
     public string? HsUpdateNote { get; set; }
     public string HsUpdateCandidatesJson { get; set; } = "[]";
+    public string OfficialLetterFileName { get; set; } = "";
+    public string OfficialLetterContentType { get; set; } = "";
+    public byte[] OfficialLetterContent { get; set; } = [];
 }
 public enum CorrelationKind { Retained, Revised, Split, Merged, Deleted, Replaced }
 public sealed class HsCodeCorrelation

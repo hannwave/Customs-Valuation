@@ -95,6 +95,9 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const [selected, setSelected] = useState<EvidenceSource>("internationalMedian");
   const [customValue, setCustomValue] = useState("");
   const [justification, setJustification] = useState("");
+  const [originalPrice, setOriginalPrice] = useState("");
+  const [productPhoto, setProductPhoto] = useState<string | null>(null);
+  const [receiptPhoto, setReceiptPhoto] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordNotice, setRecordNotice] = useState("");
   const [fxMeta, setFxMeta] = useState<{ etbPerUnit?: number; source?: string; date?: string } | null>(null);
@@ -137,7 +140,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     const term = query.trim();
     if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
     setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setLocal(null); setLocalRate(1);
-    setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setFxMeta(null);
+    setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setOriginalPrice(""); setProductPhoto(null); setReceiptPhoto(null); setFxMeta(null);
     // Start a fresh client-side session for this search. Later asynchronous
     // evidence responses merge into this record, so a late response cannot
     // overwrite a decision that was already submitted from Phase 1.
@@ -191,7 +194,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
             setFxMeta({ etbPerUnit: result.etbPerUnit, source: result.source, date: result.date });
           }
         })
-        .catch(() => setError("Local prices loaded, but the ETB exchange rate is unavailable."));
+        .catch(() => {
+          // Local observations are already in ETB. Keep them usable in their
+          // source currency when the optional FX service is unavailable.
+          setLocalRate(1);
+          setFxMeta(null);
+        });
     }
   }
 
@@ -212,17 +220,17 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
         profile.locations.find(location =>
           location.id === profile.user.primaryLocationId &&
           location.status === "ACTIVE" &&
-          (location.supportsValuation || location.supportsInspection)
+          location.locationType === "BRANCH"
         ) ??
-        profile.locations.find(location =>
-          location.status === "ACTIVE" &&
-          (location.supportsValuation || location.supportsInspection)
-        )
+        profile.locations.find(location => location.status === "ACTIVE" && location.locationType === "BRANCH")
        )?.id ?? null;
-       if (!assignedLocationId) throw new Error("Assign an active valuation office before submitting this valuation.");
 
        const evidenceSnapshot = {
          product: query.trim(), hsCode: null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+         originalPrice: originalPrice.trim() ? Number(originalPrice) : null,
+         originalPriceCurrency: currency,
+         productPhoto,
+         receiptPhoto,
          selectedCurrency, supportingSource: selected, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [], localEvidence: local?.items ?? [],
          statistics: { international: international?.statistics ?? null, local: local?.statistics ?? null },
@@ -250,10 +258,16 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
   const localOutliers = local?.statistics?.potentialOutliers.length ?? 0;
   return <section className="overview-evidence-workspace">
+    {hasResults && <ProductEvidenceFields currency={currency} originalPrice={originalPrice} setOriginalPrice={setOriginalPrice} setProductPhoto={setProductPhoto} setReceiptPhoto={setReceiptPhoto} setError={setError} />}
     <section className="officer-search-hero"><div><span>VALUATION SEARCH</span><h2>Search a product to begin valuation</h2><p>Search once to create the active valuation session. The same evidence follows you through Price Review, detail pages, and the final decision.</p></div><form onSubmit={search}><FiSearch /><input aria-label="Product description" placeholder="e.g. Apple iPhone 13 128GB" value={query} onChange={event => setQuery(event.currentTarget.value)} required />{(query || hasResults) && <button type="button" className="phase2-search-clear" aria-label="Clear search" onClick={() => { setQuery(""); setInternational(null); setLocal(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); }}><FiX /></button>}<select aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}><option value="us">US · USD</option><option value="gb">UK · GBP</option><option value="de">Germany · EUR</option><option value="ae">UAE · AED</option><option value="za">South Africa · ZAR</option></select><button type="submit" disabled={busy}>{busy ? "Searching…" : <>Search <FiArrowRight /></>}</button></form>{hasResults && <div className="officer-search-links"><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><FiGlobe />Global market details</Link><Link href={`/local-prices?q=${encodeURIComponent(query.trim())}`}><FiShoppingBag />Local market details</Link><Link href="/historical-customs-prices"><FiArchive />Customs history</Link><Link href="/outlier-analysis"><FiBarChart2 />Price analysis</Link></div>}</section>
     <FeedbackToast error={error} success={recordNotice} onDismissError={() => setError("")} onDismissSuccess={() => setRecordNotice("")} />
     {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="Global market statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local market statistics" icon={<FiMapPin />} stats={displayLocal?.statistics ?? null} currency={localCurrency} tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} rateNote={localCurrency === currency && fxMeta?.etbPerUnit ? `1 ${currency} = ${fxMeta.etbPerUnit.toFixed(2)} ETB · CBE via exchange.et` : undefined} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && displayLocal?.statistics && localCurrency === currency ? <><b>{(((displayLocal.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median converted to {currency} ({fxMeta?.etbPerUnit ? `1 ${currency} = ${fxMeta.etbPerUnit.toFixed(2)} ETB` : "live exchange rate"}) compared with international median.</p></> : <><b>Exchange rate unavailable</b><p>Local prices remain in ETB until an approved exchange rate is available.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={localCurrency === currency ? displayLocal?.statistics ?? null : null} currency={currency} /><section className="valuation-insight-grid"><Link href="/outlier-analysis"><strong>Price analysis</strong><span>{internationalOutliers + localOutliers} suspected outlier{internationalOutliers + localOutliers === 1 ? "" : "s"}</span><small>Global {internationalOutliers} · Local {localOutliers} · View reasons <FiArrowRight /></small></Link><Link href="/historical-customs-prices"><strong>Customs history</strong><span>Saved history review</span><small>Open the historical comparison <FiArrowRight /></small></Link><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><strong>Global market</strong><span>{international?.items.length ?? 0} offers</span><small>View exact offers <FiArrowRight /></small></Link></section></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Review the evidence before submitting Price Review. HS classification and tariff rules are completed in Final Assessment.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>Global market median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>Global market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records {localCurrency === currency && fxMeta?.etbPerUnit ? `· Converted at ${fxMeta.etbPerUnit.toFixed(2)} ETB/${currency}` : ""}</small></span><b>{money(displayLocal?.statistics?.median, localCurrency)}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount</small></span></label>{selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={`Enter amount in ${currency}`} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}</div><div className="overview-decision-fields"><label>Officer note (optional)<textarea value={justification} onChange={event => setJustification(event.currentTarget.value)} placeholder="Add an optional note about this customs value…" rows={3} /></label></div><div className="selected-reference"><span>Selected customs value</span><b>{money(selectedValue, selectedCurrency)}</b></div><button className="valuation-record-link" type="button" disabled={recording} onClick={() => void recordDecision()}><FiFileText />{recording ? "Submitting valuation…" : "Continue to next phase"}</button><small className="decision-disclaimer">The selected customs value and evidence will be carried into Final Assessment.</small></aside></div>}
   </section>;
+}
+
+function ProductEvidenceFields({ currency, originalPrice, setOriginalPrice, setProductPhoto, setReceiptPhoto, setError }: { currency: string; originalPrice: string; setOriginalPrice: (value: string) => void; setProductPhoto: (value: string | null) => void; setReceiptPhoto: (value: string | null) => void; setError: (value: string) => void }) {
+  const readPhoto = (file: File | undefined, setPhoto: (value: string | null) => void, label: string, input: HTMLInputElement) => { if (!file) { setPhoto(null); return; } if (file.size > 5 * 1024 * 1024) { setError(`${label} must be 5 MB or smaller.`); input.value = ""; return; } const reader = new FileReader(); reader.onload = () => setPhoto(typeof reader.result === "string" ? reader.result : null); reader.readAsDataURL(file); };
+  return <div className="overview-decision-fields"><label>Original item price (optional)<input type="number" min="0" step="0.01" placeholder={`Enter original price in ${currency}`} value={originalPrice} onChange={event => setOriginalPrice(event.currentTarget.value)} /></label><label>Product photo (optional)<input type="file" accept="image/*" onChange={event => readPhoto(event.currentTarget.files?.[0], setProductPhoto, "Product photo", event.currentTarget)} /></label><label>Receipt photo (optional)<input type="file" accept="image/*" onChange={event => readPhoto(event.currentTarget.files?.[0], setReceiptPhoto, "Receipt photo", event.currentTarget)} /></label></div>;
 }
 
 function SystemDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {

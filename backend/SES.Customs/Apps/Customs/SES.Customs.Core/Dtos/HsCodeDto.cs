@@ -54,4 +54,7 @@ public sealed record HsCodeWriteRequest(
     string? Unit,
     string? Duty,
     string? SourceReference,
-    DateOnly? EffectiveDate);
+    DateOnly? EffectiveDate,
+    string? OfficialLetterFileName,
+    string? OfficialLetterContentType,
+    string? OfficialLetterBase64);
