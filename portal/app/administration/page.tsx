@@ -226,7 +226,7 @@ export default function AdministrationPage() {
   const visibleEmployees = normalizedSearch ? employees.filter(row => [row.user.fullName, row.user.email, row.user.employeeNumber, row.user.username, row.user.responsibilities].some(value => value?.toLowerCase().includes(normalizedSearch))) : employees;
 
   if (profile.user.role === "CustomsAdministrator") return <div className="management-page customs-admin-workspace">
-    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>Employees and regional access</h1><p className="lead">Manage Customs Officers assigned within your region. Employee creation, assignment, status, and responsibility changes are recorded in the audit trail.</p></div><Link className="primary-link" href="/valuation-decisions"><FiActivity />Open valuation reviews</Link></div>
+    <div className="page-heading"><div><p className="eyebrow">Administration</p><h1>Employees and regional access</h1><p className="lead">Manage Customs Officers assigned within your region. Employee creation, assignment, status, and responsibility changes are recorded in the audit trail.</p></div></div>
     <div className="role-banner"><span className="badge">{roleLabel(profile.user.role)}</span><strong>{profile.locations.length} assigned location{profile.locations.length === 1 ? "" : "s"}</strong><span>May manage Customs Officers assigned to your location.</span></div>
     {error && <DataState kind="error" compact title="Action could not be completed" description={error} onRetry={() => void load()} />}
     {notice && <p className="management-notice" role="status">{notice}</p>}

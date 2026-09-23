@@ -23,7 +23,7 @@ export interface DashboardEmployee { user: WorkspaceUser; locationId?: string | 
 export interface DashboardDecision { id: string; hsCodeId: string | null; hsCode: string; product: string; selectedReferenceValue: number; currency: string; decision: string; status: string; recordedAt: string; locationId: string | null }
 export interface DashboardSource { id: string; name: string; pool: string; isApproved: boolean }
 export interface WorkspaceDashboard { role: WorkspaceRole; generatedAt: string; kpis: DashboardKpi[]; activeRevision: { id: string; name: string; number: number; effectiveDate: string; status: string; codeCount: number } | null; locations: DashboardLocation[]; employees: DashboardEmployee[]; decisions: DashboardDecision[]; sources: DashboardSource[]; audit: AuditRecord[] }
-export interface WorkspaceNotifications { pendingOfficerApplications: number; submittedValuations: number; overdueValuations: number }
+export interface WorkspaceNotifications { pendingOfficerApplications: number }
 export interface CustomsAdminAnalytics {
   generatedAt: string;
   scope: { region: string; branchCount: number; activeBranches: number };

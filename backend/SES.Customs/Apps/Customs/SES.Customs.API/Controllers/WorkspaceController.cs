@@ -104,12 +104,19 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var dashboardEmployees = access.Role == AccessRules.CustomsAdmin
             ? managedUsers.Where(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer).ToList()
             : managedUsers;
-        // Legacy databases may contain incomplete draft rows from before HS-code
-        // validation was enforced. Keep those rows out of dashboard projections;
-        // they cannot be displayed or used as valuation records safely.
-        var decisions = await (await VisibleDecisions(ct)).AsNoTracking()
-            .Where(d => d.HsCodeId != Guid.Empty)
-            .OrderByDescending(d => d.RecordedAt).ToListAsync(ct);
+        // Keep valuation records out of the Customs Administrator and Officer
+        // dashboard load. Their operational dashboard must not depend on the
+        // valuation review workflow; System Administrator projections retain
+        // their existing global records.
+        List<ValuationDecision> decisions = [];
+        if (access.Role == AccessRules.SystemAdmin)
+        {
+            // Legacy databases may contain incomplete draft rows from before
+            // HS-code validation was enforced.
+            decisions = await VisibleDecisions().AsNoTracking()
+                .Where(d => d.HsCodeId != Guid.Empty)
+                .OrderByDescending(d => d.RecordedAt).ToListAsync(ct);
+        }
         var hsIds = decisions.Where(d => d.HsCodeId.HasValue).Select(d => d.HsCodeId!.Value).Distinct().ToList();
         var hsCodes = await db.HsCodes.AsNoTracking().Where(h => hsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
         var auditQuery = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == access.UserId.ToString());
@@ -134,8 +141,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var officers = dashboardEmployees.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer && u.Active);
         var administrators = managedUsers.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.CustomsAdmin && u.Active);
         var submitted = decisions.Count(d => d.Status == "Submitted");
-        var returned = decisions.Count(d => d.Status == "Returned");
-        var overdue = decisions.Count(d => d.Status == "Submitted" && d.SubmittedAt.HasValue && d.SubmittedAt.Value < now.AddHours(-48));
         var pendingOfficerApplications = access.Role == AccessRules.CustomsAdmin
             ? await db.RegistrationRequests.CountAsync(r => r.Status == "Pending" && r.Role == AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct)
             : 0;
@@ -156,10 +161,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                 new { key = "locations", label = "Assigned branches", value = activeLocations.ToString("N0"), detail = $"{visibleBranches:N0} total visible", tone = "blue" },
                 new { key = "officers", label = "Active Officers", value = officers.ToString("N0"), detail = $"{dashboardEmployees.Count:N0} managed Officers", tone = "teal" },
                 new { key = "officerApplications", label = "Pending Officer Applications", value = pendingOfficerApplications.ToString("N0"), detail = "Awaiting your review", tone = pendingOfficerApplications > 0 ? "gold" : "green" },
-                new { key = "pending", label = "Pending valuations", value = submitted.ToString("N0"), detail = "Awaiting review", tone = submitted > 0 ? "gold" : "green" },
-                new { key = "overdue", label = "Overdue valuations", value = overdue.ToString("N0"), detail = "Submitted over 48 hours", tone = overdue > 0 ? "red" : "green" },
-                new { key = "returned", label = "Returned valuations", value = returned.ToString("N0"), detail = "Sent back for correction", tone = returned > 0 ? "gold" : "green" },
-                new { key = "today", label = "Decisions today", value = todayCount.ToString("N0"), detail = "Across my assigned location", tone = "blue" },
                 new { key = "suspended", label = "Suspended accounts", value = dashboardEmployees.Count(u => u.Status == "SUSPENDED").ToString("N0"), detail = "Within my assigned location", tone = "red" }
             ],
             _ => [
@@ -182,12 +183,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     {
         access.Require(AccessRules.CustomsAdmin);
         var scope = await access.Locations(ct);
-        var submittedQuery = await VisibleDecisions(ct);
-        var now = DateTimeOffset.UtcNow;
         var pendingOfficerApplications = await db.RegistrationRequests.CountAsync(r => r.Status == "Pending" && r.Role == AccessRules.Officer && r.LocationId.HasValue && scope.Contains(r.LocationId.Value), ct);
-        var submittedValuations = await submittedQuery.CountAsync(d => d.Status == "Submitted", ct);
-        var overdueValuations = await submittedQuery.CountAsync(d => d.Status == "Submitted" && d.SubmittedAt.HasValue && d.SubmittedAt.Value < now.AddHours(-48), ct);
-        return Ok(new { generatedAt = now, pendingOfficerApplications, submittedValuations, overdueValuations });
+        return Ok(new { generatedAt = DateTimeOffset.UtcNow, pendingOfficerApplications });
     }
     [HttpGet("locations")]
     public async Task<IActionResult> Locations(CancellationToken ct)
@@ -421,16 +418,19 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         return $"\"{safe.Replace("\"", "\"\"")}\"";
     }
 
-    private async Task<IQueryable<ValuationDecision>> VisibleDecisions(CancellationToken ct)
+    private IQueryable<ValuationDecision> VisibleDecisions()
     {
-        var scope = await access.Locations(ct); var subject = access.UserId.ToString();
+        var subject = access.UserId.ToString();
         return db.ValuationDecisions.Where(d => d.HsCodeId != Guid.Empty && (
             access.IsSystem ||
-            access.Role == AccessRules.CustomsAdmin && d.LocationId != null && scope.Contains(d.LocationId.Value) ||
             access.Role == AccessRules.Officer && d.OfficerSubjectId == subject));
     }
     [HttpGet("decisions")]
-    public async Task<IActionResult> Decisions(CancellationToken ct) => Ok(await (await VisibleDecisions(ct)).AsNoTracking().OrderByDescending(d => d.RecordedAt).ToListAsync(ct));
+    public async Task<IActionResult> Decisions(CancellationToken ct)
+    {
+        access.Require(AccessRules.SystemAdmin, AccessRules.Officer);
+        return Ok(await VisibleDecisions().AsNoTracking().OrderByDescending(d => d.RecordedAt).ToListAsync(ct));
+    }
     [HttpPost("decisions")]
     public Task<IActionResult> CreateDecision(DecisionInput input, CancellationToken ct) => SaveDecision(null, input, ct);
     [HttpPut("decisions/{id:guid}")]
@@ -449,7 +449,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
         if (input.HsCodeId.HasValue)
             Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId.Value, ct), "The selected HS code was not found.");
-        var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(entity.OfficerSubjectId == access.UserId.ToString() && entity.Status is "Draft" or "Returned", "Only your own draft or returned decisions may be edited.");
         if (id != null) Validate(entity.Version == input.Version, "Decision changed. Refresh before editing.");
         JsonElement? before = id == null ? null : JsonSerializer.SerializeToElement(entity);
@@ -469,7 +469,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     public async Task<IActionResult> Submit(Guid id, DecisionTransition input, CancellationToken ct)
     {
         access.Require(AccessRules.Officer);
-        var decision = await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(decision.OfficerSubjectId == access.UserId.ToString() && decision.Status == "Draft" && decision.Version == input.Version, "Only your current saved draft may be submitted.");
         await access.RequireLocation(decision.LocationId!.Value, true, ct);
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
@@ -478,9 +478,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpPost("decisions/{id:guid}/review")]
     public async Task<IActionResult> Review(Guid id, DecisionTransition input, CancellationToken ct)
     {
-        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
-        var decision = await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
-        Validate(decision.Status == "Submitted" && decision.Version == input.Version && (input.Outcome is "Approved" or "Returned" || access.Role == AccessRules.CustomsAdmin && input.Outcome == "Rejected"), "Only a current submitted decision may be approved or returned; Customs Administrators may also reject a submitted decision.");
+        access.Require(AccessRules.SystemAdmin);
+        var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
+        Validate(decision.Status == "Submitted" && decision.Version == input.Version && (input.Outcome is "Approved" or "Returned"), "Only a current submitted decision may be approved or returned.");
         var reviewNote = input.Justification?.Trim() ?? "";
         Validate(reviewNote.Length >= 10, "A review justification is required.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = reviewNote; decision.Version = Guid.NewGuid();

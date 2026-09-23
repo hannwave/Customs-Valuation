@@ -59,7 +59,7 @@ Bootstrap sequence:
 2. Create a Customs Administrator and assign an office. Additional descendant-inclusive scopes can be granted through `POST /api/workspace/employees/{id}/scopes`.
 3. Create or approve Officers, then assign an active operational office and responsibilities.
 4. Officers save drafts at `/valuation-decisions` and submit them.
-5. The scoped Customs Administrator records an approval or return with mandatory justification.
+5. Customs Administrators remain focused on Officers, assignments, and employee activity; valuation review is not part of their workflow. System-level valuation oversight remains with the System Administrator.
 6. Verify all changes at `/audit`; the API filters global, scoped, or own events according to role.
 
 The employee table at `/administration` supports search, profile edits, status and office changes, adding officers, and archiving (never hard deletion). Every change requires a reason. Select an officer's Activity action to filter their audit events, switch between table and timeline, or export CSV. The API endpoints are `GET /api/workspace/employees/{id}/audit`, `GET /api/workspace/employees/{id}/audit/export`, and `POST /api/workspace/employees/{id}/archive`. Region transfers reset the administrator-visible activity start time while preserving older records for system-level audit.

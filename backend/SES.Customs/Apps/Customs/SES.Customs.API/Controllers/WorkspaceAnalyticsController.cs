@@ -24,6 +24,8 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
         CancellationToken ct)
     {
         access.Require(AccessRules.CustomsAdmin);
+        if (access.Role == AccessRules.CustomsAdmin)
+            throw new WorkspaceException(410, "Customs Administrator valuation analytics has been removed from this workspace.");
 
         var now = DateTimeOffset.UtcNow;
         var from = dateFrom ?? now.AddDays(-30);

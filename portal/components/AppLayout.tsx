@@ -26,6 +26,7 @@ const evidenceLinks: NavLink[] = [
 const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", key: "profile", label: "My profile", icon: FiUser }] };
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
 const officerSessionPaths = [...officerOnlyPaths, "/analytics"];
+const customsAdminRemovedPaths = ["/valuation-decisions", "/analytics", "/reports"];
 function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[] {
   if (role === "SystemAdministrator") return [
     { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "systemOverview", label: "System overview", icon: FiGrid },
@@ -41,9 +42,9 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "overview", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers, notificationKey: "pendingOfficerApplications" }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare, notificationKey: "submittedValuations" }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "overview", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers, notificationKey: "pendingOfficerApplications" }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
-    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+    { label: "MONITORING", links: [{ href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
   ];
   const sessionGroups = hasValuationSession ? [
@@ -131,6 +132,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
+      window.location.replace("/");
+    }
+  }, [pathname, profile]);
+
+  useEffect(() => {
+    if (profile?.user.role === "CustomsAdministrator" && customsAdminRemovedPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
       window.location.replace("/");
     }
   }, [pathname, profile]);
