@@ -97,5 +97,4 @@ public sealed class WorkspaceAccess(CustomsDbContext db, IHttpContextAccessor ht
     public static object PublicUser(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.RegionKey, u.RegionJoinedAt, u.ArchivedAt, u.ArchivedBy, u.ArchiveReason, u.Version, u.EmployeeNumber, u.Phone, u.Responsibilities, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };
     public static object PublicEmployee(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.RegionKey, u.RegionJoinedAt, u.ArchivedAt, u.ArchivedBy, u.ArchiveReason, u.Version, u.EmployeeNumber, u.Phone, u.Responsibilities, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };
     public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
-    public Task SaveChangesAsync(CancellationToken ct) => db.SaveChangesAsync(ct);
 }
