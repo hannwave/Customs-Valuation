@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useLayoutEffect, useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { FiArrowRight, FiBarChart2, FiCheck, FiChevronDown, FiFileText, FiGlobe, FiLayers, FiPlayCircle, FiShield, FiUser } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const services = [
   { icon: FiFileText, title: "HS Code & Tariff Management", items: ["HS revisions", "National tariff codes", "Classification history", "Tariff rules"] },
@@ -19,11 +23,23 @@ const steps = [
 ];
 
 export default function LandingPage() {
-  return <main className="landing-page">
+  const page = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.registerPlugin(ScrollTrigger);
+    const context = gsap.context(() => {
+      gsap.from(".landing-hero-copy > *", { y: 18, autoAlpha: 0, duration: .65, stagger: .1, ease: "power2.out" });
+      [".service-card", ".step-card", ".evidence-inner > *", ".access-inner > *", ".footer-main > div"].forEach(selector => {
+        gsap.from(selector, { y: 16, autoAlpha: 0, duration: .5, stagger: .08, ease: "power2.out", scrollTrigger: { trigger: selector, start: "top 88%", once: true } });
+      });
+    }, page);
+    return () => context.revert();
+  }, []);
+  return <main className="landing-page" ref={page}>
     <header className="landing-nav">
       <Link href="/" className="landing-brand" aria-label="Ethiopia Customs Commission home"><Brand variant="dark" /></Link>
       <nav aria-label="Main navigation"><a className="is-active" href="#home">Home</a><Link href="/about">About</Link><Link href="/contact">Contact</Link></nav>
-      <div className="landing-nav-actions"><button className="landing-language" type="button"><FiGlobe /> EN <FiChevronDown /></button><Link href="/login" className="nav-sign-in"><FiUser /> Sign in</Link></div>
+      <div className="landing-nav-actions"><ThemeToggle /><button className="landing-language" type="button"><FiGlobe /> EN <FiChevronDown /></button><Link href="/login" className="nav-sign-in"><FiUser /> Sign in</Link></div>
     </header>
 
     <section className="landing-hero" id="home">
