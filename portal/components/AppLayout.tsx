@@ -10,6 +10,7 @@ import {
   FiShield, FiShoppingBag, FiUser, FiUsers, FiX,
 } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
@@ -123,10 +124,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="workspace-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <FiX /> : <FiMenu />}</button>
           <span className="header-institution">{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.customs", "Ethiopia Customs")}</span><FiChevronRight aria-hidden="true" /><strong>{current ? t(current.key, current.label) : t("dashboard", "Overview")}</strong>
         </div>
-        <div className="header-actions"><LanguageSelect /><div className="profile-chip">
-          <span className="profile-avatar">{(profile?.user.fullName ?? profile?.user.username ?? "U").slice(0, 1).toUpperCase()}</span>
-          <span className="profile-details"><strong>{profile?.user.fullName ?? profile?.user.username ?? "Workspace user"}</strong><small>{roleLabel(profile?.user.role)}</small></span>
-        </div></div>
+        <div className="header-actions">
+          <ThemeToggle />
+          <LanguageSelect />
+          <div className="profile-chip">
+            <span className="profile-avatar">{(profile?.user.fullName ?? profile?.user.username ?? "U").slice(0, 1).toUpperCase()}</span>
+            <span className="profile-details"><strong>{profile?.user.fullName ?? profile?.user.username ?? "Workspace user"}</strong><small>{roleLabel(profile?.user.role)}</small></span>
+          </div>
+        </div>
       </header>
       {profileError && <div className="service-notice" role="status"><FiInfo />{profileError} Refresh the page after the API is available.</div>}
       <main id="main-content" tabIndex={-1}>{children}</main>
