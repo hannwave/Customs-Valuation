@@ -459,18 +459,19 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     hsCodeInput.replace(/\D/g, "") === systemRecommendedCode.replace(/\D/g, ""),
   );
 
-  const requiresReason =
+  const hasAdjustments =
     isManuallyOverridden ||
     draft.exemptionAmount > 0 ||
     draft.waiverAmount > 0 ||
     draft.manualAdjustmentAmount !== 0 ||
+    draft.originPreferenceClaimed ||
     draft.taxLines.some((line) => line.status === "OfficerAdjusted") ||
     unresolvedTax;
 
   const warning = warningDismissed
     ? ""
     : isManuallyOverridden
-      ? "HS Code was manually overridden. Provide an Officer Adjustment Reason."
+      ? "HS Code was manually overridden. You may add an optional audit note."
       : !draft.selectedHsCodeId
         ? "HS code was not confidently identified. Enter or search the correct tariff line."
         : unresolvedTax
@@ -758,10 +759,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
         setError("Officer confirmation is required before completing the assessment.");
         return;
       }
-      if (isManuallyOverridden && (!draft.adjustmentReason || draft.adjustmentReason.trim().length < 5)) {
-        setError(`Officer Adjustment Reason is required because the HS code was changed from recommended ${systemRecommendedCode || "system recommendation"} to ${hsCodeInput}.`);
-        return;
-      }
     }
     setBusy(true);
     setError("");
@@ -783,10 +780,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     setNotice("Assessment changes reset.");
   }
 
-  const confirmDisabled =
-    busy ||
-    !draft.officerConfirmation ||
-    (isManuallyOverridden && (!draft.adjustmentReason || draft.adjustmentReason.trim().length < 5));
+  const confirmDisabled = busy || !draft.officerConfirmation;
 
   return (
     <div className="phase-two-workspace phase2-reference-workspace">
@@ -1026,7 +1020,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
         {showInputs && (
           <div className="phase2-context-grid">
             <label>
-              Country of origin
+              Country of origin (optional)
               <input
                 value={draft.originCountry}
                 onChange={(event) => update("originCountry", event.target.value)}
@@ -1272,13 +1266,13 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
               <small>{draft.notes.length}/500</small>
             </label>
 
-            {requiresReason && (
+            {hasAdjustments && (
               <label className="reason-label">
-                Adjustment reason <em>required</em>
+                Adjustment note <span>(optional)</span>
                 {isManuallyOverridden && (
                   <div className="reason-required-alert">
                     <FiAlertCircle style={{ marginRight: "4px", verticalAlign: "middle" }} />
-                    Officer justification is required: HS Code was manually changed from{" "}
+                    HS Code was manually changed from{" "}
                     <strong>{systemRecommendedCode || "system recommendation"}</strong> to{" "}
                     <strong>{hsCodeInput}</strong>.
                   </div>
@@ -1314,11 +1308,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
             >
               <FiCheckCircle /> Confirm Assessment
             </button>
-            {isManuallyOverridden && (!draft.adjustmentReason || draft.adjustmentReason.trim().length < 5) && (
-              <small style={{ color: "#dc2626", fontSize: "10px", marginTop: "4px", display: "block", textAlign: "center" }}>
-                Officer justification required before confirming a manually overridden HS code.
-              </small>
-            )}
           </section>
         </aside>
       </div>

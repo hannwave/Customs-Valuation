@@ -12,7 +12,7 @@ namespace SES.Customs.API.Controllers;
 public sealed record LoginRequest(string Identity, string Password);
 public sealed record RegistrationRequestDto(string Username, string FullName, string StaffId, string Email, string? Phone, string Department, string Role, Guid LocationId, string Password, string ConfirmPassword);
 public sealed record AdministratorRegistrationRequestDto(string Username, string FullName, string StaffId, string Email, string? Phone, string Department, Guid RegionId, Guid BranchId, string Password, string ConfirmPassword);
-public sealed record RegistrationReviewDto(string Reason);
+public sealed record RegistrationReviewDto(string? Reason);
 public sealed record CreateUserRequest(string Username, string FullName, string Email, string Role, string Password);
 
 [ApiController, Route("api/auth")]
@@ -98,8 +98,7 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
     [Authorize(Policy = "SystemAdministrator"), HttpPost("registration-requests/{id:guid}/deny")]
     public async Task<IActionResult> DenyRegistration(Guid id, RegistrationReviewDto input, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length < 10) return BadRequest(new { message = "Provide a denial reason of at least 10 characters." });
-        try { await auth.DenyAsync(id, input.Reason.Trim(), Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!), ct); return Ok(new { message = "Registration denied." }); }
+        try { await auth.DenyAsync(id, input.Reason?.Trim() ?? "", Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!), ct); return Ok(new { message = "Registration denied." }); }
         catch (KeyNotFoundException ex) { return NotFound(new { message = ex.Message }); }
     }
 

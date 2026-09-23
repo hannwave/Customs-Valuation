@@ -78,8 +78,6 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
             var manualDuty = request.TaxLines?.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
             if (manualDuty is null || manualDuty.Value < 0)
                 return BadRequest(new { message = "This HS 2022 tariff mapping has no single numeric duty rate. Enter the officer-approved Customs Duty rate before confirming the assessment." });
-            if (string.IsNullOrWhiteSpace(request.AdjustmentReason) || request.AdjustmentReason.Trim().Length < 10)
-                return BadRequest(new { message = "Document the approved Customs Duty rate in the adjustment reason before confirming this unmapped or split HS code." });
         }
         var oldTaxLines = loaded.Existing?.TaxLines.ToList() ?? [];
         var phase2 = BuildPhase2(decision, request, loaded.Existing, tariff);
@@ -116,7 +114,6 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         if (request.CustomsValueAmount <= 0) return BadRequest(new { message = "Enter a positive customs value/CIF amount." });
         if (string.IsNullOrWhiteSpace(request.CustomsValueCurrency) || request.CustomsValueCurrency.Trim().Length != 3) return BadRequest(new { message = "Customs value currency must be a three-letter ISO code." });
         if (!string.Equals(request.CustomsValueCurrency, request.TargetCurrency, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "Customs value/CIF currency must match the working currency. Convert the CIF amount first and record the source rate in the notes." });
-        if (string.IsNullOrWhiteSpace(request.OriginCountry)) return BadRequest(new { message = "Enter the country of origin because preferential treatment and exemptions depend on origin." });
         if (string.IsNullOrWhiteSpace(request.ProductCategory)) return BadRequest(new { message = "Select the product category so statutory exclusions can be evaluated." });
         if (request.TargetCurrency is null || request.TargetCurrency.Trim().Length != 3) return BadRequest(new { message = "Target currency must be a three-letter ISO code." });
         if (request.ExchangeRate < 0) return BadRequest(new { message = "Exchange rate cannot be negative." });
@@ -126,11 +123,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         if ((request.TaxLines?.Length ?? 0) > 30) return BadRequest(new { message = "An assessment cannot contain more than 30 tax lines." });
         var submittedExcise = request.TaxLines?.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Excise Tax", StringComparison.OrdinalIgnoreCase));
         if ((request.ExciseTaxApplicable || submittedExcise?.IsApplicable == true) && (submittedExcise?.Value ?? 0) <= 0) return BadRequest(new { message = "Excise tax is marked applicable, but no HS/category-specific excise rate was entered. Enter the approved rate and source or mark it not applicable." });
-        if (completing)
-        {
-            if (!request.OfficerConfirmation) return BadRequest(new { message = "Officer confirmation is required before completing the assessment." });
-            if (NeedsAdjustmentReason(decision, request) && (string.IsNullOrWhiteSpace(request.AdjustmentReason) || request.AdjustmentReason.Trim().Length < 10)) return BadRequest(new { message = "Provide at least 10 characters explaining every officer adjustment, exemption, waiver, origin preference, or rate override." });
-        }
+        if (completing && !request.OfficerConfirmation) return BadRequest(new { message = "Officer confirmation is required before completing the assessment." });
         return null;
     }
 
@@ -145,7 +138,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         var phase2 = existing ?? new ValuationPhase2 { Id = Guid.NewGuid(), ValuationDecisionId = decision.Id };
         phase2.OriginalHsCodeId = decision.HsCodeId; phase2.SelectedHsCodeId = request.SelectedHsCodeId;
         phase2.CustomsValueAmount = Money(request.CustomsValueAmount); phase2.CustomsValueCurrency = request.CustomsValueCurrency.Trim().ToUpperInvariant();
-        phase2.OriginCountry = request.OriginCountry!.Trim(); phase2.ProductCategory = request.ProductCategory!.Trim();
+        phase2.OriginCountry = request.OriginCountry?.Trim() ?? ""; phase2.ProductCategory = request.ProductCategory!.Trim();
         phase2.ExemptionCodes = string.Join(",", (request.ExemptionCodes ?? []).Select(x => x.Trim().ToUpperInvariant()).Where(x => x.Length > 0).Distinct());
         var demoPreset = DemoPresetFor(tariff);
         phase2.OriginPreferenceClaimed = request.OriginPreferenceClaimed; phase2.ExciseTaxApplicable = demoPreset?.ExciseApplicable ?? request.ExciseTaxApplicable; phase2.IsCommercialImport = request.IsCommercialImport; phase2.WithholdingApplicable = request.WithholdingApplicable;
@@ -168,7 +161,8 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         var suppliedDuty = submitted.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
         var dutyNeedsReview = !recommendedDutyRate.HasValue;
         var dutyRate = recommendedDutyRate ?? suppliedDuty?.Value ?? 0m;
-        if (request.OriginPreferenceClaimed && ComesaFtaCountries.Contains(request.OriginCountry!.Trim())) dutyRate = 0m;
+        var originCountry = request.OriginCountry?.Trim() ?? "";
+        if (request.OriginPreferenceClaimed && ComesaFtaCountries.Contains(originCountry)) dutyRate = 0m;
         var dutyRateKnown = recommendedDutyRate.HasValue || suppliedDuty is not null;
         var surtaxExcluded = codes.Contains("SURTAX_EXEMPT") || SurtaxExcludedCategories.Contains(request.ProductCategory!.Trim());
         var surtaxThresholdUnknown = !dutyRateKnown;
@@ -201,7 +195,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
             if (Math.Abs(line.Value - line.RecommendedValue) > 0.0001m || !string.Equals(line.CalculationType, "Percentage", StringComparison.OrdinalIgnoreCase) || applicabilityChanged || string.Equals(overrideLine.Status, "OfficerAdjusted", StringComparison.OrdinalIgnoreCase)) line.Status = "OfficerAdjusted";
             if (line.Name == "Excise Tax" && request.ExciseTaxApplicable) { line.IsApplicable = true; line.Status = "OfficerAdjusted"; }
         }
-        foreach (var custom in submitted.Where(x => !string.IsNullOrWhiteSpace(x.Name) && !StandardTaxNames.Contains(x.Name.Trim(), StringComparer.OrdinalIgnoreCase))) lines.Add(Line(custom.Name!.Trim(), custom.Value, custom.Order ?? 90, custom.CalculationBasis ?? "CIF", "Officer-entered charge; legal source must be documented in the adjustment reason.", true, "OfficerAdjusted", custom.Notes ?? ""));
+        foreach (var custom in submitted.Where(x => !string.IsNullOrWhiteSpace(x.Name) && !StandardTaxNames.Contains(x.Name.Trim(), StringComparer.OrdinalIgnoreCase))) lines.Add(Line(custom.Name!.Trim(), custom.Value, custom.Order ?? 90, custom.CalculationBasis ?? "CIF", "Officer-entered charge. An optional note may record the legal source.", true, "OfficerAdjusted", custom.Notes ?? ""));
         var cif = request.CustomsValueAmount; decimal duty = 0, excise = 0, vat = 0;
         foreach (var line in lines.OrderBy(x => x.Order).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
         {
@@ -243,12 +237,6 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         return match.Success && decimal.TryParse(match.Groups[1].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var rate) ? rate : null;
     }
 
-    private static bool NeedsAdjustmentReason(ValuationDecision decision, Phase2Request request)
-    {
-        if (request.ExemptionAmount > 0 || request.WaiverAmount > 0 || request.ManualAdjustmentAmount > 0 || request.OriginPreferenceClaimed || request.ExciseTaxApplicable || (request.IsCommercialImport && request.WithholdingApplicable)) return true;
-        if (string.Equals(request.CustomsValueCurrency, GetInitialDutyCurrency(decision), StringComparison.OrdinalIgnoreCase) && Math.Abs(request.CustomsValueAmount - GetInitialDuty(decision)) > 0.01m) return true;
-        return (request.TaxLines ?? []).Any(x => StandardTaxNames.Contains(x.Name?.Trim() ?? "", StringComparer.OrdinalIgnoreCase) && (string.Equals(x.Status, "OfficerAdjusted", StringComparison.OrdinalIgnoreCase) || (x.Name is not "Customs Duty" && Math.Abs(x.Value - ExpectedRate(x.Name!.Trim())) > 0.0001m)));
-    }
     private static decimal ExpectedRate(string name) => name.ToUpperInvariant() switch { "VAT" => VatRate, "SURTAX" => SurtaxRate, "SOCIAL WELFARE LEVY" => SocialWelfareLevyRate, "WITHHOLDING TAX" => WithholdingRate, _ => 0m };
 
     private static Phase2Request CarryForwardPhase1Value(ValuationDecision decision, Phase2Request request)

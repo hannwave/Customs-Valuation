@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { FiCheck, FiFileText, FiSend, FiRotateCcw, FiEye } from "react-icons/fi";
+import { FiCheck, FiFileText, FiSend, FiRotateCcw, FiEye, FiX } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { getSessionAccessToken } from "@/lib/auth/session";
 import type { HsCode } from "@/lib/types/customs";
@@ -57,7 +57,7 @@ export default function ValuationDecisionsPage() {
   }
   async function review(decision: ValuationDecision, outcome: "Approved" | "Returned") {
     setBusy(decision.id); setError(""); setNotice("");
-    try { await workspaceApi(`/decisions/${decision.id}/review`, { method: "POST", body: JSON.stringify({ version: decision.version, justification: reviewReasons[decision.id] ?? "", outcome }) }); setNotice(`Decision ${outcome.toLowerCase()} with reviewer justification.`); await load(); }
+    try { await workspaceApi(`/decisions/${decision.id}/review`, { method: "POST", body: JSON.stringify({ version: decision.version, justification: reviewReasons[decision.id] ?? "", outcome }) }); setNotice(`Decision ${outcome.toLowerCase()}.`); await load(); }
     catch (ex) { setError(ex instanceof Error ? ex.message : "Review failed."); }
     finally { setBusy(""); }
   }
@@ -85,15 +85,15 @@ export default function ValuationDecisionsPage() {
         <label><span>Selected reference value</span><input name="selectedReferenceValue" type="number" min="0.01" step="0.01" required /></label>
         <label><span>Currency</span><input name="currency" defaultValue="USD" pattern="[A-Za-z]{3}" maxLength={3} required /></label>
         <label className="wide-field"><span>Decision</span><input name="decision" required placeholder="Accepted, adjusted, or further examination required" /></label>
-        <label className="wide-field"><span>Evidence references</span><textarea name="evidence" required minLength={10} rows={4} placeholder="Record observation IDs, source URLs, dates, comparable goods, and exclusions." /></label>
-        <label className="wide-field"><span>Officer justification</span><textarea name="justification" required minLength={10} rows={4} placeholder="Explain why the selected value is supported by the evidence." /></label>
+        <label className="wide-field"><span>Evidence references (optional)</span><textarea name="evidence" rows={4} placeholder="Record observation IDs, source URLs, dates, comparable goods, and exclusions." /></label>
+        <label className="wide-field"><span>Officer note (optional)</span><textarea name="justification" rows={4} placeholder="Add an optional explanation for the selected value." /></label>
         <div className="form-actions"><button className="primary-button" type="submit" disabled={busy === "create"}>{busy === "create" ? "Saving…" : "Save draft"}</button></div>
       </form>}
     </section>}
 
     <section className="admin-panel">
       <div className="panel-heading"><div><h2>{isOfficer ? "My valuation history" : "Scoped review queue"}</h2><p>{visibleDecisions.length} of {decisions.length} record{decisions.length === 1 ? "" : "s"} visible.</p></div></div>
-      <div className="record-filters"><input aria-label="Search valuation records" placeholder="Search product, HS code, decision, or reference" value={filter} onChange={event => setFilter(event.currentTarget.value)} /><select aria-label="Filter valuation status" value={statusFilter} onChange={event => setStatusFilter(event.currentTarget.value)}><option value="ALL">All statuses</option><option value="Draft">Draft</option><option value="Submitted">Submitted</option><option value="Returned">Returned</option><option value="Approved">Approved</option></select></div>
+      <div className="record-filters"><input aria-label="Search valuation records" placeholder="Search product, HS code, decision, or reference" value={filter} onChange={event => setFilter(event.currentTarget.value)} /><select aria-label="Filter valuation status" value={statusFilter} onChange={event => setStatusFilter(event.currentTarget.value)}><option value="ALL">All statuses</option><option value="Draft">Draft</option><option value="Submitted">Submitted</option><option value="Returned">Returned</option><option value="Approved">Approved</option></select>{(filter || statusFilter !== "ALL") && <button className="secondary-button" type="button" onClick={() => { setFilter(""); setStatusFilter("ALL"); }}><FiX />Clear filters</button>}</div>
       {visibleDecisions.length === 0 ? <DataState kind="empty" compact title={decisions.length ? "No matching records" : isOfficer ? "No valuations submitted" : "No decisions in your scope"} description={decisions.length ? "Change the search or status filter." : isOfficer ? "Submit a Price Review to create the first permanent record." : "Submitted officer decisions will appear here for review."} /> : <div className="decision-list">{visibleDecisions.map(decision => {
         const hs = decision.hsCodeId ? hsCodes[decision.hsCodeId] : null; const location = profile.locations.find(item => item.id === decision.locationId);
         const canReview = !isOfficer && decision.status === "Submitted"; const reason = reviewReasons[decision.id] ?? "";
@@ -103,7 +103,7 @@ export default function ValuationDecisionsPage() {
           <div className="row-actions"><button className="secondary-button" type="button" onClick={() => setDetailId(current => current === decision.id ? null : decision.id)}><FiEye />{detailId === decision.id ? "Hide details" : "View details"}</button></div>
           {isOfficer && decision.status === "Draft" && decision.locationId && <div className="row-actions"><button className="approve-button" type="button" disabled={busy === decision.id} onClick={() => void submit(decision)}><FiSend />{busy === decision.id ? "Submitting…" : "Submit for review"}</button></div>}
           {isOfficer && decision.status === "Draft" && !decision.locationId && <p className="unassigned-decision-note">Personal officer draft. Assign an office before formal submission and review.</p>}
-          {canReview && <div className="review-actions"><label><span>Reviewer justification</span><textarea minLength={10} rows={3} value={reason} onChange={event => setReviewReasons(values => ({ ...values, [decision.id]: event.target.value }))} /></label><div className="row-actions"><button className="secondary-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Returned")}><FiRotateCcw />Return</button><button className="approve-button" type="button" disabled={busy === decision.id || reason.length < 10} onClick={() => void review(decision, "Approved")}><FiCheck />Approve</button></div></div>}
+          {canReview && <div className="review-actions"><label><span>Reviewer note (optional)</span><textarea rows={3} value={reason} onChange={event => setReviewReasons(values => ({ ...values, [decision.id]: event.target.value }))} /></label><div className="row-actions"><button className="secondary-button" type="button" disabled={busy === decision.id} onClick={() => void review(decision, "Returned")}><FiRotateCcw />Return</button><button className="approve-button" type="button" disabled={busy === decision.id} onClick={() => void review(decision, "Approved")}><FiCheck />Approve</button></div></div>}
         </article>;
       })}</div>}
     </section>

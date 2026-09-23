@@ -10,14 +10,14 @@ using static SES.Customs.API.Security.WorkspaceAccess;
 
 namespace SES.Customs.API.Controllers;
 
-public sealed record LocationChange(CustomsLocation Location, string Reason);
-public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
+public sealed record LocationChange(CustomsLocation Location, string? Reason);
+public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string? Reason);
 public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, bool IncludeChildren, string EmployeeNumber, string Phone);
-public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string Reason);
-public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
+public sealed record EmployeeChange(string Status, Guid LocationId, bool IncludeChildren, string Responsibilities, string? Reason);
+public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string? Justification, string? Evidence, Guid? Version);
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
-public sealed record DecisionTransition(Guid Version, string Justification, string Outcome = "Approved");
+public sealed record DecisionTransition(Guid Version, string? Justification, string Outcome = "Approved");
 
 [ApiController, Route("api/workspace"), Authorize, ServiceFilter(typeof(WorkspaceExceptionFilter))]
 public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess access) : ControllerBase
@@ -176,7 +176,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var value = input.Location;
         Validate(!string.IsNullOrWhiteSpace(value.Name) && value.Name.Length <= 200 && Regex.IsMatch(value.OfficialCode ?? "", "^[A-Za-z0-9_-]{1,40}$"), "Provide a name and unique official code (letters, digits, hyphen or underscore).");
         Validate(LocationTypes.Contains(value.LocationType) && LocationStatuses.Contains(value.Status), "Choose a valid location type and status.");
-        Validate(input.Reason.Trim().Length >= 10, "Explain the change in at least 10 characters.");
+        var changeNote = input.Reason?.Trim() ?? "";
         Validate(value.Latitude.HasValue && value.Longitude.HasValue, "Latitude and longitude are required for every customs region and branch.");
         var latitude = value.Latitude.GetValueOrDefault();
         var longitude = value.Longitude.GetValueOrDefault();
@@ -219,8 +219,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         value.UpdatedBy = access.UserId.ToString(); value.UpdatedAt = DateTimeOffset.UtcNow; value.Version = Guid.NewGuid();
         if (value.Status == "ARCHIVED") value.EffectiveTo ??= DateTimeOffset.UtcNow;
         if (id == null) db.CustomsLocations.Add(value); else db.Entry(entity).CurrentValues.SetValues(value);
-        db.CustomsLocationHistory.Add(new() { Id = Guid.NewGuid(), CustomsLocationId = value.Id, ChangedAt = value.UpdatedAt, ChangedBy = access.UserId.ToString(), ChangeReason = input.Reason, PreviousValueJson = before?.GetRawText() ?? "null", NewValueJson = JsonSerializer.Serialize(value) });
-        access.Audit(id == null ? "LOCATION_CREATED" : "LOCATION_UPDATED", "Locations", value.Id, before, value, input.Reason, value.Id);
+        db.CustomsLocationHistory.Add(new() { Id = Guid.NewGuid(), CustomsLocationId = value.Id, ChangedAt = value.UpdatedAt, ChangedBy = access.UserId.ToString(), ChangeReason = changeNote, PreviousValueJson = before?.GetRawText() ?? "null", NewValueJson = JsonSerializer.Serialize(value) });
+        access.Audit(id == null ? "LOCATION_CREATED" : "LOCATION_UPDATED", "Locations", value.Id, before, value, changeNote, value.Id);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(value);
     }
     [HttpGet("locations/{id:guid}/history")]
@@ -274,14 +274,13 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
         Validate(new[] { "ACTIVE", "PENDING_VALIDATION", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
-        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
         await access.RequireLocation(input.LocationId, true, ct);
         var before = PublicUser(user);
         var now = DateTimeOffset.UtcNow;
         var nextRegion = await access.RegionKey(input.LocationId, ct);
         user.RegionJoinedAt = string.Equals(user.RegionKey, nextRegion, StringComparison.OrdinalIgnoreCase) ? user.RegionJoinedAt ?? now : now;
         user.RegionKey = nextRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.UpdatedAt = now;
-        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason!.Trim(), input.LocationId);
+        access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, new { user = PublicUser(user), input.Responsibilities }, input.Reason?.Trim() ?? "", input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
 
@@ -310,7 +309,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             Validate(office!.SupportsValuation || office.SupportsInspection, "This office does not support valuation or inspection work.");
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
-        Validate(input.Justification.Trim().Length >= 10 && !string.IsNullOrWhiteSpace(input.Decision) && input.Evidence.Trim().Length >= 10, "Record the decision, evidence references and a meaningful justification.");
+        Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
         if (input.HsCodeId.HasValue)
             Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId.Value, ct), "The selected HS code was not found.");
         var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
@@ -322,11 +321,11 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         object locationSnapshot = hierarchy.Count == 0 ? new { scope = "UnassignedOfficerWorkspace" } : hierarchy;
         entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(locationSnapshot);
         entity.HsCodeId = input.HsCodeId; entity.SelectedReferenceValue = input.SelectedReferenceValue; entity.Currency = input.Currency!;
-        entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification.Trim(); entity.Status = "Draft"; entity.Version = Guid.NewGuid();
+        entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
-        entity.EvidenceNotes = input.Evidence.Trim();
+        entity.EvidenceNotes = input.Evidence?.Trim() ?? "";
         if (id == null) db.ValuationDecisions.Add(entity);
-        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, input.Justification, input.LocationId);
+        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, entity.Justification, input.LocationId);
         await db.SaveChangesAsync(ct); return Ok(entity);
     }
     [HttpPost("decisions/{id:guid}/submit")]
@@ -345,9 +344,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         var decision = await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
         Validate(decision.Status == "Submitted" && decision.Version == input.Version && input.Outcome is "Approved" or "Returned", "Only a current submitted decision may be approved or returned.");
-        Validate(input.Justification.Trim().Length >= 10, "A review justification is required.");
-        var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = input.Justification; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, input.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        var reviewNote = input.Justification?.Trim() ?? "";
+        var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = reviewNote; decision.Version = Guid.NewGuid();
+        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, reviewNote, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpGet("audit")]
     public async Task<IActionResult> Audit(CancellationToken ct)
