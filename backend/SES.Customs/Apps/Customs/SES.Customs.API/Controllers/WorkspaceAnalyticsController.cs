@@ -62,7 +62,7 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
         Validate(string.IsNullOrWhiteSpace(normalizedCurrency) || (normalizedCurrency.Length == 3 && normalizedCurrency.All(char.IsLetter)), "Currency must be a three-letter code.");
 
         var decisionQuery = db.ValuationDecisions.AsNoTracking().Where(decision =>
-            decision.HsCodeId != Guid.Empty && decision.LocationId.HasValue && scope.Contains(decision.LocationId.Value) &&
+            decision.HsCodeId.HasValue && decision.HsCodeId.Value != Guid.Empty && decision.LocationId.HasValue && scope.Contains(decision.LocationId.Value) &&
             decision.RecordedAt >= from && decision.RecordedAt <= to);
         if (locationId is Guid locationFilter)
             decisionQuery = decisionQuery.Where(decision => decision.LocationId == locationFilter);
@@ -70,10 +70,10 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
             decisionQuery = decisionQuery.Where(decision => decision.Currency == normalizedCurrency);
 
         var decisions = await decisionQuery.ToListAsync(ct);
-        var hsIds = decisions.Select(decision => decision.HsCodeId).Distinct().ToArray();
+        var hsIds = decisions.Where(decision => decision.HsCodeId.HasValue).Select(decision => decision.HsCodeId!.Value).Distinct().ToArray();
         var hsCodes = await db.HsCodes.AsNoTracking().Where(code => hsIds.Contains(code.Id)).ToDictionaryAsync(code => code.Id, ct);
         if (!string.IsNullOrWhiteSpace(chapter))
-            decisions = decisions.Where(decision => hsCodes.TryGetValue(decision.HsCodeId, out var code) && code.Code.StartsWith(chapter, StringComparison.Ordinal)).ToList();
+            decisions = decisions.Where(decision => decision.HsCodeId.HasValue && hsCodes.TryGetValue(decision.HsCodeId.Value, out var code) && code?.Code?.StartsWith(chapter, StringComparison.Ordinal) == true).ToList();
         if (!string.IsNullOrWhiteSpace(normalizedStatus))
             decisions = decisions.Where(decision => string.Equals(decision.Status, normalizedStatus, StringComparison.OrdinalIgnoreCase)).ToList();
         if (officerId is Guid officerFilter)
@@ -148,7 +148,7 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
         var grain = to - from <= TimeSpan.FromDays(31) ? "day" : to - from <= TimeSpan.FromDays(120) ? "week" : "month";
         var trends = BuildTrends(decisions, from, to, grain);
         var topHsCodes = decisions
-            .GroupBy(decision => decision.HsCodeId)
+            .GroupBy(decision => decision.HsCodeId!.Value)
             .Select(group =>
             {
                 hsCodes.TryGetValue(group.Key, out var code);
@@ -176,7 +176,7 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
         var historicalQuery = db.HistoricalCustomsPrices.AsNoTracking().Where(price => price.PriceDate >= startDate && price.PriceDate <= endDate);
         if (!string.IsNullOrWhiteSpace(chapter))
         {
-            var referenceHsIds = await db.HsCodes.AsNoTracking().Where(code => code.Code.StartsWith(chapter)).Select(code => code.Id).ToArrayAsync(ct);
+            Guid[] referenceHsIds = await db.HsCodes.AsNoTracking().Where(code => code.Code != null && code.Code.StartsWith(chapter)).Select(code => code.Id).ToArrayAsync(ct);
             localQuery = localQuery.Where(observation => referenceHsIds.Contains(observation.HsCodeId));
             referenceQuery = referenceQuery.Where(price => referenceHsIds.Contains(price.HsCodeId));
             historicalQuery = historicalQuery.Where(price => referenceHsIds.Contains(price.HsCodeId));

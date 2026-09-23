@@ -41,6 +41,7 @@ public sealed record LocalMarketSearchDto(
 
 public sealed class LocalMarketSearchService(
     IHttpClientFactory clientFactory,
+    LocalSnapshotStore snapshots,
     IOptions<LocalMarketOptions> options,
     ILogger<LocalMarketSearchService> logger)
 {
@@ -69,6 +70,7 @@ public sealed class LocalMarketSearchService(
             .ThenBy(item => item.Source)
             .ToArray();
 
+        await snapshots.SaveAsync(items, ct);
         return new LocalMarketSearchDto(
             query.Trim(),
             DateTimeOffset.UtcNow,

@@ -36,4 +36,9 @@ public static class AccessRules
         return result;
     }
 
+    public static bool CanManageOfficer(string actorRole, IReadOnlySet<Guid> scope, string targetRole, IEnumerable<Guid> targetLocations) =>
+        NormalizeRole(actorRole) == SystemAdmin ||
+        NormalizeRole(actorRole) == CustomsAdmin && NormalizeRole(targetRole) == Officer &&
+        targetLocations.Any() && targetLocations.All(scope.Contains);
+
 }

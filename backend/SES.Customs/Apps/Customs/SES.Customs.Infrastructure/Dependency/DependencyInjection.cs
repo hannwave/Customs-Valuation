@@ -9,14 +9,13 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string? connectionString, bool useDemoData)
     {
-        if (useDemoData)
+        if (useDemoData || string.IsNullOrWhiteSpace(connectionString))
         {
             services.AddDbContext<CustomsDbContext>(options => options
                 .UseInMemoryDatabase("SES.Customs.Demo")
                 .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
             return services.AddSingleton<IHsCodeRepository, DemoHsCodeRepository>();
         }
-        if (string.IsNullOrWhiteSpace(connectionString)) throw new InvalidOperationException("Configure ConnectionStrings:Customs.");
         services.AddDbContext<CustomsDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IHsCodeRepository, HsCodeRepository>();
         return services;

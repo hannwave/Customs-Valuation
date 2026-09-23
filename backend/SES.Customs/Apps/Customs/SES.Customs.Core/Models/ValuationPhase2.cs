@@ -6,8 +6,19 @@ public sealed class ValuationPhase2
 {
     public Guid Id { get; set; }
     public Guid ValuationDecisionId { get; set; }
-    public Guid OriginalHsCodeId { get; set; }
+    public Guid? OriginalHsCodeId { get; set; }
     public Guid? SelectedHsCodeId { get; set; }
+    public decimal CustomsValueAmount { get; set; }
+    public string CustomsValueCurrency { get; set; } = "ETB";
+    public string OriginCountry { get; set; } = "";
+    public string ProductCategory { get; set; } = "";
+    public string ExemptionCodes { get; set; } = "";
+    public bool OriginPreferenceClaimed { get; set; }
+    public bool ExciseTaxApplicable { get; set; }
+    public bool IsCommercialImport { get; set; } = true;
+    public bool WithholdingApplicable { get; set; }
+    public string AdjustmentReason { get; set; } = "";
+    public bool OfficerConfirmed { get; set; }
     public decimal InitialDutyAmount { get; set; }
     public string InitialDutyCurrency { get; set; } = "ETB";
     public string TargetCurrency { get; set; } = "ETB";
@@ -22,8 +33,9 @@ public sealed class ValuationPhase2
     public string Notes { get; set; } = "";
     public string Status { get; set; } = "InProgress";
     public decimal TotalAdditionalTax { get; set; }
+    public decimal TotalTax { get; set; }
     public decimal FinalAmount { get; set; }
-    public string CalculationRuleVersion { get; set; } = "phase2-placeholder-v1";
+    public string CalculationRuleVersion { get; set; } = "ethiopian-import-tax-rules-v2";
     public DateTimeOffset? CalculatedAt { get; set; }
     public Guid Version { get; set; } = Guid.NewGuid();
     public List<ValuationPhase2TaxLine> TaxLines { get; set; } = [];
@@ -40,7 +52,11 @@ public sealed class ValuationPhase2TaxLine
     public string Currency { get; set; } = "ETB";
     public int Order { get; set; }
     public string CalculationBasis { get; set; } = "InitialDuty";
+    public decimal RecommendedValue { get; set; }
     public decimal BaseAmount { get; set; }
     public decimal CalculatedAmount { get; set; }
     public string Notes { get; set; } = "";
+    public string Status { get; set; } = "Recommended";
+    public string SourceReference { get; set; } = "";
+    public bool IsApplicable { get; set; } = true;
 }

@@ -43,3 +43,18 @@ public sealed class CustomsLocationHistory
     public string PreviousValueJson { get; set; } = "{}";
     public string NewValueJson { get; set; } = "{}";
 }
+
+// Retained for officer and administrator scope assignments used by the
+// valuation workflow. The newer primary-location model is supported alongside
+// these explicit assignments for existing records and audit history.
+public sealed class UserLocationScope
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid CustomsLocationId { get; set; }
+    public bool IncludeChildLocations { get; set; }
+    public string Responsibilities { get; set; } = "";
+    public DateTimeOffset EffectiveFrom { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? EffectiveTo { get; set; }
+    public string CreatedBy { get; set; } = "";
+}

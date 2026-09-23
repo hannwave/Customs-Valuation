@@ -11,19 +11,23 @@ using static SES.Customs.API.Security.WorkspaceAccess;
 
 namespace SES.Customs.API.Controllers;
 
-public sealed record LocationChange(CustomsLocation Location, string Reason);
-public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, string EmployeeNumber, string Phone, string Responsibilities, string Reason);
-public sealed record EmployeeChange(string Status, Guid LocationId, string Responsibilities, string Reason);
+public sealed record LocationChange(CustomsLocation Location, string? Reason);
+public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string Responsibilities, string? Reason);
+public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, string EmployeeNumber, string Phone, string Responsibilities, string Reason, bool IncludeChildren = false);
+public sealed record EmployeeChange(string Status, Guid LocationId, string Responsibilities, string? Reason, bool IncludeChildren = false);
 public sealed record EmployeeArchive(string Reason);
+public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string? Justification, string? Evidence, Guid? Version);
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
-public sealed record DecisionInput(Guid HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string Justification, string Evidence, Guid? Version);
-public sealed record DecisionTransition(Guid Version, string Justification, string Outcome = "Approved");
+public sealed record DecisionTransition(Guid Version, string? Justification, string Outcome = "Approved");
 
 [ApiController, Route("api/workspace"), Authorize, ServiceFilter(typeof(WorkspaceExceptionFilter))]
 public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess access) : ControllerBase
 {
-    public static readonly string[] LocationTypes = ["REGION", "BRANCH"];
+    // REGION and BRANCH are retained for compatibility with the existing
+    // organization data and database constraint. New locations can continue
+    // using the more specific operational types below.
+    public static readonly string[] LocationTypes = ["REGION", "BRANCH", "HEAD_OFFICE", "BRANCH_OFFICE", "CUSTOMS_STATION", "CHECKPOINT", "INSPECTION_POINT", "DRY_PORT", "AIRPORT", "CARGO_OFFICE", "INDUSTRIAL_PARK", "RAIL_STATION", "FREE_TRADE_ZONE", "SPECIAL_ECONOMIC_ZONE", "TAX_CENTER", "COORDINATION_OFFICE", "WAREHOUSE", "OTHER"];
     public static readonly string[] LocationStatuses = ["ACTIVE", "INACTIVE", "TEMPORARILY_CLOSED", "PLANNED", "ARCHIVED"];
     private const decimal EthiopiaMinimumLatitude = 3.35m;
     private const decimal EthiopiaMaximumLatitude = 14.95m;
@@ -34,7 +38,12 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpGet("me")]
     public async Task<IActionResult> Me(CancellationToken ct)
     {
-        var user = await db.AuthAccounts.AsNoTracking().SingleAsync(u => u.Id == access.UserId, ct);
+        var user = await db.AuthAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == access.UserId, ct);
+        if (user is null)
+        {
+            user = await db.AuthAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Username == User.Identity!.Name, ct);
+            if (user is null) return Unauthorized(new { message = "User not found. Sign in to continue." });
+        }
         var scope = await access.Locations(ct);
         return Ok(new { user = PublicUser(user), permissions = AccessRules.Permissions(access.Role), locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct), locationTypes = LocationTypes, locationStatuses = LocationStatuses, employeeResponsibilities = EmployeeResponsibilityOptions });
     }
@@ -88,9 +97,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var scope = await access.Locations(ct);
         var locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct);
         var now = DateTimeOffset.UtcNow; var today = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        var grants = await db.UserLocationScopes.AsNoTracking().Where(s => s.EffectiveFrom <= now && (s.EffectiveTo == null || s.EffectiveTo > now)).ToListAsync(ct);
         List<AuthAccountEntity> allUsers = access.Role == AccessRules.Officer ? [] : await db.AuthAccounts.AsNoTracking().OrderBy(u => u.FullName).ToListAsync(ct);
         var managedUsers = allUsers.Where(u => AccessRules.NormalizeRole(u.Role) != AccessRules.SystemAdmin &&
-            (access.IsSystem || u.PrimaryLocationId.HasValue && scope.Contains(u.PrimaryLocationId.Value))).ToList();
+            AccessRules.CanManageOfficer(access.Role, scope, u.Role, grants.Where(g => g.UserId == u.Id).Select(g => g.CustomsLocationId))).ToList();
         var dashboardEmployees = access.Role == AccessRules.CustomsAdmin
             ? managedUsers.Where(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer).ToList()
             : managedUsers;
@@ -100,11 +110,22 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var decisions = await (await VisibleDecisions(ct)).AsNoTracking()
             .Where(d => d.HsCodeId != Guid.Empty)
             .OrderByDescending(d => d.RecordedAt).ToListAsync(ct);
-        var hsIds = decisions.Select(d => d.HsCodeId).Distinct().ToList();
+        var hsIds = decisions.Where(d => d.HsCodeId.HasValue).Select(d => d.HsCodeId!.Value).Distinct().ToList();
         var hsCodes = await db.HsCodes.AsNoTracking().Where(h => hsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
         var auditQuery = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && a.LocationId != null && scope.Contains(a.LocationId.Value) || access.Role == AccessRules.Officer && a.UserId == access.UserId.ToString());
         var audit = await auditQuery.OrderByDescending(a => a.OccurredAt).Take(8).ToListAsync(ct);
-        var revision = await db.HsRevisions.AsNoTracking().OrderByDescending(r => r.EffectiveDate).ThenByDescending(r => r.Number).FirstOrDefaultAsync(ct);
+        // The newest dated revision can be archived (for example the former v5
+        // catalogue), so dashboard counts must follow the revision explicitly
+        // marked Active before falling back to the newest available revision.
+        var revision = await db.HsRevisions.AsNoTracking()
+            .Where(r => r.Status == "Active")
+            .OrderByDescending(r => r.EffectiveDate)
+            .ThenByDescending(r => r.Number)
+            .FirstOrDefaultAsync(ct);
+        revision ??= await db.HsRevisions.AsNoTracking()
+            .OrderByDescending(r => r.EffectiveDate)
+            .ThenByDescending(r => r.Number)
+            .FirstOrDefaultAsync(ct);
         var activeHs = revision == null ? 0 : await db.HsCodes.CountAsync(h => h.RevisionId == revision.Id, ct);
         var sources = await db.PriceSources.AsNoTracking().OrderBy(s => s.Pool).ThenBy(s => s.Name).ToListAsync(ct);
         var outliers = await db.LocalMarketObservations.CountAsync(o => o.IsPotentialOutlier && o.ManualReviewStatus == ManualReviewStatus.Unreviewed, ct);
@@ -145,8 +166,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         return Ok(new {
             role = access.Role, generatedAt = now, kpis, activeRevision = revision == null ? null : new { revision.Id, revision.Name, revision.Number, revision.EffectiveDate, revision.Status, codeCount = activeHs },
             locations = locations.Select(l => new { l.Id, l.OfficialCode, l.Name, l.DisplayName, l.LocationType, l.ParentLocationId, l.Status, l.SupportsImport, l.SupportsExport, l.SupportsTransit, l.SupportsValuation, l.SupportsInspection }),
-            employees = dashboardEmployees.Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId }),
-            decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = hsCodes.GetValueOrDefault(d.HsCodeId)?.Code ?? "", product = hsCodes.GetValueOrDefault(d.HsCodeId)?.DescriptionEn ?? "Unknown product", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
+            employees = dashboardEmployees.Select(u => new { user = PublicEmployee(u), locationId = u.PrimaryLocationId, assignments = grants.Where(g => g.UserId == u.Id).Select(g => new { g.CustomsLocationId, g.IncludeChildLocations, g.Responsibilities }) }),
+            decisions = decisions.Select(d => new { d.Id, d.HsCodeId, hsCode = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.Code ?? "" : "", product = d.HsCodeId.HasValue ? hsCodes.GetValueOrDefault(d.HsCodeId.Value)?.DescriptionEn ?? "Unknown product" : "Product classification deferred to Phase 2", d.SelectedReferenceValue, d.Currency, d.Decision, d.Status, d.RecordedAt, d.LocationId }),
             sources = sources.Select(s => new { s.Id, s.Name, pool = s.Pool.ToString(), s.IsApproved }), audit
         });
     }
@@ -167,7 +188,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var value = input.Location;
         Validate(!string.IsNullOrWhiteSpace(value.Name) && value.Name.Length <= 200 && Regex.IsMatch(value.OfficialCode ?? "", "^[A-Za-z0-9_-]{1,40}$"), "Provide a name and unique official code (letters, digits, hyphen or underscore).");
         Validate(LocationTypes.Contains(value.LocationType) && LocationStatuses.Contains(value.Status), "Choose a valid location type and status.");
-        Validate(input.Reason.Trim().Length >= 10, "Explain the change in at least 10 characters.");
+        var changeNote = input.Reason?.Trim() ?? "";
         Validate(value.Latitude.HasValue && value.Longitude.HasValue, "Latitude and longitude are required for every customs region and branch.");
         var latitude = value.Latitude.GetValueOrDefault();
         var longitude = value.Longitude.GetValueOrDefault();
@@ -201,14 +222,17 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         JsonElement? before = id == null ? null : JsonSerializer.SerializeToElement(entity);
         if (id != null) Validate(entity.OfficialCode.Equals(value.OfficialCode, StringComparison.OrdinalIgnoreCase), "Official codes are permanent. Change the location name or parent while retaining its code.");
         var createdBy = entity.CreatedBy; var createdAt = entity.CreatedAt;
-        value.Id = entity.Id; value.CreatedBy = createdBy; value.CreatedAt = createdAt;
+        value.Id = entity.Id; value.CreatedBy = createdBy; value.CreatedAt = createdAt.ToUniversalTime();
+        value.EffectiveFrom = value.EffectiveFrom.ToUniversalTime();
+        value.EffectiveTo = value.EffectiveTo?.ToUniversalTime();
+        value.LastVerifiedAt = value.LastVerifiedAt?.ToUniversalTime();
         value.OfficialCode = value.OfficialCode!.ToUpperInvariant(); value.Name = value.Name.Trim();
         value.DisplayName = string.IsNullOrWhiteSpace(value.DisplayName) ? value.Name : value.DisplayName.Trim();
         value.UpdatedBy = access.UserId.ToString(); value.UpdatedAt = DateTimeOffset.UtcNow; value.Version = Guid.NewGuid();
         if (value.Status == "ARCHIVED") value.EffectiveTo ??= DateTimeOffset.UtcNow;
         if (id == null) db.CustomsLocations.Add(value); else db.Entry(entity).CurrentValues.SetValues(value);
-        db.CustomsLocationHistory.Add(new() { Id = Guid.NewGuid(), CustomsLocationId = value.Id, ChangedAt = value.UpdatedAt, ChangedBy = access.UserId.ToString(), ChangeReason = input.Reason, PreviousValueJson = before?.GetRawText() ?? "null", NewValueJson = JsonSerializer.Serialize(value) });
-        access.Audit(id == null ? "LOCATION_CREATED" : "LOCATION_UPDATED", "Locations", value.Id, before, value, input.Reason, value.Id);
+        db.CustomsLocationHistory.Add(new() { Id = Guid.NewGuid(), CustomsLocationId = value.Id, ChangedAt = value.UpdatedAt, ChangedBy = access.UserId.ToString(), ChangeReason = changeNote, PreviousValueJson = before?.GetRawText() ?? "null", NewValueJson = JsonSerializer.Serialize(value) });
+        access.Audit(id == null ? "LOCATION_CREATED" : "LOCATION_UPDATED", "Locations", value.Id, before, value, changeNote, value.Id);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(value);
     }
     [HttpGet("locations/{id:guid}/history")]
@@ -264,6 +288,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var region = await access.RegionKey(input.LocationId, ct);
         var user = new AuthAccountEntity { Id = Guid.NewGuid(), Username = username, FullName = fullName, Email = email, Role = role!, Active = true, Status = "ACTIVE", PasswordHash = AuthService.Hash(password), CreatedAt = now, PrimaryLocationId = input.LocationId, RegionKey = region, RegionJoinedAt = now, EmployeeNumber = employeeNumber, Phone = phone, Responsibilities = responsibilities };
         db.AuthAccounts.Add(user);
+        db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = user.Id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = role == AccessRules.Officer ? responsibilities : "Customs Administrator", EffectiveFrom = now, CreatedBy = access.UserId.ToString() });
         access.Audit("USER_CREATED", "Users", user.Id, null, PublicUser(user), reason, input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
@@ -275,7 +300,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var user = await db.AuthAccounts.FindAsync([id], ct) ?? throw new WorkspaceException(404, "Employee not found.");
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
-        Validate(new[] { "ACTIVE", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
+        Validate(new[] { "ACTIVE", "PENDING_VALIDATION", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
         Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
         await RequireEmployeeLocation(input.LocationId, ct);
         var (requestedResponsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
@@ -288,6 +313,16 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         user.RegionJoinedAt = string.Equals(user.RegionKey, nextRegion, StringComparison.OrdinalIgnoreCase) ? user.RegionJoinedAt ?? now : now;
         user.RegionKey = nextRegion; user.PrimaryLocationId = input.LocationId; user.Status = input.Status; user.Active = input.Status == "ACTIVE"; user.Responsibilities = responsibilities; user.UpdatedAt = now;
         if (user.Active) { user.ArchivedAt = null; user.ArchivedBy = null; user.ArchiveReason = null; }
+        var currentScope = await db.UserLocationScopes.Where(s => s.UserId == id && (s.EffectiveTo == null || s.EffectiveTo > now)).OrderByDescending(s => s.EffectiveFrom).FirstOrDefaultAsync(ct);
+        if (currentScope is null)
+            db.UserLocationScopes.Add(new UserLocationScope { Id = Guid.NewGuid(), UserId = id, CustomsLocationId = input.LocationId, IncludeChildLocations = input.IncludeChildren, Responsibilities = responsibilities, EffectiveFrom = now, CreatedBy = access.UserId.ToString() });
+        else
+        {
+            currentScope.CustomsLocationId = input.LocationId;
+            currentScope.IncludeChildLocations = input.IncludeChildren;
+            currentScope.Responsibilities = responsibilities;
+            currentScope.EffectiveTo = null;
+        }
         access.Audit("OFFICER_ACCESS_CHANGED", "Users", id, before, PublicUser(user), input.Reason!.Trim(), input.LocationId);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Ok(PublicUser(user));
     }
@@ -377,7 +412,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             access.Role == AccessRules.Officer && d.OfficerSubjectId == subject));
     }
     [HttpGet("decisions")]
-    public async Task<IActionResult> Decisions(CancellationToken ct) => Ok(await (await VisibleDecisions(ct)).AsNoTracking().OrderByDescending(d => d.RecordedAt).Take(200).ToListAsync(ct));
+    public async Task<IActionResult> Decisions(CancellationToken ct) => Ok(await (await VisibleDecisions(ct)).AsNoTracking().OrderByDescending(d => d.RecordedAt).ToListAsync(ct));
     [HttpPost("decisions")]
     public Task<IActionResult> CreateDecision(DecisionInput input, CancellationToken ct) => SaveDecision(null, input, ct);
     [HttpPut("decisions/{id:guid}")]
@@ -393,8 +428,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             Validate(office!.SupportsValuation || office.SupportsInspection, "This office does not support valuation or inspection work.");
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
-        Validate(input.Justification.Trim().Length >= 10 && !string.IsNullOrWhiteSpace(input.Decision) && input.Evidence.Trim().Length >= 10, "Record the decision, evidence references and a meaningful justification.");
-        Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId, ct), "Select a valid HS code.");
+        Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
+        if (input.HsCodeId.HasValue)
+            Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId.Value, ct), "The selected HS code was not found.");
         var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(entity.OfficerSubjectId == access.UserId.ToString() && entity.Status is "Draft" or "Returned", "Only your own draft or returned decisions may be edited.");
         if (id != null) Validate(entity.Version == input.Version, "Decision changed. Refresh before editing.");
@@ -404,11 +440,11 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         object locationSnapshot = hierarchy.Count == 0 ? new { scope = "UnassignedOfficerWorkspace" } : hierarchy;
         entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(locationSnapshot);
         entity.HsCodeId = input.HsCodeId; entity.SelectedReferenceValue = input.SelectedReferenceValue; entity.Currency = input.Currency!;
-        entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification.Trim(); entity.Status = "Draft"; entity.Version = Guid.NewGuid();
+        entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
-        entity.EvidenceNotes = input.Evidence.Trim();
+        entity.EvidenceNotes = input.Evidence?.Trim() ?? "";
         if (id == null) db.ValuationDecisions.Add(entity);
-        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, input.Justification, input.LocationId);
+        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, entity.Justification, input.LocationId);
         await db.SaveChangesAsync(ct); return Ok(entity);
     }
     [HttpPost("decisions/{id:guid}/submit")]
@@ -427,9 +463,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
         var decision = await (await VisibleDecisions(ct)).SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
         Validate(decision.Status == "Submitted" && decision.Version == input.Version && (input.Outcome is "Approved" or "Returned" || access.Role == AccessRules.CustomsAdmin && input.Outcome == "Rejected"), "Only a current submitted decision may be approved or returned; Customs Administrators may also reject a submitted decision.");
-        Validate(input.Justification.Trim().Length >= 10, "A review justification is required.");
-        var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = input.Justification; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, input.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        var reviewNote = input.Justification?.Trim() ?? "";
+        Validate(reviewNote.Length >= 10, "A review justification is required.");
+        var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = reviewNote; decision.Version = Guid.NewGuid();
+        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, reviewNote, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpGet("audit")]
     public async Task<IActionResult> Audit(CancellationToken ct)

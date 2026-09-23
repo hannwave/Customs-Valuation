@@ -172,8 +172,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Code")
+                    b.Property<string>("ChapterName")
                         .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int?>("ChapterNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Code")
                         .HasMaxLength(6)
                         .HasColumnType("character varying(6)");
 
@@ -184,8 +191,34 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("HeadingNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("HsUpdateCandidatesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("HsUpdateNote")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HsUpdateStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<Guid>("RevisionId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("SectionName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SectionNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
 
@@ -229,6 +262,49 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.ToTable("hs_code_correlations", (string)null);
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.HsCodeUpdateMapping", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceHsCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TargetDescription")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TargetHsCode")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RevisionId", "SourceHsCode");
+
+                    b.HasIndex("RevisionId", "TargetHsCode");
+
+                    b.ToTable("hs_code_update_mappings", (string)null);
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.HsRevision", b =>
                 {
                     b.Property<Guid>("Id")
@@ -241,6 +317,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -248,6 +328,11 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.Property<int>("Number")
                         .HasColumnType("integer");
+
+                    b.Property<string>("OriginalHsVersion")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<string>("SourceReference")
                         .IsRequired()
@@ -258,10 +343,13 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
 
-                    b.Property<string>("Username")
+                    b.Property<int>("TotalRecords")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UpdatedHsVersion")
                         .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.HasKey("Id");
 
@@ -478,6 +566,50 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.ToTable("local_market_observations", (string)null);
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.MarketPriceSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Condition")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ListingId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("ObservedDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(20, 6)
+                        .HasColumnType("numeric(20,6)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObservedDate");
+
+                    b.ToTable("market_price_snapshots", (string)null);
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.NationalTariffLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -512,6 +644,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<string>("SourceReference")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("TariffItemNo")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
 
                     b.Property<string>("Unit")
                         .IsRequired()
@@ -650,7 +786,7 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("HsCodeId")
+                    b.Property<Guid?>("HsCodeId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal?>("InitialDuty")
@@ -718,6 +854,11 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AdjustmentReason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<DateTimeOffset?>("CalculatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -725,6 +866,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
+
+                    b.Property<decimal>("CustomsValueAmount")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("CustomsValueCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
 
                     b.Property<decimal>("ExchangeRate")
                         .HasPrecision(24, 12)
@@ -737,9 +887,17 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("ExciseTaxApplicable")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal>("ExemptionAmount")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("ExemptionCodes")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<decimal>("FinalAmount")
                         .HasPrecision(24, 8)
@@ -754,6 +912,9 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<bool>("IsCommercialImport")
+                        .HasColumnType("boolean");
+
                     b.Property<decimal>("ManualAdjustmentAmount")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
@@ -766,8 +927,24 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("OriginalHsCodeId")
+                    b.Property<bool>("OfficerConfirmed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OriginCountry")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<bool>("OriginPreferenceClaimed")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("OriginalHsCodeId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ProductCategory")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.Property<Guid?>("SelectedHsCodeId")
                         .HasColumnType("uuid");
@@ -786,6 +963,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
 
+                    b.Property<decimal>("TotalTax")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
                     b.Property<Guid>("ValuationDecisionId")
                         .HasColumnType("uuid");
 
@@ -795,6 +976,9 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<decimal>("WaiverAmount")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
+
+                    b.Property<bool>("WithholdingApplicable")
+                        .HasColumnType("boolean");
 
                     b.HasKey("Id");
 
@@ -837,6 +1021,9 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<bool>("IsApplicable")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -848,6 +1035,20 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.Property<int>("Order")
                         .HasColumnType("integer");
+
+                    b.Property<decimal>("RecommendedValue")
+                        .HasPrecision(24, 8)
+                        .HasColumnType("numeric(24,8)");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
 
                     b.Property<Guid>("ValuationPhase2Id")
                         .HasColumnType("uuid");
@@ -1343,13 +1544,40 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasOne("SES.Customs.Core.Models.HsCode", null)
                         .WithMany()
                         .HasForeignKey("HsCodeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
                         .WithMany()
                         .HasForeignKey("LocationId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2", b =>
+                {
+                    b.HasOne("SES.Customs.Core.Models.HsCode", null)
+                        .WithMany()
+                        .HasForeignKey("OriginalHsCodeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SES.Customs.Core.Models.HsCode", null)
+                        .WithMany()
+                        .HasForeignKey("SelectedHsCodeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SES.Customs.Core.Models.ValuationDecision", null)
+                        .WithOne()
+                        .HasForeignKey("SES.Customs.Core.Models.ValuationPhase2", "ValuationDecisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2TaxLine", b =>
+                {
+                    b.HasOne("SES.Customs.Core.Models.ValuationPhase2", null)
+                        .WithMany("TaxLines")
+                        .HasForeignKey("ValuationPhase2Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SES.Customs.Infrastructure.Context.AuthAccountEntity", b =>
@@ -1377,32 +1605,18 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2", b =>
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
                 {
-                    b.HasOne("SES.Customs.Core.Models.HsCode", null)
+                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
                         .WithMany()
-                        .HasForeignKey("OriginalHsCodeId")
+                        .HasForeignKey("CustomsLocationId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SES.Customs.Core.Models.HsCode", null)
+                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
                         .WithMany()
-                        .HasForeignKey("SelectedHsCodeId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SES.Customs.Core.Models.ValuationDecision", null)
-                        .WithOne()
-                        .HasForeignKey("SES.Customs.Core.Models.ValuationPhase2", "ValuationDecisionId")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2TaxLine", b =>
-                {
-                    b.HasOne("SES.Customs.Core.Models.ValuationPhase2", null)
-                        .WithMany("TaxLines")
-                        .HasForeignKey("ValuationPhase2Id")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -3,23 +3,25 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  FiActivity, FiAlertTriangle, FiArrowRight, FiBookOpen, FiCheckCircle,
+  FiActivity, FiArrowRight, FiArchive, FiBarChart2, FiBookOpen, FiCheckCircle,
   FiChevronRight, FiFileText, FiGlobe, FiMapPin, FiSearch, FiShield,
-  FiShoppingBag, FiTrendingUp, FiUserPlus, FiUsers,
+  FiShoppingBag, FiUserPlus, FiUsers, FiX,
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
+import { FeedbackToast } from "@/components/FeedbackToast";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import type { InternationalPriceSearch, LocalMarketPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
+import { readValuationSession, updateValuationSession, writeValuationSession } from "@/lib/valuation-session";
 
 type Phase = "one" | "two";
 
-function PhaseBar({ phase, onChange }: { phase: Phase; onChange: (next: Phase) => void }) {
+function PhaseBar({ phase, onChange, phase2Ready }: { phase: Phase; onChange: (next: Phase) => void; phase2Ready: boolean }) {
   return <nav className={`phase-bar phase-bar--${phase}`} aria-label="Officer valuation phases">
-    <button type="button" aria-pressed={phase === "one"} className={phase === "one" ? "is-active" : "is-collapsed"} onClick={() => onChange("one")}><span>01</span><strong>Phase 1</strong><small>Initial duty</small></button>
+    <button type="button" aria-pressed={phase === "one"} className={phase === "one" ? "is-active" : "is-collapsed"} onClick={() => onChange("one")}><span>01</span><strong>Price Review</strong><small>Evidence and value</small></button>
     <FiChevronRight aria-hidden="true" />
-    <button type="button" aria-pressed={phase === "two"} className={phase === "two" ? "is-active" : "is-collapsed"} onClick={() => onChange("two")}><span>02</span><strong>Phase 2</strong><small>Additional taxes</small></button>
+    <button type="button" aria-pressed={phase === "two"} className={phase === "two" ? "is-active" : "is-collapsed"} disabled={!phase2Ready} onClick={() => phase2Ready && onChange("two")}><span>02</span><strong>Duty &amp; Tax Assessment</strong><small>{phase2Ready ? "Calculate duties and taxes" : "Submit Price Review first"}</small></button>
   </nav>;
 }
 
@@ -53,11 +55,18 @@ function money(value: number | null | undefined, currency: string) {
   return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
 }
 
-function StatisticCard({ title, icon, stats, currency, tone, href }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; tone: "international" | "local"; href: string }) {
-  return <Link href={typeof href === "string" ? href : "/administration"} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
+function convertStatistics(stats: PriceStatistics | null, rate: number): PriceStatistics | null {
+  if (!stats) return null;
+  const convert = (value: number) => value * rate;
+  return { ...stats, minimum: convert(stats.minimum), maximum: convert(stats.maximum), mean: convert(stats.mean), median: convert(stats.median), standardDeviation: convert(stats.standardDeviation), percentiles: { p25: convert(stats.percentiles.p25), p50: convert(stats.percentiles.p50), p75: convert(stats.percentiles.p75) }, potentialOutliers: stats.potentialOutliers.map(item => ({ ...item, price: convert(item.price) })) };
+}
+
+function StatisticCard({ title, icon, stats, currency, tone, href, rateNote }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; tone: "international" | "local"; href: string; rateNote?: string }) {
+  return <Link href={href} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
     <div className="valuation-card-title"><span>{icon}</span><strong>{title}</strong><em>n = {stats?.observationCount ?? 0}</em></div>
     <span className="valuation-label">Median unit price</span>
     <b>{money(stats?.median, currency)}</b>
+    {rateNote && <small style={{ display: "block", fontSize: "0.75rem", color: "#64748b", marginTop: "2px", marginBottom: "6px" }}>{rateNote}</small>}
     <dl>
       <div><dt>Mean</dt><dd>{money(stats?.mean, currency)}</dd></div>
       <div><dt>Minimum</dt><dd>{money(stats?.minimum, currency)}</dd></div>
@@ -66,36 +75,80 @@ function StatisticCard({ title, icon, stats, currency, tone, href }: { title: st
   </Link>;
 }
 
-function EvidenceTrend({ international, local, internationalCurrency }: { international: PriceStatistics | null; local: PriceStatistics | null; internationalCurrency: string }) {
+function EvidenceTrend({ international, local, currency }: { international: PriceStatistics | null; local: PriceStatistics | null; currency: string }) {
   const internationalValue = international?.median;
   const localValue = local?.median;
-  const sharedCurrency = internationalCurrency === "ETB";
   const toPoints = (value: number | undefined, offset: number) => value == null ? "" : Array.from({ length: 6 }, (_, index) => `${8 + index * 17},${68 - Math.min(42, Math.max(0, value / Math.max(value, localValue ?? value) * 34) + ((index % 2) * 2) + offset)}`).join(" ");
-  return <section className="valuation-trend"><div className="valuation-trend-heading"><div><h3>Price evidence snapshot</h3><p>{sharedCurrency ? "International median vs. Ethiopian local median" : `Source-currency medians · ${internationalCurrency} and ETB`}</p></div><span>Current search</span></div>
-    <div className="valuation-chart" aria-label="Current price evidence comparison"><svg viewBox="0 0 100 80" preserveAspectRatio="none" role="img"><path className="chart-grid" d="M0 15H100M0 40H100M0 65H100" />{internationalValue != null && <polyline className="chart-line chart-line--international" points={toPoints(internationalValue, 5)} />}{localValue != null && <polyline className="chart-line chart-line--local" points={toPoints(localValue, -5)} />}</svg><div className="chart-legend"><span><i className="chart-key chart-key--international" />International median {money(internationalValue, internationalCurrency)}</span><span><i className="chart-key chart-key--local" />Local median {money(localValue, "ETB")}</span></div></div>
+  return <section className="valuation-trend"><div className="valuation-trend-heading"><div><h3>Price evidence snapshot</h3><p>International and Ethiopian local medians in {currency}</p></div><span>Current search</span></div>
+    <div className="valuation-chart" aria-label="Current price evidence comparison"><svg viewBox="0 0 100 80" preserveAspectRatio="none" role="img"><path className="chart-grid" d="M0 15H100M0 40H100M0 65H100" />{internationalValue != null && <polyline className="chart-line chart-line--international" points={toPoints(internationalValue, 5)} />}{localValue != null && <polyline className="chart-line chart-line--local" points={toPoints(localValue, -5)} />}</svg><div className="chart-legend"><span><i className="chart-key chart-key--international" />International median {money(internationalValue, currency)}</span><span><i className="chart-key chart-key--local" />Local median {money(localValue, currency)}</span></div></div>
   </section>;
 }
 
-function OfficerEvidenceWorkspace({ profile }: { profile: WorkspaceProfile }) {
+function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: WorkspaceProfile; onSubmitted: () => void }) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
   const [local, setLocal] = useState<LocalMarketPriceSearch | null>(null);
+  const [localRate, setLocalRate] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EvidenceSource>("internationalMedian");
   const [customValue, setCustomValue] = useState("");
-  const [hsCode, setHsCode] = useState("");
   const [justification, setJustification] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordNotice, setRecordNotice] = useState("");
+  const [fxMeta, setFxMeta] = useState<{ etbPerUnit?: number; source?: string; date?: string } | null>(null);
   const currency = ({ us: "USD", gb: "GBP", de: "EUR", ae: "AED", za: "ZAR" } as Record<string, string>)[market] ?? "USD";
+
+  useEffect(() => {
+    const active = readValuationSession();
+    if (!active) return;
+    setQuery(active.query); setMarket(active.market); setInternational(active.international); setLocal(active.local);
+  }, []);
+
+  useEffect(() => {
+    if (currency === "ETB") {
+      setLocalRate(1);
+      setFxMeta(null);
+      return;
+    }
+    const token = getSessionAccessToken();
+    if (!token) return;
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    fetch(`${base}/api/exchange-rates?to=${currency}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && typeof data.rate === "number" && data.rate > 0) {
+          setLocalRate(data.rate);
+          setFxMeta({
+            etbPerUnit: data.etbPerUnit,
+            source: data.source,
+            date: data.date
+          });
+        }
+      })
+      .catch(() => {});
+  }, [currency]);
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const term = query.trim();
     if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
-    setBusy(true); setError(""); setInternational(null); setLocal(null);
+    setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setLocal(null); setLocalRate(1);
+    setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setFxMeta(null);
+    // Start a fresh client-side session for this search. Later asynchronous
+    // evidence responses merge into this record, so a late response cannot
+    // overwrite a decision that was already submitted from Phase 1.
+    writeValuationSession({
+      id: `valuation-${Date.now()}`,
+      query: term,
+      market,
+      international: null,
+      local: null,
+      createdAt: new Date().toISOString(),
+    });
     const token = getSessionAccessToken();
     if (!token) { window.location.assign("/login?next=%2F"); return; }
     const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
@@ -106,67 +159,100 @@ function OfficerEvidenceWorkspace({ profile }: { profile: WorkspaceProfile }) {
       if (!response.ok) throw new Error(body.detail ?? body.message ?? "Evidence source could not be searched.");
       return body as T;
     };
-    const [internationalResult, localResult] = await Promise.allSettled([
-      request<InternationalPriceSearch>(`${base}/api/international-prices/search?${new URLSearchParams({ q: term, market })}`),
-      request<LocalMarketPriceSearch>(`${base}/api/local-prices/search?${new URLSearchParams({ q: term, sources: "jiji,ethioshop" })}`),
-    ]);
-    if (internationalResult.status === "fulfilled") setInternational(internationalResult.value);
-    if (localResult.status === "fulfilled") setLocal(localResult.value);
-    if (internationalResult.status === "fulfilled" && internationalResult.value.statistics) setSelected("internationalMedian");
-    else if (localResult.status === "fulfilled" && localResult.value.statistics) setSelected("localMedian");
-    else setSelected("custom");
-    if (internationalResult.status === "rejected" && localResult.status === "rejected") setError(internationalResult.reason instanceof Error ? internationalResult.reason.message : "Price evidence could not be loaded.");
-    else if (internationalResult.status === "rejected") setError("International evidence is unavailable. Local results are shown below.");
-    else if (localResult.status === "rejected") setError("Local-market evidence is unavailable. International results are shown below.");
-    setBusy(false);
+    let internationalValue: InternationalPriceSearch | null = null;
+    let localValue: LocalMarketPriceSearch | null = null;
+    let completed = 0;
+    const persist = () => {
+      const current = readValuationSession();
+      writeValuationSession({
+        ...(current ?? {}),
+        id: current?.id ?? `valuation-${Date.now()}`,
+        query: term,
+        market,
+        international: internationalValue ?? current?.international ?? null,
+        local: localValue ?? current?.local ?? null,
+        createdAt: current?.createdAt ?? new Date().toISOString(),
+      });
+    };
+    const finish = () => { completed += 1; if (completed === 2) setBusy(false); };
+    void request<InternationalPriceSearch>(`${base}/api/international-prices/search?${new URLSearchParams({ q: term, market })}`)
+      .then(result => { internationalValue = result; setInternational(result); persist(); if (result.statistics) setSelected("internationalMedian"); })
+      .catch(reason => { setError(reason instanceof Error ? "International evidence is unavailable. Local results will continue loading." : "International evidence is unavailable. Local results will continue loading."); })
+      .finally(finish);
+    void request<LocalMarketPriceSearch>(`${base}/api/local-prices/search?${new URLSearchParams({ q: term, sources: "jiji,ethioshop" })}`)
+      .then(result => { localValue = result; setLocal(result); persist(); if (!internationalValue && result.statistics) setSelected("localMedian"); })
+      .catch(() => { setError(internationalValue ? "Local-market evidence is unavailable. International results are shown." : "Price evidence could not be loaded."); })
+      .finally(finish);
+    if (currency !== "ETB") {
+      void request<{ rate: number; etbPerUnit?: number; source?: string; date?: string }>(`${base}/api/exchange-rates?to=${currency}`)
+        .then(result => {
+          setLocalRate(result.rate);
+          if (result.etbPerUnit) {
+            setFxMeta({ etbPerUnit: result.etbPerUnit, source: result.source, date: result.date });
+          }
+        })
+        .catch(() => setError("Local prices loaded, but the ETB exchange rate is unavailable."));
+    }
   }
 
-  const selectedValue = selected === "internationalMedian" ? international?.statistics?.median : selected === "internationalMean" ? international?.statistics?.mean : selected === "localMedian" ? local?.statistics?.median : Number(customValue);
-  const selectedCurrency = selected === "localMedian" ? "ETB" : currency;
+  const localCurrency = currency === "ETB" || localRate !== 1 ? currency : "ETB";
+  const displayLocal = local ? { ...local, statistics: localCurrency === currency ? convertStatistics(local.statistics, localRate) : local.statistics } : null;
+  const selectedValue = selected === "internationalMedian" ? international?.statistics?.median : selected === "internationalMean" ? international?.statistics?.mean : selected === "localMedian" ? displayLocal?.statistics?.median : Number(customValue);
+  const selectedCurrency = selected === "localMedian" ? localCurrency : currency;
   const hasResults = international || local;
 
   async function recordDecision() {
-    const normalizedHsCode = hsCode.replace(/\D/g, "");
     const parsedSelectedValue = Number(selectedValue);
 
-    if (!Number.isFinite(parsedSelectedValue) || parsedSelectedValue <= 0) { setError("Select a valid reference value before recording the decision."); return; }
-    if (![6, 8].includes(normalizedHsCode.length)) { setError("Enter the six-digit HS code for this product before recording the decision."); return; }
-    if (justification.trim().length < 10) { setError("Enter at least 10 characters of valuation justification."); return; }
-
+    if (!Number.isFinite(parsedSelectedValue) || parsedSelectedValue <= 0) { setError("Select a valid customs value before submitting the valuation."); return; }
     setRecording(true); setError(""); setRecordNotice("");
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-      const response = await fetch(`${base}/api/hs-codes?search=${encodeURIComponent(normalizedHsCode)}&page=1&pageSize=20`, { headers: { Authorization: `Bearer ${getSessionAccessToken()}` } });
-      if (!response.ok) throw new Error("HS code lookup failed. Check the code and API connection.");
-      const hsResults = await response.json() as { items: { id: string; code: string }[] };
-      const hs = hsResults.items.find(item => item.code.replaceAll(".", "") === normalizedHsCode.slice(0, 6));
-      if (!hs) throw new Error("Select an exact HS code from the Ethiopian tariff catalogue.");
+       const assignedLocationId = (
+        profile.locations.find(location =>
+          location.id === profile.user.primaryLocationId &&
+          location.status === "ACTIVE" &&
+          (location.supportsValuation || location.supportsInspection)
+        ) ??
+        profile.locations.find(location =>
+          location.status === "ACTIVE" &&
+          (location.supportsValuation || location.supportsInspection)
+        )
+       )?.id ?? null;
+       if (!assignedLocationId) throw new Error("Assign an active valuation office before submitting this valuation.");
 
-      const assignedLocationId = profile.locations.find(location =>
-        location.id === profile.user.primaryLocationId &&
-        location.status === "ACTIVE" &&
-        (location.supportsValuation || location.supportsInspection)
-      )?.id ?? null;
+       const evidenceSnapshot = {
+         product: query.trim(), hsCode: null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+         selectedCurrency, supportingSource: selected, officer: { id: profile.user.id, name: profile.user.fullName },
+         decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [], localEvidence: local?.items ?? [],
+         statistics: { international: international?.statistics ?? null, local: local?.statistics ?? null },
+         outliers: { international: international?.statistics?.potentialOutliers ?? [], local: local?.statistics?.potentialOutliers ?? [] },
+         tariff: { rate: null, amount: null, source: "Classification and tariff lookup are completed in Phase 2." },
+       };
 
-      await workspaceApi("/decisions", { method: "POST", body: JSON.stringify({
-        hsCodeId: hs.id,
-        locationId: assignedLocationId,
-        selectedReferenceValue: parsedSelectedValue,
-        currency: selectedCurrency,
-        decision: `Reference value selected from Overview search: ${query.trim()}`,
-        justification: justification.trim(),
-        evidence: `Overview evidence search for “${query.trim()}”; selected ${selected.replace(/([A-Z])/g, " $1").trim()}. ${profile.user.primaryLocationId ? "Assigned office was unavailable for valuation; saved in the officer workspace." : "Saved in the officer workspace without an office assignment."}`,
-        version: null,
-      }) });
-      setRecordNotice("Valuation draft saved. Opening your valuation decisions…");
-      window.setTimeout(() => window.location.assign("/valuation-decisions"), 700);
+       const created = await workspaceApi<{ id: string; version: string }>("/decisions", { method: "POST", body: JSON.stringify({
+         hsCodeId: null,
+         locationId: assignedLocationId,
+         selectedReferenceValue: parsedSelectedValue,
+         currency: selectedCurrency,
+         decision: `Customs value selected for ${query.trim()}`,
+         justification: justification.trim(),
+         evidence: JSON.stringify(evidenceSnapshot),
+         version: null,
+       }) });
+       const submitted = await workspaceApi<{ status: string }>(`/decisions/${created.id}/submit`, { method: "POST", body: JSON.stringify({ version: created.version, justification: justification.trim() }) });
+       updateValuationSession({ hsCode: undefined, selectedValue: parsedSelectedValue, selectedCurrency, decisionId: created.id, phase1Submitted: submitted.status === "Submitted" });
+       setRecordNotice("Price Review submitted. Continuing to Final Assessment…");
+       onSubmitted();
     } catch (exception) { setError(exception instanceof Error ? exception.message : "The valuation decision could not be saved."); }
     finally { setRecording(false); }
   }
+  const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
+  const localOutliers = local?.statistics?.potentialOutliers.length ?? 0;
   return <section className="overview-evidence-workspace">
-    <section className="officer-search-hero"><div><span>VALUATION EVIDENCE SEARCH</span><h2>What product are you valuing?</h2><p>Search international and Ethiopian market evidence together, then select the reference basis for your decision.</p></div><form onSubmit={search}><FiSearch /><input aria-label="Product description" placeholder="e.g. Apple iPhone 13 128GB" value={query} onChange={event => setQuery(event.currentTarget.value)} required /><select aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}><option value="us">US · USD</option><option value="gb">UK · GBP</option><option value="de">Germany · EUR</option><option value="ae">UAE · AED</option><option value="za">South Africa · ZAR</option></select><button type="submit" disabled={busy}>{busy ? "Searching…" : <>Search <FiArrowRight /></>}</button></form><div className="officer-search-links"><Link href="/international-prices"><FiGlobe />International details</Link><Link href="/local-prices"><FiShoppingBag />Ethiopian details</Link></div></section>
-    {error && <p className="evidence-search-notice" role="status">{error}</p>}
-    {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="International statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local Ethiopian statistics" icon={<FiMapPin />} stats={local?.statistics ?? null} currency="ETB" tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && local?.statistics && currency === "ETB" ? <><b>{(((local.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median compared with the international median.</p></> : <><b>Source currencies differ</b><p>Use an approved exchange rate before comparing {currency} with ETB.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={local?.statistics ?? null} internationalCurrency={currency} /></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Valuation decision</h3><p>Select the reference price basis, then record a justified decision.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records</small></span><b>{money(local?.statistics?.median, "ETB")}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different reference value</strong><small>Requires documented evidence</small></span></label>{selected === "custom" && <input className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder="Reference value" value={customValue} onChange={event => setCustomValue(event.target.value)} />}</div><div className="overview-decision-fields"><label>HS code<input value={hsCode} onChange={event => setHsCode(event.target.value)} placeholder="e.g. 851713" inputMode="numeric" /></label><label>Decision justification<textarea value={justification} onChange={event => setJustification(event.target.value)} placeholder="Explain why this reference value is appropriate…" rows={3} /></label></div><div className="selected-reference"><span>Selected reference value</span><b>{money(selectedValue, selectedCurrency)}</b></div><button className="valuation-record-link" type="button" disabled={recording} onClick={() => void recordDecision()}><FiFileText />{recording ? "Saving valuation decision…" : "Record valuation decision"}</button>{recordNotice && <small className="decision-save-notice">{recordNotice}</small>}<small className="decision-disclaimer">The decision is saved as your officer-owned draft with an audited justification. Add an office later before submission for formal review.</small></aside></div>}
+    <section className="officer-search-hero"><div><span>VALUATION SEARCH</span><h2>Search a product to begin valuation</h2><p>Search once to create the active valuation session. The same evidence follows you through Price Review, detail pages, and the final decision.</p></div><form onSubmit={search}><FiSearch /><input aria-label="Product description" placeholder="e.g. Apple iPhone 13 128GB" value={query} onChange={event => setQuery(event.currentTarget.value)} required />{(query || hasResults) && <button type="button" className="phase2-search-clear" aria-label="Clear search" onClick={() => { setQuery(""); setInternational(null); setLocal(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); }}><FiX /></button>}<select aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}><option value="us">US · USD</option><option value="gb">UK · GBP</option><option value="de">Germany · EUR</option><option value="ae">UAE · AED</option><option value="za">South Africa · ZAR</option></select><button type="submit" disabled={busy}>{busy ? "Searching…" : <>Search <FiArrowRight /></>}</button></form>{hasResults && <div className="officer-search-links"><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><FiGlobe />Global market details</Link><Link href={`/local-prices?q=${encodeURIComponent(query.trim())}`}><FiShoppingBag />Local market details</Link><Link href="/historical-customs-prices"><FiArchive />Customs history</Link><Link href="/outlier-analysis"><FiBarChart2 />Price analysis</Link></div>}</section>
+    <FeedbackToast error={error} success={recordNotice} onDismissError={() => setError("")} onDismissSuccess={() => setRecordNotice("")} />
+    {hasResults && <div className="valuation-workspace-grid"><div className="valuation-evidence-area"><div className="valuation-stat-grid"><StatisticCard title="Global market statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} /><StatisticCard title="Local market statistics" icon={<FiMapPin />} stats={displayLocal?.statistics ?? null} currency={localCurrency} tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} rateNote={localCurrency === currency && fxMeta?.etbPerUnit ? `1 ${currency} = ${fxMeta.etbPerUnit.toFixed(2)} ETB · CBE via exchange.et` : undefined} /><section className="valuation-variance"><span>Local vs. international</span>{international?.statistics && displayLocal?.statistics && localCurrency === currency ? <><b>{(((displayLocal.statistics.median - international.statistics.median) / international.statistics.median) * 100).toFixed(1)}%</b><p>Local median converted to {currency} ({fxMeta?.etbPerUnit ? `1 ${currency} = ${fxMeta.etbPerUnit.toFixed(2)} ETB` : "live exchange rate"}) compared with international median.</p></> : <><b>Exchange rate unavailable</b><p>Local prices remain in ETB until an approved exchange rate is available.</p></>}</section></div><EvidenceTrend international={international?.statistics ?? null} local={localCurrency === currency ? displayLocal?.statistics ?? null : null} currency={currency} /><section className="valuation-insight-grid"><Link href="/outlier-analysis"><strong>Price analysis</strong><span>{internationalOutliers + localOutliers} suspected outlier{internationalOutliers + localOutliers === 1 ? "" : "s"}</span><small>Global {internationalOutliers} · Local {localOutliers} · View reasons <FiArrowRight /></small></Link><Link href="/historical-customs-prices"><strong>Customs history</strong><span>Saved history review</span><small>Open the historical comparison <FiArrowRight /></small></Link><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><strong>Global market</strong><span>{international?.items.length ?? 0} offers</span><small>View exact offers <FiArrowRight /></small></Link></section></div><aside className="valuation-decision-panel"><div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Review the evidence before submitting Price Review. HS classification and tariff rules are completed in Final Assessment.</p></div></div><div className="reference-options"><label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>Global market median</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.median, currency)}</b></label><label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>Global market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations</small></span><b>{money(international?.statistics?.mean, currency)}</b></label><label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records {localCurrency === currency && fxMeta?.etbPerUnit ? `· Converted at ${fxMeta.etbPerUnit.toFixed(2)} ETB/${currency}` : ""}</small></span><b>{money(displayLocal?.statistics?.median, localCurrency)}</b></label><label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount</small></span></label>{selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={`Enter amount in ${currency}`} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}</div><div className="overview-decision-fields"><label>Officer note (optional)<textarea value={justification} onChange={event => setJustification(event.currentTarget.value)} placeholder="Add an optional note about this customs value…" rows={3} /></label></div><div className="selected-reference"><span>Selected customs value</span><b>{money(selectedValue, selectedCurrency)}</b></div><button className="valuation-record-link" type="button" disabled={recording} onClick={() => void recordDecision()}><FiFileText />{recording ? "Submitting valuation…" : "Continue to next phase"}</button><small className="decision-disclaimer">The selected customs value and evidence will be carried into Final Assessment.</small></aside></div>}
   </section>;
 }
 
@@ -199,20 +285,21 @@ function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: 
   </>;
 }
 
-function OfficerDashboard({ data, profile }: { data: WorkspaceDashboard; profile: WorkspaceProfile }) {
-  const recent = data.decisions[0];
+function OfficerDashboard({ profile }: { profile: WorkspaceProfile }) {
   const [phase, setPhase] = useState<Phase>("one");
+  const [activeSession, setActiveSession] = useState<ReturnType<typeof readValuationSession>>(null);
+  useEffect(() => {
+    const sync = () => setActiveSession(readValuationSession());
+    sync(); window.addEventListener("storage", sync); window.addEventListener("focus", sync);
+    return () => { window.removeEventListener("storage", sync); window.removeEventListener("focus", sync); };
+  }, []);
   return <>
-    <DashboardHeader profile={profile} eyebrow="Officer operations" title={`Welcome, ${profile.user.fullName.split(" ")[0]}`} description="Find the product, examine price evidence, investigate anomalies, and record a defensible valuation decision." />
-    <PhaseBar phase={phase} onChange={setPhase} />
-    {phase === "one" ? <OfficerEvidenceWorkspace profile={profile} /> : <PhaseTwoOverview />}
-    <KpiGrid data={data} />
-    <div className="dashboard-main-grid officer-dashboard-grid">
-      <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">Operational workload</p><h2>My valuation cases</h2><span>Saved, submitted, returned, and approved decisions</span></div><Link href="/valuation-decisions">Open workspace <FiArrowRight /></Link></div><DecisionTable data={data} /></section>
-      <section className="dashboard-panel"><div className="dashboard-panel-heading"><div><p className="eyebrow">Reference snapshot</p><h2>{recent?.hsCode ? `HS ${recent.hsCode}` : "Recent evidence"}</h2></div></div>{recent ? <div className="reference-snapshot"><div className="snapshot-product"><FiTrendingUp /><span><strong>{recent.product}</strong><small>Most recent decision</small></span></div><dl><div><dt>Selected value</dt><dd>{recent.currency} {recent.selectedReferenceValue.toLocaleString()}</dd></div><div><dt>Status</dt><dd><span className={`decision-status decision-status--${recent.status.toLowerCase()}`}>{recent.status}</span></dd></div><div><dt>Recorded</dt><dd>{new Date(recent.recordedAt).toLocaleDateString()}</dd></div></dl><p><FiAlertTriangle />Reference indicators support professional judgment; they never automatically invalidate a declared value.</p></div> : <DataState kind="empty" compact title="No recent decision" description="Search an HS code and create a valuation draft to build your history." />}</section>
-      <section className="dashboard-panel dashboard-panel--wide"><div className="dashboard-panel-heading"><div><p className="eyebrow">My recent activity</p><h2>Audit and decision history</h2></div><Link href="/audit">View history <FiArrowRight /></Link></div><AuditList data={data} /></section>
-      <section className="dashboard-panel"><div className="dashboard-panel-heading"><div><p className="eyebrow">My assignment</p><h2>Operational office</h2></div></div><div className="assignment-card"><FiMapPin /><strong>{data.locations.find(location => location.id === profile.user.primaryLocationId)?.displayName ?? "No primary office"}</strong><span>{data.locations.length} authorized location{data.locations.length === 1 ? "" : "s"}</span><small>{profile.user.employeeNumber || "Employee number not recorded"}</small></div></section>
-    </div>
+    {phase === "one" ? <>
+      <DashboardHeader profile={profile} eyebrow="Customs Officer · Valuation workspace" title="Valuation search" description="Start with one product search. Price Review opens the evidence workflow, and Duty & Tax Assessment becomes available after the valuation is submitted." />
+      <PhaseBar phase={phase} onChange={setPhase} phase2Ready={Boolean(activeSession?.phase1Submitted && activeSession.decisionId)} />
+      <OfficerEvidenceWorkspace profile={profile} onSubmitted={() => { setActiveSession(readValuationSession()); setPhase("two"); }} />
+    </> : <PhaseTwoOverview onBackToReview={() => setPhase("one")} />}
+    {activeSession && <section className="dashboard-session-strip"><span><FiCheckCircle />Active valuation session</span><strong>{activeSession.query}</strong><small>Started {new Date(activeSession.createdAt).toLocaleString()} · {activeSession.phase1Submitted ? "Price Review submitted" : "Price Review in progress"}</small><Link href="/valuation-decisions">Valuation records <FiArrowRight /></Link></section>}
   </>;
 }
 
@@ -241,5 +328,5 @@ export default function Dashboard() {
   if (!profile || !data) return <DataState kind="error" title="Dashboard unavailable" description={error} onRetry={() => void load()} />;
   if (data.role === "SystemAdministrator") return <SystemDashboard data={data} profile={profile} />;
   if (data.role === "CustomsAdministrator") return <AdminDashboard data={data} profile={profile} />;
-  return <OfficerDashboard data={data} profile={profile} />;
+  return <OfficerDashboard profile={profile} />;
 }

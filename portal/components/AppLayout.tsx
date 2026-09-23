@@ -13,17 +13,20 @@ import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
+import { clearValuationSession, readValuationSession } from "@/lib/valuation-session";
 
 type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid };
 type NavGroup = { label: string; links: NavLink[] };
 const evidenceLinks: NavLink[] = [
-    { href: "/international-prices", key: "international", label: "International prices", icon: FiGlobe },
-    { href: "/local-prices", key: "local", label: "Ethiopian prices", icon: FiShoppingBag },
-    { href: "/historical-customs-prices", key: "historical", label: "Historical customs", icon: FiArchive },
+    { href: "/international-prices", key: "international", label: "Global market", icon: FiGlobe },
+    { href: "/local-prices", key: "local", label: "Local market", icon: FiShoppingBag },
+    { href: "/historical-customs-prices", key: "historical", label: "Customs history", icon: FiArchive },
+    { href: "/outlier-analysis", key: "outliers", label: "Price analysis", icon: FiBarChart2 },
 ];
 const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", key: "profile", label: "My profile", icon: FiUser }] };
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
-function navForRole(role: WorkspaceRole): NavGroup[] {
+const officerSessionPaths = [...officerOnlyPaths, "/analytics"];
+function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[] {
   if (role === "SystemAdministrator") return [
     { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid },
       { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
@@ -34,18 +37,22 @@ function navForRole(role: WorkspaceRole): NavGroup[] {
       { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
     ] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
+    { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
     accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
-    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation reviews", icon: FiCheckSquare }] },
+    { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
   ];
-  return [
-    { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "My workspace", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "My valuation cases", icon: FiCheckSquare }] },
+  const sessionGroups = hasValuationSession ? [
     { label: "PRICE ANALYSIS", links: evidenceLinks },
     { label: "REVIEW & HISTORY", links: [{ href: "/analytics", key: "analytics", label: "Statistics and trends", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Decision reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
+  ] : [];
+  return [
+    { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
+    ...sessionGroups,
     accountGroup,
   ];
 }
@@ -58,6 +65,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
+  const [hasValuationSession, setHasValuationSession] = useState(false);
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
@@ -92,12 +100,32 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [authorized, isAuthPage]);
 
   useEffect(() => {
+    const syncSession = () => setHasValuationSession(Boolean(readValuationSession()));
+    syncSession();
+    window.addEventListener("storage", syncSession);
+    window.addEventListener("focus", syncSession);
+    window.addEventListener("valuation-session-updated", syncSession);
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener("focus", syncSession);
+      window.removeEventListener("valuation-session-updated", syncSession);
+    };
+  }, []);
+
+  useEffect(() => {
     if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
       window.location.replace("/");
     }
   }, [pathname, profile]);
 
-  const visibleGroups = useMemo(() => profile ? navForRole(profile.user.role) : [], [profile]);
+  useEffect(() => {
+    if (!profile || profile.user.role !== "CustomsOfficer") return;
+    if (officerSessionPaths.some(path => pathname === path || pathname.startsWith(`${path}/`)) && !readValuationSession()) {
+      window.location.replace("/?session=required");
+    }
+  }, [pathname, profile]);
+
+  const visibleGroups = useMemo(() => profile ? navForRole(profile.user.role, hasValuationSession) : [], [profile, hasValuationSession]);
   const current = visibleGroups.flatMap(group => group.links)
     .filter(link => link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0];
@@ -123,7 +151,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         })}
       </div>)}</nav>
       <div className="sidebar-note"><FiShield /><span>{t("nav.note", "Scope-controlled access")}<small>{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.noteBody", "Your assigned customs locations determine visible records.")}</small></span></div>
-      <button type="button" className="signout-button" aria-label={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} title={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} onClick={() => { setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut /><span>{t("nav.signout", "Sign out")}</span></button>
+      <button type="button" className="signout-button" aria-label={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} title={sidebarCollapsed ? t("nav.signout", "Sign out") : undefined} onClick={() => { clearValuationSession(); setSessionAccessToken(null); window.location.assign("/login"); }}><FiLogOut /><span>{t("nav.signout", "Sign out")}</span></button>
        <button type="button" className={`sidebar-collapse ${sidebarCollapsed ? "is-collapsed" : ""}`} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
       {sidebarCollapsed ? <FiChevronRight /> : <FiChevronLeft />}
     </button>
@@ -133,7 +161,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="workspace-header">
         <div className="header-location">
           <button type="button" className="menu-toggle" aria-expanded={menuOpen} aria-controls="workspace-navigation" aria-label={menuOpen ? "Close navigation" : "Open navigation"} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <FiX /> : <FiMenu />}</button>
-          <span className="header-institution">{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.customs", "Ethiopia Customs")}</span><FiChevronRight aria-hidden="true" /><strong>{current ? t(current.key, current.label) : t("dashboard", "Overview")}</strong>
+          <span className="header-institution">{primaryLocation?.displayName ?? primaryLocation?.name ?? t("nav.customs", "Ethiopia Customs")}</span><FiChevronRight aria-hidden="true" /><strong>{current ? t(current.key, current.label) : t("dashboard", "Valuation search")}</strong>
         </div>
         <div className="header-actions"><LanguageSelect /><div className="profile-chip">
           <span className="profile-avatar">{(profile?.user.fullName ?? profile?.user.username ?? "U").slice(0, 1).toUpperCase()}</span>

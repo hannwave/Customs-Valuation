@@ -6,10 +6,13 @@ import {
   Paper, Select, SimpleGrid, Stack, Switch, Table, Text, Textarea, TextInput, Title,
 } from "@mantine/core";
 import { DataState } from "@/components/DataState";
+import { FeedbackToast } from "@/components/FeedbackToast";
+import { PriceStatisticsPanel } from "@/components/prices/PriceStatisticsPanel";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import type {
-  ClassifiedLocalListing, LocalMarketAnalysisResponse, LocalMarketSyncResponse, LocalObservationStatus,
+  ClassifiedLocalListing, LocalMarketAnalysisResponse, LocalMarketPriceSearch, LocalMarketSyncResponse, LocalObservationStatus,
 } from "@/lib/types/customs";
+import { readValuationSession, updateValuationSession } from "@/lib/valuation-session";
 
 const providerChoices = [
   { id: "jiji", label: "Jiji Ethiopia", description: "Public marketplace catalogue" },
@@ -57,8 +60,11 @@ export default function LocalPricesPage() {
   const [reviewDecision, setReviewDecision] = useState("Approved");
   const [reviewJustification, setReviewJustification] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [activeSnapshot, setActiveSnapshot] = useState<LocalMarketPriceSearch | null>(null);
 
   useEffect(() => {
+    const active = readValuationSession();
+    if (active?.local) { setActiveSnapshot(active.local); setQuery(active.query); }
     const overviewQuery = new URLSearchParams(window.location.search).get("q")?.trim();
     if (overviewQuery) setQuery(overviewQuery);
   }, []);
@@ -94,7 +100,10 @@ export default function LocalPricesPage() {
         const sync = body as LocalMarketSyncResponse;
         setData(sync.result);
         setNotice(`${sync.savedCount} clean observations saved, ${sync.updatedCount} updated, and ${sync.skippedCount} excluded from reference evidence.`);
-      } else setData(body as LocalMarketAnalysisResponse);
+      } else {
+        setData(body as LocalMarketAnalysisResponse);
+        updateValuationSession({ query: query.trim() });
+      }
     } catch (exception) {
       setData(null); setError(exception instanceof Error ? exception.message : "Local-market analysis failed.");
     } finally { setBusyAction(null); }
@@ -102,7 +111,6 @@ export default function LocalPricesPage() {
 
   async function submitReview() {
     if (!reviewing) return;
-    if (reviewJustification.trim().length < 10) return setError("Enter at least 10 characters explaining the review decision.");
     setReviewBusy(true); setError("");
     try {
       const token = getSessionAccessToken();
@@ -147,13 +155,22 @@ export default function LocalPricesPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void loadPrices("search"); }
 
+  function clearSearch() {
+    setQuery(""); setHsCode(""); setBrand(""); setModel(""); setVariant(""); setProductType(null);
+    setCondition("New"); setPriceType("Retail"); setOutlierMethod("Iqr"); setIncludeOutliers(false);
+    setThreshold(80); setMaximumAgeDays(180); setSelectedSources(providerChoices.map((item) => item.id));
+    setData(null); setError(""); setNotice(""); setObservationFilter("ALL"); setSellerFilter("");
+    setReviewing(null); setReviewJustification(""); setActiveSnapshot(null);
+  }
+
   return (
     <Box className="data-page"><Container fluid p={0}><Stack gap="xl">
-      <Box className="data-page-heading"><Text className="eyebrow">PRICE EVIDENCE / ETHIOPIAN MARKET</Text><Title order={1}>Local market analysis</Title><Text c="dimmed" mt="xs">Build a comparable evidence pool from Ethiopian marketplace listings, then review the representative price.</Text></Box>
+      <Box className="data-page-heading"><Text className="eyebrow">PRICE REVIEW / LOCAL MARKET</Text><Title order={1}>Local market</Title><Text c="dimmed" mt="xs">Review the saved local evidence for the active valuation session, then classify and approve comparable observations when needed.</Text></Box>
+      {activeSnapshot && <Paper withBorder radius="lg" p="lg"><Group justify="space-between" mb="md"><Box><Text className="eyebrow">ACTIVE VALUATION SESSION</Text><Title order={3}>{activeSnapshot.query}</Title><Text size="sm" c="dimmed">Saved local-market evidence from the current search. This snapshot remains available while you move through the workflow.</Text></Box><Badge color="green" variant="light">Session evidence</Badge></Group><PriceStatisticsPanel statistics={activeSnapshot.statistics} currency="ETB" scopeLabel="Local market · saved search" /><Box mt="lg" style={{ overflowX: "auto" }}><Table striped><Table.Thead><Table.Tr><Table.Th>Product</Table.Th><Table.Th>Source</Table.Th><Table.Th>Price</Table.Th><Table.Th>Observed</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{activeSnapshot.items.map(item => <Table.Tr key={`${item.source}-${item.sourceListingId}`}><Table.Td>{item.title}</Table.Td><Table.Td>{item.source}</Table.Td><Table.Td>{item.currency} {item.price.toLocaleString()}</Table.Td><Table.Td>{item.listingDate ? new Date(item.listingDate).toLocaleDateString() : new Date(activeSnapshot.retrievedAt).toLocaleDateString()}</Table.Td></Table.Tr>)}</Table.Tbody></Table></Box></Paper>}
 
-      <Paper component="form" onSubmit={submit} withBorder radius="lg" p="lg" shadow="xs"><Stack gap="lg">
-        <Box><Title order={2} size="h3">Define the product</Title><Text size="sm" c="dimmed" mt={4}>Use an exact description and HS code to keep your evidence comparable.</Text></Box>
-        <SimpleGrid className="evidence-query-fields" cols={{ base: 1, md: 3 }}>
+      <Paper component="form" onSubmit={submit} withBorder radius="lg" p="lg" shadow="xs" className="local-market-form"><Stack gap="lg">
+        <Box className="local-form-intro"><Text className="eyebrow">STEP 1 · PRODUCT IDENTITY</Text><Title order={2} size="h3">Define the product</Title><Text size="sm" c="dimmed" mt={4}>Use an exact description and HS code to keep every listing comparable.</Text></Box>
+        <SimpleGrid className="evidence-query-fields local-product-fields" cols={{ base: 1, md: 3 }}>
           <TextInput required label="Product description" placeholder="Apple iPhone 13 128GB" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           <TextInput required label="HS code" placeholder="851713" value={hsCode} onChange={(event) => setHsCode(event.currentTarget.value)} />
           <Select clearable searchable label="Product type" placeholder="Auto-detect or select" data={productTypes} value={productType} onChange={setProductType} />
@@ -161,7 +178,7 @@ export default function LocalPricesPage() {
           <TextInput label="Exact model" placeholder="iPhone 13" value={model} onChange={(event) => setModel(event.currentTarget.value)} />
           <TextInput label="Variant / specification" placeholder="128GB" value={variant} onChange={(event) => setVariant(event.currentTarget.value)} />
         </SimpleGrid>
-        <Box className="form-section-heading"><Title order={2} size="h3">Set the comparison criteria</Title><Text size="sm" c="dimmed" mt={4}>Separate condition and price type before assessing quality and outliers.</Text></Box>
+        <Box className="form-section-heading"><Text className="eyebrow">STEP 2 · COMPARISON RULES</Text><Title order={2} size="h3">Set the comparison criteria</Title><Text size="sm" c="dimmed" mt={4}>Separate condition and price type before assessing quality and outliers.</Text></Box>
         <SimpleGrid cols={{ base: 1, md: 3 }}>
           <Select label="Condition pool" data={conditions} value={condition} onChange={(value) => setCondition(value ?? "New")} allowDeselect={false} />
           <Select label="Price type" data={priceTypes} value={priceType} onChange={(value) => setPriceType(value ?? "Retail")} allowDeselect={false} />
@@ -170,12 +187,12 @@ export default function LocalPricesPage() {
           <NumberInput label="Maximum listing age" min={1} max={3650} value={maximumAgeDays} onChange={setMaximumAgeDays} suffix=" days" />
           <Switch mt="xl" checked={includeOutliers} onChange={(event) => setIncludeOutliers(event.currentTarget.checked)} label="Include flagged outliers in representative statistics" />
         </SimpleGrid>
-        <Box><Text size="sm" fw={600} mb="xs">Marketplaces</Text><SimpleGrid cols={{ base: 1, sm: 3 }}>{providerChoices.map((provider) => <Paper key={provider.id} withBorder p="sm" radius="md"><Checkbox checked={selectedSources.includes(provider.id)} onChange={(event) => toggleSource(provider.id, event.currentTarget.checked)} label={<><Text size="sm" fw={600}>{provider.label}</Text><Text size="xs" c="dimmed">{provider.description}</Text></>} /></Paper>)}</SimpleGrid></Box>
-        <Group justify="flex-end" className="data-actions"><Button type="button" variant="outline" disabled={busyAction !== null} onClick={() => void loadPrices("sync")}>{busyAction === "sync" ? "Saving clean evidence…" : "Save clean evidence"}</Button><Button type="submit" disabled={busyAction !== null}>{busyAction === "search" ? "Fetching and classifying…" : "Analyze live results"}</Button></Group>
+        <Box className="local-market-sources"><Text size="sm" fw={600} mb="xs">Marketplaces</Text><Text size="xs" c="dimmed" mb="sm">Select the sources that should contribute evidence to this review.</Text><SimpleGrid cols={{ base: 1, sm: 3 }}>{providerChoices.map((provider) => <Paper key={provider.id} withBorder p="sm" radius="md" className="local-market-source"><Checkbox checked={selectedSources.includes(provider.id)} onChange={(event) => toggleSource(provider.id, event.currentTarget.checked)} label={<><Text size="sm" fw={600}>{provider.label}</Text><Text size="xs" c="dimmed">{provider.description}</Text></>} /></Paper>)}</SimpleGrid></Box>
+        <Group justify="flex-end" className="data-actions"><Button type="button" variant="subtle" disabled={busyAction !== null} onClick={clearSearch}>Clear search</Button><Button type="button" variant="outline" disabled={busyAction !== null} onClick={() => void loadPrices("sync")}>{busyAction === "sync" ? "Saving clean evidence…" : "Save clean evidence"}</Button><Button type="submit" disabled={busyAction !== null}>{busyAction === "search" ? "Fetching and classifying…" : "Analyze live results"}</Button></Group>
       </Stack></Paper>
 
+      <FeedbackToast error={error} success={notice} onDismissError={() => setError("")} onDismissSuccess={() => setNotice("")} />
       {!data && !busyAction && !error && <DataState kind="empty" title="Your evidence review starts with a search" description="Choose a product and marketplaces above to review comparable listings and their classification."/>}
-      {error && <DataState kind="error" title="The request could not be completed" description={error}/>}{notice && <Alert color="green" title="Completed">{notice}</Alert>}
       {busyAction && <DataState kind="loading" title={busyAction === "sync" ? "Saving local evidence" : "Analyzing local listings"} description="Collecting marketplace listings, checking product matches and calculating statistics. Results will appear when analysis completes."/>}
 
       {!busyAction && data && analysis && <>
@@ -192,8 +209,8 @@ export default function LocalPricesPage() {
         <SimpleGrid cols={{ base: 1, md: data.sources.length }}>{data.sources.map((source) => <Paper key={source.id} withBorder radius="lg" p="md"><Group justify="space-between"><Box><Text fw={700}>{source.name}</Text><Text size="xs" c="dimmed">{source.resultCount} fetched</Text></Box><Badge color={source.status === "Available" ? "green" : "yellow"}>{source.status === "PartnerAccessRequired" ? "Partner access" : source.status}</Badge></Group>{source.message && <Text size="sm" c="dimmed" mt="sm">{source.message}</Text>}<Anchor href={source.websiteUrl} target="_blank" size="xs">Source website</Anchor></Paper>)}</SimpleGrid>
 
         <Paper className="data-results" withBorder radius="lg" style={{ overflow: "hidden" }}>
-          <Group justify="space-between" p="md"><Box><Title order={2} size="h3">Underlying observations</Title><Text size="sm" c="dimmed">Showing {visibleObservations.length} records · nothing is silently deleted</Text></Box><Group><Select w={220} data={[{ value: "ALL", label: "All classifications" }, { value: "USED", label: "Used in statistics" }, { value: "EXCLUDED", label: "All excluded" }, ...Array.from(new Set(analysis.observations.map((item) => item.status))).map((status) => ({ value: status, label: labelStatus(status) }))]} value={observationFilter} onChange={(value) => setObservationFilter((value ?? "ALL") as ObservationFilter)} /><TextInput placeholder="Filter seller" value={sellerFilter} onChange={(event) => setSellerFilter(event.currentTarget.value)} /></Group></Group>
-          {reviewing && <Paper m="md" p="md" withBorder radius="md" bg="blue.0"><Text fw={700}>Review: {reviewing.listing.title}</Text><SimpleGrid cols={{ base: 1, md: 3 }} mt="sm"><Select label="Decision" data={["Approved", "Rejected", "ConfirmedOutlier"]} value={reviewDecision} onChange={(value) => setReviewDecision(value ?? "Approved")} /><Textarea label="Required justification" placeholder="Explain why this observation should be included or excluded" value={reviewJustification} onChange={(event) => setReviewJustification(event.currentTarget.value)} /><Group align="flex-end"><Button loading={reviewBusy} onClick={() => void submitReview()}>Save audited review</Button><Button variant="subtle" onClick={() => setReviewing(null)}>Cancel</Button></Group></SimpleGrid></Paper>}
+          <Group justify="space-between" p="md"><Box><Title order={2} size="h3">Underlying observations</Title><Text size="sm" c="dimmed">Showing {visibleObservations.length} records · nothing is silently deleted</Text></Box><Group><Select w={220} data={[{ value: "ALL", label: "All classifications" }, { value: "USED", label: "Used in statistics" }, { value: "EXCLUDED", label: "All excluded" }, ...Array.from(new Set(analysis.observations.map((item) => item.status))).map((status) => ({ value: status, label: labelStatus(status) }))]} value={observationFilter} onChange={(value) => setObservationFilter((value ?? "ALL") as ObservationFilter)} /><TextInput placeholder="Filter seller" value={sellerFilter} onChange={(event) => setSellerFilter(event.currentTarget.value)} />{(observationFilter !== "ALL" || sellerFilter) && <Button variant="subtle" onClick={() => { setObservationFilter("ALL"); setSellerFilter(""); }}>Clear filters</Button>}</Group></Group>
+          {reviewing && <Paper m="md" p="md" withBorder radius="md" bg="blue.0"><Text fw={700}>Review: {reviewing.listing.title}</Text><SimpleGrid cols={{ base: 1, md: 3 }} mt="sm"><Select label="Decision" data={["Approved", "Rejected", "ConfirmedOutlier"]} value={reviewDecision} onChange={(value) => setReviewDecision(value ?? "Approved")} /><Textarea label="Review note (optional)" placeholder="Optionally explain why this observation should be included or excluded" value={reviewJustification} onChange={(event) => setReviewJustification(event.currentTarget.value)} /><Group align="flex-end"><Button loading={reviewBusy} onClick={() => void submitReview()}>Save audited review</Button><Button variant="subtle" onClick={() => setReviewing(null)}>Cancel</Button></Group></SimpleGrid></Paper>}
           <Box style={{ overflowX: "auto" }}><Table striped highlightOnHover verticalSpacing="md"><Table.Thead><Table.Tr><Table.Th>Listing</Table.Th><Table.Th>Price</Table.Th><Table.Th>Match</Table.Th><Table.Th>Status</Table.Th><Table.Th>Reason</Table.Th><Table.Th>Review</Table.Th></Table.Tr></Table.Thead><Table.Tbody>{visibleObservations.map((item) => <Table.Tr key={item.id}><Table.Td><Anchor href={item.listing.url} target="_blank" fw={600} size="sm">{item.listing.title}</Anchor><Text size="xs" c="dimmed">{item.listing.source} · {item.listing.seller ?? "Seller unavailable"} · {item.listing.condition}</Text></Table.Td><Table.Td><Text fw={700}>{money(item.listing.price)}</Text>{item.originalQuantity > 1 && <Text size="xs" c="dimmed">{money(item.normalizedUnitPrice)} / piece</Text>}</Table.Td><Table.Td><Badge variant="light" color={item.relevanceScore >= analysis.relevanceThreshold ? "green" : "red"}>{item.relevanceScore}/100</Badge></Table.Td><Table.Td><Badge color={statusColor(item.status)} variant="light">{labelStatus(item.status)}</Badge></Table.Td><Table.Td maw={340}><Text size="sm">{item.outlierReason ?? item.reason}</Text>{item.excludedKeywords.length > 0 && <Text size="xs" c="red">Detected: {item.excludedKeywords.join(", ")}</Text>}</Table.Td><Table.Td><Button size="xs" variant="subtle" onClick={() => { setReviewing(item); setReviewJustification(""); }}>Review</Button></Table.Td></Table.Tr>)}</Table.Tbody></Table></Box>
           {visibleObservations.length === 0 && <DataState kind="empty" compact title="No matching observations" description="Try another classification or clear the seller filter."/>}
         </Paper>

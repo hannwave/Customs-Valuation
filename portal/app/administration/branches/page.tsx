@@ -211,7 +211,7 @@ export default function BranchesPage() {
           <div className="panel-heading">
             <div>
               <h2>{form.id ? `Edit ${form.name}` : "Create new branch"}</h2>
-              <p>Official codes are permanent once saved. Every modification requires an audit reason.</p>
+              <p>Official codes are permanent once saved. You may add an optional audit note.</p>
             </div>
             {form.id && (
               <button type="button" onClick={() => setForm(blankBranch(regions[0]?.id ?? ""))}>
@@ -310,12 +310,10 @@ export default function BranchesPage() {
             </label>
 
             <label className="wide-field">
-              <span>Reason for creation or change (min 10 characters)</span>
+              <span>Audit note (optional)</span>
               <textarea
-                required
-                minLength={10}
                 rows={2}
-                placeholder="Provide a clear administrative reason for creating or updating this branch..."
+                placeholder="Optionally note why this branch was created or updated..."
                 value={form.reason}
                 onChange={e => setForm(v => ({ ...v, reason: e.target.value }))}
               />

@@ -155,8 +155,6 @@ public sealed class LocalPricesController(
     [HttpPatch("{id:guid}/review")]
     public async Task<IActionResult> Review(Guid id, [FromBody] ReviewLocalObservationRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Justification) || request.Justification.Trim().Length < 10)
-            return BadRequest(new { message = "A review justification of at least 10 characters is required." });
         if (!Enum.TryParse<ManualReviewStatus>(request.Decision, true, out var decision) || decision == ManualReviewStatus.Unreviewed)
             return BadRequest(new { message = "Decision must be Approved, Rejected, or ConfirmedOutlier." });
         var item = await db.LocalMarketObservations.SingleOrDefaultAsync(observation => observation.Id == id, ct);
@@ -174,7 +172,7 @@ public sealed class LocalPricesController(
         item.IsPotentialOutlier = decision == ManualReviewStatus.ConfirmedOutlier || item.IsPotentialOutlier;
         item.ReviewedBy = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";
         item.ReviewedAt = DateTimeOffset.UtcNow;
-        item.ReviewJustification = request.Justification.Trim();
+        item.ReviewJustification = request.Justification?.Trim() ?? "";
         item.UpdatedAt = DateTimeOffset.UtcNow;
         db.AuditLogs.Add(new AuditLog
         {
@@ -194,7 +192,7 @@ public sealed class LocalPricesController(
         var fetched = await localMarket.SearchAsync(query, ParseSources(request.Sources), ct);
         await PersistRawSnapshotsAsync(hsCode.Id, query, fetched, ct);
         var target = new TargetProductProfile(
-            hsCode.Code, query, request.Category, request.ProductType, request.Brand, null,
+            hsCode.Code!, query, request.Category, request.ProductType, request.Brand, null,
             request.Model, request.Variant, null, null, null, null,
             ParseEnum(request.Condition, ProductCondition.New), 1, "piece",
             ParseEnum(request.PriceType, MarketPriceType.Retail));
@@ -222,7 +220,7 @@ public sealed class LocalPricesController(
             item.ListingDate, item.ThumbnailUrl, item.RawCategory, ParseCondition(item.Condition), MarketPriceType.Retail)).ToArray();
         var analysis = LocalMarketClassificationEngine.Analyze(target, listings, options);
         analysis = await PersistObservationsAsync(hsCode.Id, analysis, ct);
-        return new LocalMarketAnalysisResponse(hsCode.Id, hsCode.Code, hsCode.DescriptionEn, fetched.Sources, analysis);
+        return new LocalMarketAnalysisResponse(hsCode.Id, hsCode.Code!, hsCode.DescriptionEn, fetched.Sources, analysis);
     }
 
     private async Task PersistRawSnapshotsAsync(Guid hsCodeId, string query, LocalMarketSearchDto fetched, CancellationToken ct)
@@ -403,6 +401,6 @@ public sealed record SyncLocalPricesRequest(
     string? Brand = null, string? Model = null, string? Variant = null, string? Condition = null,
     string? PriceType = null, int? RelevanceThreshold = null, string? OutlierMethod = null,
     bool? IncludeOutliers = null, int? MaximumAgeDays = null);
-public sealed record ReviewLocalObservationRequest(string Decision, string Justification);
+public sealed record ReviewLocalObservationRequest(string Decision, string? Justification);
 public sealed record LocalMarketAnalysisResponse(Guid HsCodeId, string HsCode, string HsDescription, LocalMarketSourceStatusDto[] Sources, LocalMarketAnalysis Analysis);
 public sealed record LocalPriceSyncDto(LocalMarketAnalysisResponse Result, int SavedCount, int UpdatedCount, int SkippedCount);
