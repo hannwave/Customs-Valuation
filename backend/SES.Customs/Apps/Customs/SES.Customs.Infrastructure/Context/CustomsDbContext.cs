@@ -29,7 +29,13 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
         });
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CustomsDbContext).Assembly);
         modelBuilder.Entity<CustomsLocation>(e => {
-            e.ToTable("customs_locations"); e.HasKey(x => x.Id);
+            e.ToTable("customs_locations", t =>
+            {
+                t.HasCheckConstraint("CK_customs_locations_location_type", "\"LocationType\" IN ('REGION', 'BRANCH')");
+                t.HasCheckConstraint("CK_customs_locations_coordinates_complete", "(\"Latitude\" IS NULL AND \"Longitude\" IS NULL) OR (\"Latitude\" IS NOT NULL AND \"Longitude\" IS NOT NULL)");
+                t.HasCheckConstraint("CK_customs_locations_coordinates_ethiopia", "\"Latitude\" IS NULL OR (\"Latitude\" >= 3.35 AND \"Latitude\" <= 14.95 AND \"Longitude\" >= 33.00 AND \"Longitude\" <= 48.05)");
+            });
+            e.HasKey(x => x.Id);
             e.HasIndex(x => x.OfficialCode).IsUnique(); e.Property(x => x.OfficialCode).HasMaxLength(40);
             e.HasIndex(x => x.ParentLocationId); e.Property(x => x.Version).IsConcurrencyToken();
             e.HasOne<CustomsLocation>().WithMany().HasForeignKey(x => x.ParentLocationId).OnDelete(DeleteBehavior.Restrict);
@@ -55,6 +61,6 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
         modelBuilder.Entity<HsCode>(entity => { entity.Property(x => x.Code).HasMaxLength(6); entity.Property(x => x.SectionNumber).HasMaxLength(20); entity.Property(x => x.SectionName).HasMaxLength(300); entity.Property(x => x.ChapterName).HasMaxLength(300); entity.Property(x => x.HeadingNumber).HasMaxLength(20); entity.Property(x => x.HsUpdateStatus).HasMaxLength(50); entity.Property(x => x.HsUpdateCandidatesJson).HasColumnType("jsonb"); });
         modelBuilder.Entity<NationalTariffLine>(entity => { entity.Property(x => x.TariffItemNo).HasMaxLength(30); });
         modelBuilder.Entity<HsCodeUpdateMapping>(entity => { entity.ToTable("hs_code_update_mappings"); entity.HasKey(x => x.Id); entity.HasIndex(x => new { x.RevisionId, x.SourceHsCode }); entity.HasIndex(x => new { x.RevisionId, x.TargetHsCode }); entity.Property(x => x.SourceHsCode).HasMaxLength(20); entity.Property(x => x.TargetHsCode).HasMaxLength(20); entity.Property(x => x.Status).HasMaxLength(50); entity.Property(x => x.Note).HasColumnType("text"); entity.Property(x => x.SourceReference).HasColumnType("text"); });
-        modelBuilder.Entity<RegistrationRequestEntity>(entity => { entity.HasKey(x => x.Id); entity.HasIndex(x => new { x.Status, x.SubmittedAt }); entity.Property(x => x.Status).HasMaxLength(30).IsRequired(); entity.Property(x => x.Email).HasMaxLength(240).IsRequired(); });
+        modelBuilder.Entity<RegistrationRequestEntity>(entity => { entity.HasKey(x => x.Id); entity.HasIndex(x => new { x.Status, x.SubmittedAt }); entity.HasIndex(x => x.Username); entity.Property(x => x.Status).HasMaxLength(30).IsRequired(); entity.Property(x => x.Email).HasMaxLength(240).IsRequired(); entity.Property(x => x.Username).HasMaxLength(120).IsRequired(); });
     }
 }

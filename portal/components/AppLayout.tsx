@@ -7,12 +7,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
   FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
-  FiShield, FiShoppingBag, FiUsers, FiX,
+  FiShield, FiShoppingBag, FiUser, FiUsers, FiX,
 } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import { roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
+import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession } from "@/lib/valuation-session";
 
 type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid };
@@ -23,18 +23,28 @@ const evidenceLinks: NavLink[] = [
     { href: "/historical-customs-prices", key: "historical", label: "Customs history", icon: FiArchive },
     { href: "/outlier-analysis", key: "outliers", label: "Price analysis", icon: FiBarChart2 },
 ];
+const accountGroup: NavGroup = { label: "ACCOUNT", links: [{ href: "/profile", key: "profile", label: "My profile", icon: FiUser }] };
 const officerOnlyPaths = evidenceLinks.map(link => link.href);
 const officerSessionPaths = [...officerOnlyPaths, "/analytics"];
 function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[] {
   if (role === "SystemAdministrator") return [
-    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers }, { href: "/administration/locations", key: "locations", label: "Organization and locations", icon: FiMapPin }] },
+    { label: "SYSTEM ADMINISTRATION", links: [{ href: "/", key: "dashboard", label: "System overview", icon: FiGrid },
+      { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
+    ] },
+    { label: "LOCATION MANAGEMENT", links: [
+      { href: "/administration/organization", key: "organization", label: "Organization", icon: FiMapPin },
+      { href: "/administration/regions", key: "regions", label: "Regions", icon: FiMapPin },
+      { href: "/administration/branches", key: "branches", label: "Branches", icon: FiMapPin }
+    ] },
     { label: "MASTER DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS codes and revisions", icon: FiBookOpen }] },
     { label: "CONTROL & SECURITY", links: [{ href: "/integrations", key: "integrations", label: "Data sources and integrations", icon: FiSettings }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }, { href: "/audit", key: "audit", label: "Global audit logs", icon: FiActivity }] },
+    accountGroup,
   ];
   if (role === "CustomsAdministrator") return [
     { label: "BRANCH MANAGEMENT", links: [{ href: "/", key: "dashboard", label: "Operational overview", icon: FiGrid }, { href: "/administration", key: "administration", label: "Employees and assignments", icon: FiUsers }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
     { label: "REFERENCE DATA", links: [{ href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
-    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Scoped reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+    { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Operational analytics", icon: FiBarChart2 }, { href: "/reports", key: "reports", label: "Operational reports", icon: FiFileText }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
+    accountGroup,
   ];
   const sessionGroups = hasValuationSession ? [
     { label: "PRICE ANALYSIS", links: evidenceLinks },
@@ -43,6 +53,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
   return [
     { label: "OPERATIONS", links: [{ href: "/", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }, { href: "/valuation-decisions", key: "decisions", label: "Valuation records", icon: FiCheckSquare }] },
     ...sessionGroups,
+    accountGroup,
   ];
 }
 
@@ -55,7 +66,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [profileError, setProfileError] = useState("");
   const [authorized, setAuthorized] = useState(false);
   const [hasValuationSession, setHasValuationSession] = useState(false);
-  const isAuthPage = pathname === "/login" || pathname === "/signup";
+  const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
@@ -68,9 +79,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setAuthorized(true);
     setProfileError("");
     void workspaceApi<WorkspaceProfile>("/me")
-      .then(setProfile)
+      .then(current => {
+        const role = normalizeWorkspaceRole(current.user.role);
+        setProfile(role ? { ...current, user: { ...current.user, role } } : current);
+      })
       .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
   }, [pathname, isAuthPage]);
+  useEffect(() => {
+    if (isAuthPage || !authorized) return;
+    const refreshProfile = () => {
+      void workspaceApi<WorkspaceProfile>("/me")
+        .then(current => {
+          const role = normalizeWorkspaceRole(current.user.role);
+          setProfile(role ? { ...current, user: { ...current.user, role } } : current);
+        })
+        .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
+    };
+    window.addEventListener("profile-updated", refreshProfile);
+    return () => window.removeEventListener("profile-updated", refreshProfile);
+  }, [authorized, isAuthPage]);
 
   useEffect(() => {
     const syncSession = () => setHasValuationSession(Boolean(readValuationSession()));
@@ -86,7 +113,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (profile && profile.user.role !== "CustomsOfficer" && officerSessionPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
+    if (normalizeWorkspaceRole(profile?.user.role) === "CustomsAdministrator" && pathname === "/") {
+      window.location.replace("/administration");
+      return;
+    }
+    if (profile && profile.user.role !== "CustomsOfficer" && officerOnlyPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {
       window.location.replace("/");
     }
   }, [pathname, profile]);
@@ -99,8 +130,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [pathname, profile]);
 
   const visibleGroups = useMemo(() => profile ? navForRole(profile.user.role, hasValuationSession) : [], [profile, hasValuationSession]);
-  const current = visibleGroups.flatMap(group => group.links).find(link =>
-    link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`));
+  const current = visibleGroups.flatMap(group => group.links)
+    .filter(link => link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const primaryLocation = profile?.locations.find(location => location.id === profile.user.primaryLocationId);
 
   if (isAuthPage) return <>{children}</>;

@@ -91,7 +91,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db) : ControllerB
         else { db.ValuationPhase2TaxLines.RemoveRange(oldTaxLines); db.Entry(phase2).State = EntityState.Modified; db.ValuationPhase2TaxLines.AddRange(phase2.TaxLines); }
         db.AuditLogs.Add(new AuditLog
         {
-            Id = Guid.NewGuid(), UserId = CurrentSubject(), Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow,
+            Id = Guid.NewGuid(), UserId = CurrentSubject(), SubjectUserId = Guid.TryParse(CurrentSubject(), out var officerId) ? officerId : null, Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow,
             Action = status == "Completed" ? "ETHIOPIAN_IMPORT_TAX_ASSESSMENT_COMPLETED" : "ETHIOPIAN_IMPORT_TAX_ASSESSMENT_SAVED",
             Module = "EthiopianImportTaxAssessment", RecordId = phase2.Id, PreviousValueJson = previous,
             NewValueJson = JsonSerializer.Serialize(new { phase2.Status, phase2.CustomsValueAmount, phase2.TotalTax, phase2.FinalAmount, phase2.TaxLines, phase2.ExemptionCodes, phase2.OriginCountry }),

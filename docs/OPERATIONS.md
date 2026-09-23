@@ -22,6 +22,8 @@ dotnet ef migrations add DescriptiveMigrationName `
 
 Apply reviewed migrations with `dotnet ef database update` using the same project, startup-project and context arguments. Never rewrite an already-applied shared migration; add a corrective migration instead.
 
+The regional employee/audit change is in `AddRegionalEmployeeAudit`. Before starting the updated API against a persistent database, set `ConnectionStrings__Customs` for that database and apply this migration. The design-time factory otherwise uses an inert localhost connection. Existing employees are backfilled with a conservative join boundary based on their latest active assignment; verify legacy transfers with the responsible System Administrator.
+
 ## HS-code import
 
 The System Administrator import endpoint accepts the Ethiopian tariff JSON file as multipart form data:
@@ -48,7 +50,7 @@ Development seed accounts are created only when the authentication table is empt
 ## Roles, locations and valuation workflow
 
 - **System Administrator:** global location registry, Customs Administrator and Officer accounts, HS/source/integration administration, global audit, and global valuation oversight.
-- **Customs Administrator:** Officers, assignments, activity, valuation reviews and audit records only inside explicitly assigned locations. Child offices are included only when the administrator's scope says so.
+- **Customs Administrator:** Officers, assignments, and employee activity in one region. Officer activity from before the most recent join to that region is not available to that administrator. Child offices are included only when the administrator's scope says so.
 - **Customs Officer:** HS and price evidence, personal valuation drafts/submissions, and their own audit activity. Officers cannot open administrative APIs.
 
 Bootstrap sequence:
@@ -59,6 +61,8 @@ Bootstrap sequence:
 4. Officers save drafts at `/valuation-decisions` and submit them.
 5. The scoped Customs Administrator records an approval or return with mandatory justification.
 6. Verify all changes at `/audit`; the API filters global, scoped, or own events according to role.
+
+The employee table at `/administration` supports search, profile edits, status and office changes, adding officers, and archiving (never hard deletion). Every change requires a reason. Select an officer's Activity action to filter their audit events, switch between table and timeline, or export CSV. The API endpoints are `GET /api/workspace/employees/{id}/audit`, `GET /api/workspace/employees/{id}/audit/export`, and `POST /api/workspace/employees/{id}/archive`. Region transfers reset the administrator-visible activity start time while preserving older records for system-level audit.
 
 Authorization is applied by the API. Hiding navigation links is only a usability feature and is not the security boundary.
 
@@ -91,6 +95,22 @@ dotnet test backend/SES.Customs/Tests/SES.Customs.Tests/SES.Customs.Tests.csproj
 Without these three variables, the integration test exits without making an external request.
 
 ## Common failures
+
+### Customs Administrator sees "Administration is unavailable" / "Your role cannot perform this operation"
+
+That message is an API 403. The administration page has loaded, but the API serving `GET /api/workspace/employees` denied the token. `localhost:5080` refers to **each developer's own computer**: pulling the repository updates source files, not the API process already listening on that port or the portal's existing `.next` build.
+
+On the affected computer, from the repository root:
+
+```powershell
+git rev-parse --short HEAD
+Get-Content portal/.env.local | Select-String '^NEXT_PUBLIC_API_BASE_URL='
+./scripts/check-admin-api.ps1
+```
+
+Compare the Git commit with the working developer's commit. The API check must print `PASS`. If it reports an older build, stop the API in its terminal with Ctrl+C, then rebuild and restart it using the API commands in [SETUP.md](SETUP.md#6-run-the-application). If the API terminal is unknown, first identify the process with `Get-NetTCPConnection -LocalPort 5080 -State Listen` and verify its path with `Get-CimInstance Win32_Process -Filter "ProcessId=<PID>"` before stopping that process. For a portal running with `npm run start`, run `npm run build` and restart it too; `npm run dev` rebuilds portal source automatically. Restart the portal after any `.env.local` change.
+
+Sign out and sign in again after restarting. A role change invalidates the old token. If the check passes but access still fails, use the browser Network tab to compare `GET /api/workspace/me` (the user's role) and `GET /api/workspace/employees` (status 200 expected for a Customs Administrator). Verify that both requests use the same API origin configured in `.env.local`. A Customs Administrator with no assigned region can load the page but will see an empty employee table.
 
 ### API unavailable
 

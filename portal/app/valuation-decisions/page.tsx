@@ -62,7 +62,7 @@ export default function ValuationDecisionsPage() {
     finally { setBusy(""); }
   }
 
-  if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying role and location scope to the decision register." />;
+  if (loading) return <DataState kind="loading" title="Loading valuation decisions" description="Applying your role and assigned location to the decision register." />;
   if (!profile) return <DataState kind="error" title="Decisions are unavailable" description={error} onRetry={() => void load()} />;
   const isOfficer = profile.user.role === "CustomsOfficer";
   const operationalLocations = profile.locations.filter(location => location.status === "ACTIVE" && (location.supportsValuation || location.supportsInspection));

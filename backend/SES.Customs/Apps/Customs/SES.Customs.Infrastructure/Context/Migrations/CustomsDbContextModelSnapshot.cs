@@ -28,6 +28,18 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("LocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1236,7 +1248,12 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.HasIndex("ParentLocationId");
 
-                    b.ToTable("customs_locations", (string)null);
+                    b.ToTable("customs_locations", (string)null, t =>
+                        {
+                            t.HasCheckConstraint("CK_customs_locations_coordinates_complete", "(\"Latitude\" IS NULL AND \"Longitude\" IS NULL) OR (\"Latitude\" IS NOT NULL AND \"Longitude\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_customs_locations_coordinates_ethiopia", "\"Latitude\" IS NULL OR (\"Latitude\" >= 3.35 AND \"Latitude\" <= 14.95 AND \"Longitude\" >= 33.00 AND \"Longitude\" <= 48.05)");
+                            t.HasCheckConstraint("CK_customs_locations_location_type", "\"LocationType\" IN ('REGION', 'BRANCH')");
+                        });
                 });
 
             modelBuilder.Entity("SES.Customs.Infrastructure.Context.CustomsLocationHistory", b =>
@@ -1316,49 +1333,18 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<DateTimeOffset>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Username");
 
                     b.HasIndex("Status", "SubmittedAt");
 
                     b.ToTable("RegistrationRequests");
-                });
-
-            modelBuilder.Entity("SES.Customs.Infrastructure.Context.UserLocationScope", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("CustomsLocationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("EffectiveFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("EffectiveTo")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IncludeChildLocations")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Responsibilities")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomsLocationId");
-
-                    b.HasIndex("UserId", "EffectiveTo");
-
-                    b.ToTable("customs_user_location_scopes", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.HistoricalCustomsPrice", b =>

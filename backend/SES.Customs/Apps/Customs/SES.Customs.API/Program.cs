@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
 using System.Text;
 using SES.Customs.API.Security;
 using SES.Customs.API.Integrations.SerpApi;
@@ -10,6 +11,7 @@ using SES.Customs.API.Integrations.LocalMarket;
 using SES.Customs.API.Integrations.PriceWatcha;
 using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.Core.Features.HsCodes.Contract.Query;
+using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Dependency;
 using SES.Customs.Infrastructure.Context;
 
@@ -81,6 +83,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = System.Security.Claims.ClaimTypes.Name, RoleClaimType = System.Security.Claims.ClaimTypes.Role
     };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var rawId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? context.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(rawId, out var id)) { context.Fail("Invalid account."); return; }
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<SES.Customs.Infrastructure.Context.CustomsDbContext>();
+            var account = await accounts.AuthAccounts.AsNoTracking().Where(u => u.Id == id)
+                .Select(u => new { u.Active, u.Status, u.ArchivedAt, u.Role }).SingleOrDefaultAsync();
+            if (account is null || !account.Active || account.Status != "ACTIVE" || account.ArchivedAt != null)
+            {
+                context.Fail("Account is inactive.");
+                return;
+            }
+            var tokenRole = AccessRules.NormalizeRole(context.Principal?.FindFirstValue(ClaimTypes.Role));
+            if (tokenRole is null || tokenRole != AccessRules.NormalizeRole(account.Role))
+                context.Fail("Account role changed. Sign in again.");
+        }
+    };
 });
 builder.Services.AddAuthorization(options =>
 {
@@ -106,6 +128,6 @@ app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/health/live", () => Results.Ok(new { status = "ok", mode = demo ? "demo" : "development-database" })).AllowAnonymous();
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok", mode = demo ? "demo" : "development-database", capabilities = new { regionalEmployeeManagement = true } })).AllowAnonymous();
 app.MapControllers();
 app.Run();
