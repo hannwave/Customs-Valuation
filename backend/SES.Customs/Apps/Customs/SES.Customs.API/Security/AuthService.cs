@@ -8,7 +8,7 @@ namespace SES.Customs.API.Security;
 public sealed record AuthUser(Guid Id, string Username, string Email, string FullName, string Role, bool Active, string Status, Guid? PrimaryLocationId, string PasswordHash);
 public sealed record RegistrationRequest(Guid Id, string FullName, string StaffId, string Email, string? Phone, string Department, string Role, Guid? LocationId, string Status, DateTimeOffset SubmittedAt);
 
-public sealed class AuthService(CustomsDbContext db)
+public sealed class AuthService(CustomsDbContext db, IConfiguration configuration)
 {
     private const string DemoOfficerUsername = "officer";
     private const string DemoOfficerEmail = "officer@customs.gov.et";
@@ -19,6 +19,8 @@ public sealed class AuthService(CustomsDbContext db)
 
     public async Task EnsureSeededAsync(CancellationToken ct = default)
     {
+        if (!configuration.GetValue<bool>("Skeleton:UseDemoData")) return;
+
         var location = await db.CustomsLocations.FirstOrDefaultAsync(l => l.Status == "ACTIVE" && (l.SupportsValuation || l.SupportsInspection), ct);
         if (location is null)
         {
