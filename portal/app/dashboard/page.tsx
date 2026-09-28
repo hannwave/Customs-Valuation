@@ -13,7 +13,7 @@ import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
 import { getPhase2HsCode, searchPhase2HsCodes } from "@/lib/phase2Api";
 import { displayHsCode, recommendedHsCode } from "@/lib/hs-recommendation";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import type { CustomsTradeBenchmark, HsCode, InternationalPriceSearch, PriceStatistics } from "@/lib/types/customs";
+import type { HsCode, InternationalPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession, updateValuationSession, writeValuationSession, addRecentSearch, readRecentSearches, removeRecentSearch, type HistoricalSessionEvidence } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
@@ -51,8 +51,7 @@ function DashboardHeader({ profile, eyebrow, title, description, actions }: { pr
   return <div className="dashboard-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lead">{description}</p></div><div className="dashboard-heading-side"><span className="workspace-tag"><FiShield />{roleLabel(profile.user.role)}</span>{actions}</div></div>;
 }
 
-type EvidenceSource = "internationalMedian" | "internationalMean" | "customsBenchmark" | "declaredPrice" | "custom";
-type ConvertedPrice = { convertedAmount: number; to: string; rate: number; source: string; date?: string };
+type EvidenceSource = "internationalMedian" | "internationalMean" | "declaredPrice" | "custom";
 
 function money(value: number | null | undefined, currency: string) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -98,10 +97,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
-  const [customsBenchmark, setCustomsBenchmark] = useState<CustomsTradeBenchmark | null>(null);
-  const [benchmarkBusy, setBenchmarkBusy] = useState(false);
-  const [benchmarkError, setBenchmarkError] = useState("");
-  const [benchmarkConversion, setBenchmarkConversion] = useState<ConvertedPrice | null>(null);
   const [searchedTerm, setSearchedTerm] = useState("");
   const searchSerial = useRef(0);
   const hsLookupSerial = useRef(0);
@@ -139,8 +134,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     const active = readValuationSession();
     if (!active) return;
     setQuery(active.query); setMarket(active.market); setInternational(active.international); setHistorical(active.historical ?? null);
-    setCustomsBenchmark(active.customsBenchmark ?? null);
-    if (active.international || active.historical || active.customsBenchmark) setSearchedTerm(active.query);
+    if (active.international || active.historical) setSearchedTerm(active.query);
     if (active.hsCode) setHsInput(active.hsCode);
     if (active.hsCodeId) {
       void getPhase2HsCode(active.hsCodeId).then(setHsCode).catch(() => {});
@@ -149,7 +143,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       setDeclaredPrice(active.customerTransaction.amount?.toString() ?? "");
       setDeclaredCurrency(active.customerTransaction.currency || "USD");
     }
-    if (["internationalMedian", "internationalMean", "customsBenchmark", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
+    if (["internationalMedian", "internationalMean", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
       setSelected(active.selectedSource as EvidenceSource);
   }, []);
 
@@ -184,9 +178,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setHsCode(null);
     setHsCandidates([]);
     setHsMessage("");
-    setCustomsBenchmark(null);
-    setBenchmarkConversion(null);
-    if (selected === "customsBenchmark") setSelected("internationalMedian");
     updateValuationSession({ hsCodeId: null, hsCode: "" });
     const serial = ++hsLookupSerial.current;
     if (value.trim().length < 2) { setHsBusy(false); return; }
@@ -198,8 +189,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setHsInput(displayHsCode(item));
     setHsCandidates([]);
     setHsMessage("");
-    setCustomsBenchmark(null);
-    setBenchmarkConversion(null);
     ++hsLookupSerial.current;
     setHsBusy(false);
     updateValuationSession({ hsCodeId: item.id, hsCode: displayHsCode(item) });
@@ -214,7 +203,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     const serial = ++searchSerial.current;
     const hsSerial = ++hsLookupSerial.current;
     setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setHistorical(null);
-    setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setSearchedTerm(term);
+    setSearchedTerm(term);
     setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage("");
     setSelected("internationalMedian"); setCustomValue(""); setJustification("");
     // Start a fresh client-side session for this search. Later asynchronous
@@ -225,7 +214,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       query: term,
       market,
       international: null,
-      customsBenchmark: null,
       historical: null,
       hsCodeId: null,
       hsCode: "",
@@ -281,49 +269,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const canSearch = query.trim().length >= 2 && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
   const historicalInternationalValue = historical?.summary?.currentInternationalPrice ?? null;
-  const benchmarkPreferredValue = customsBenchmark?.unit === "u" && benchmarkConversion?.to === currency ? benchmarkConversion.convertedAmount : null;
   const selectedValue = selected === "internationalMedian" ? international?.statistics?.median
     : selected === "internationalMean" ? international?.statistics?.mean
-      : selected === "customsBenchmark" ? benchmarkPreferredValue
       : selected === "declaredPrice" ? declaredConversion?.convertedAmount
         : Number(customValue);
   const selectedCurrency = currency;
-  const hasResults = Boolean(searchedTerm || international || historical || customsBenchmark);
-
-  useEffect(() => {
-    let cancelled = false;
-    setBenchmarkConversion(null);
-    const token = getSessionAccessToken();
-    if (!token || !customsBenchmark?.unitValue || customsBenchmark.unit !== "u") return;
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-    void (async () => {
-      const params = new URLSearchParams({ amount: String(customsBenchmark.unitValue), from: "USD", to: currency });
-      const response = await fetch(`${base}/api/exchange-rates/convert?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) return;
-      const result = await response.json() as ConvertedPrice;
-      if (!cancelled) setBenchmarkConversion(result);
-    })().catch(() => { if (!cancelled) setBenchmarkConversion(null); });
-    return () => { cancelled = true; };
-  }, [customsBenchmark, currency]);
-
-  useEffect(() => {
-    if (!searchedTerm || !hsCode?.code) { setBenchmarkBusy(false); return; }
-    let cancelled = false;
-    const token = getSessionAccessToken();
-    if (!token) return;
-    setBenchmarkBusy(true); setBenchmarkError(""); setCustomsBenchmark(null);
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-    void fetch(`${base}/api/customs-trade-benchmark/search?${new URLSearchParams({ hsCode: hsCode.code })}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async response => {
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.detail ?? body.title ?? "Customs trade benchmark could not be loaded.");
-        return body as CustomsTradeBenchmark;
-      })
-      .then(result => { if (!cancelled) { setCustomsBenchmark(result); updateValuationSession({ customsBenchmark: result }); } })
-      .catch(reason => { if (!cancelled) setBenchmarkError(reason instanceof Error ? reason.message : "Customs trade benchmark could not be loaded."); })
-      .finally(() => { if (!cancelled) setBenchmarkBusy(false); });
-    return () => { cancelled = true; };
-  }, [hsCode, searchedTerm]);
+  const hasResults = Boolean(searchedTerm || international || historical);
 
   useEffect(() => {
     const amount = Number(declaredPrice);
@@ -386,19 +337,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
          product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
          selectedCurrency, supportingSource: selected, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
-         customsTradeBenchmark: customsBenchmark,
          statistics: { international: international?.statistics ?? null },
          priceBasis: {
            preferredCurrency: currency,
            internationalMedian: international?.statistics?.median ?? null,
            internationalCurrency: currency,
-           customsTradeBenchmark: customsBenchmark ? {
-             ...customsBenchmark,
-             convertedUnitValue: benchmarkPreferredValue,
-             convertedCurrency: currency,
-             exchangeRate: benchmarkConversion?.rate ?? null,
-             exchangeRateSource: benchmarkConversion?.source ?? null,
-           } : null,
            historical: historical ? { summary: historical.summary ?? null, rows: historical.rows, currency: historical.currency, asOf: historical.asOf ?? null } : null,
            customerDeclared: {
              originalAmount: Number(declaredPrice), originalCurrency: declaredCurrency,
@@ -430,7 +373,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
@@ -445,7 +388,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
           <label className="valuation-field-label" htmlFor="valuation-product-query">Product to search</label>
           <div className="valuation-search-input-wrap">
             <FiSearch aria-hidden="true" />
-          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
+          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
           </div>
         </div>
         <div className="valuation-market-select">
@@ -516,18 +459,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
                 <a className={`customer-price-receipt-icon${receiptPreviewUrl ? "" : " is-unavailable"}`} href={receiptPreviewUrl ?? undefined} target="_blank" rel="noreferrer" aria-label={receiptPreviewUrl ? "View customer receipt" : "Receipt unavailable in this session"} title={receiptFile?.name ?? "Receipt unavailable in this session"} aria-disabled={!receiptPreviewUrl} tabIndex={receiptPreviewUrl ? 0 : -1} onClick={event => { if (!receiptPreviewUrl) event.preventDefault(); }}><FiFileText aria-hidden="true" /></a>
               </div>
             </section>
-            <section className="valuation-stat-card manufacturer-price-card" aria-label="Customs trade benchmark">
-              <div className="valuation-card-title"><span><FiArchive /></span><strong>Customs trade benchmark</strong><em>{customsBenchmark?.period ?? "HS category"}</em></div>
-              {benchmarkBusy ? <p role="status" className="manufacturer-price-note">Checking Ethiopia import statistics…</p>
-                : benchmarkError ? <p role="alert" className="manufacturer-price-error">{benchmarkError}</p>
-                : customsBenchmark?.unitValue != null ? <>
-                  <span className="valuation-label">Ethiopia imports · HS {customsBenchmark.hsCode} · {customsBenchmark.period}</span>
-                  <b>{money(customsBenchmark.unitValue, "USD")} / {customsBenchmark.unit}</b>
-                  <p className="manufacturer-price-note">{customsBenchmark.unit === "u" ? benchmarkPreferredValue == null ? "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Reported per ${customsBenchmark.unit}; not directly comparable to an item price.`}</p>
-                  <p className="manufacturer-price-note">{customsBenchmark.message}</p>
-                  {customsBenchmark.sourceUrl && <a className="manufacturer-source-link" href={customsBenchmark.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade source <FiArrowRight /></a>}
-                </> : <p className="manufacturer-price-note">{customsBenchmark?.message ?? (hsCode ? "Waiting for import statistics." : "Select an HS code to look up Ethiopia import statistics.")}</p>}
-            </section>
         </div>
         <div className="valuation-workspace-grid">
         <div className="valuation-evidence-area">
@@ -540,11 +471,10 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
           </section>
         </div>
         <aside className="valuation-decision-panel">
-          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose market evidence, an HS-category customs trade benchmark, or the customer’s converted invoice price. Your selection is passed to Final Assessment.</p></div></div>
+          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose international market evidence or the customer’s converted invoice price. Your selection is passed to Final Assessment.</p></div></div>
           <div className="reference-options">
             <label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.median == null} checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International market median</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.median, currency)}</b></label>
             <label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.mean == null} checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.mean, currency)}</b></label>
-            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {customsBenchmark.period} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} · category average</small></span><b>{money(benchmarkPreferredValue, currency)}</b></label>}
             <label className={selected === "declaredPrice" ? "is-selected" : ""}><input type="radio" disabled={declaredConversion?.to !== currency || Number(declaredPrice) <= 0} checked={selected === "declaredPrice"} onChange={() => setSelected("declaredPrice")} /><span><strong>Customer’s original price paid</strong><small>{declaredPrice ? `Invoice ${declaredCurrency} ${Number(declaredPrice).toLocaleString()} · ${receiptFile ? "receipt attached" : "receipt required"}` : "Enter the invoice amount and attach its receipt above"}</small></span><b>{declaredConversion?.to === currency ? money(declaredConversion.convertedAmount, currency) : "—"}</b></label>
             <label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount · {currency}</small></span></label>
             {selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={"Enter amount in " + currency} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}

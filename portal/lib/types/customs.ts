@@ -56,18 +56,6 @@ export interface ManufacturerPriceSearch {
   message: string;
   items: ManufacturerPriceOffer[];
 }
-export interface CustomsTradeBenchmark {
-  hsCode: string;
-  period: number | null;
-  reporter: string;
-  currency: "USD";
-  unit: string | null;
-  tradeValue: number | null;
-  quantity: number | null;
-  unitValue: number | null;
-  sourceUrl: string | null;
-  message: string;
-}
 export interface InternationalPriceSync extends InternationalPriceSearch {
   hsCodeId: string;
   hsCode: string;

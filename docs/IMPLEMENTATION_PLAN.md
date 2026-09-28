@@ -94,7 +94,7 @@ Exit: an officer completes the workflow from search to saved decision; later pri
 - Implement monthly, quarterly, annual and custom-period trends using explicit aggregation and observation weighting rules.
 - Add source-country breakdown for international evidence and expose saved international history separately.
 - Add configurable outlier rule versions, thresholds, minimum sample size and officer disposition; never automatically delete outliers.
-- Complete adapters only for approved and accessible WCO/national tariff, Comtrade, NBE and historical customs sources. ITC/WITS remain conditional on access and approval.
+- Complete adapters only for approved and accessible WCO/national tariff, NBE and historical customs sources. ITC/WITS remain conditional on access and approval.
 - Implement the report types: HS reference price, price by country, historical trend, mean/median/min/max, outlier, data source, NBE rate, HS revision, customs decision and audit.
 - Add PDF/Excel/CSV exports as required per report, retaining filters, generation time, source/rate details and requesting user. Confirm Amharic font embedding and prevent CSV formula injection.
 - Add asynchronous export jobs for large datasets, permission checks on job download and report retention controls.

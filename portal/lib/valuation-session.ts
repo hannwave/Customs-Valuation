@@ -1,4 +1,4 @@
-import type { CustomsTradeBenchmark, InternationalPriceSearch } from "@/lib/types/customs";
+import type { InternationalPriceSearch } from "@/lib/types/customs";
 
 export const ACTIVE_VALUATION_SESSION_KEY = "customs.active-valuation-session";
 
@@ -39,7 +39,6 @@ export interface ValuationSession {
   query: string;
   market: string;
   international: InternationalPriceSearch | null;
-  customsBenchmark?: CustomsTradeBenchmark | null;
   historical?: HistoricalSessionEvidence | null;
   customerTransaction?: CustomerTransactionEvidence | null;
   preferredCurrency?: string;

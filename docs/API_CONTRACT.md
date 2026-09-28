@@ -41,15 +41,12 @@ These are controller route declarations, not completed endpoints. Policies below
 | GET | `/api/manufacturer-prices/search?q={product}&market={market}&site={optionalDomainOrUrl}` | CustomsOfficer |
 | GET | `/api/historical-customs-prices` | CustomsOfficer |
 | GET | `/api/historical-customs-prices/{id}` | CustomsOfficer |
-| GET | `/api/customs-trade-benchmark/search?hsCode={six-or-more-digits}` | CustomsOfficer |
 
-The customs trade benchmark uses UN Comtrade's keyless annual preview for Ethiopia imports (reporter 231, world partner, six-digit HS code). It returns the newest of the last three years with positive `primaryValue` and `qty`, calculates USD per reported unit, and includes the source URL, period, unit, and an explanation. An absent quantity or match yields null `unitValue`; it never fabricates a product price. The result is an HS-category average, not an exact product or previously accepted customs valuation. The preview service is rate limited; responses are cached server-side.
 | GET | `/api/hs-codes/{id}/historical-customs-prices` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/statistics` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/trend` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/country-comparison` | CustomsOfficer |
 | POST | `/api/integrations/hs/sync` | SystemAdministrator |
-| POST | `/api/integrations/comtrade/sync` | SystemAdministrator |
 | POST | `/api/integrations/itc/sync` | SystemAdministrator |
 | POST | `/api/integrations/wits/sync` | SystemAdministrator |
 | POST | `/api/integrations/nbe/exchange-rates/sync` | SystemAdministrator |

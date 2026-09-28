@@ -56,12 +56,6 @@ builder.Services.AddHttpClient<ApifyManufacturerPriceClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(210);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
-builder.Services.AddHttpClient("UNComtrade", client =>
-{
-    client.BaseAddress = new Uri("https://comtradeapi.un.org/");
-    client.Timeout = TimeSpan.FromSeconds(20);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
-});
 builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));
 builder.Services.AddHttpClient<PriceWatchaClient>((services, client) => { var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PriceWatchaOptions>>().Value; client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/"); client.Timeout = TimeSpan.FromSeconds(45); if (!string.IsNullOrWhiteSpace(o.ApiKey)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", o.ApiKey); });
 builder.Services.AddMemoryCache();

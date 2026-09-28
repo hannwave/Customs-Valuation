@@ -22,8 +22,6 @@ public sealed class PlannedModulesController : ControllerBase
     public IActionResult Planned12() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/hs/sync"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned17() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
-    [HttpPost("integrations/comtrade/sync"), Authorize(Policy = "SystemAdministrator")]
-    public IActionResult Planned18() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/itc/sync"), Authorize(Policy = "SystemAdministrator")]
     public IActionResult Planned19() => Problem(statusCode: 501, title: "Module not implemented", detail: "This endpoint is reserved by the implementation skeleton.");
     [HttpPost("integrations/wits/sync"), Authorize(Policy = "SystemAdministrator")]
