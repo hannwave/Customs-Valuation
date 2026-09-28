@@ -83,6 +83,14 @@ export interface InternationalPriceSync extends InternationalPriceSearch {
   updatedCount: number;
   skippedCount: number;
 }
+export interface BenchmarkFetchCheck {
+  hsCode: string;
+  requestedUnit: "u" | "kg" | null;
+  checkedAt: string;
+  catalogue: { status: "present" | "missing" | "error"; revisionName: string | null; message: string };
+  trade: { status: "verified" | "no_data" | "unit_mismatch" | "invalid_result" | "api_error"; message: string; checks: string[]; httpStatus: number | null };
+  benchmark: CustomsTradeBenchmark | null;
+}
 export type Phase2Status = "InProgress" | "Completed" | "RequiresReview";
 export type Phase2CalculationType = "Percentage" | "Fixed" | "PerUnit";
 

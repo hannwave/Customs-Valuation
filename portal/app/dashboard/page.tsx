@@ -10,6 +10,7 @@ import {
 import { DataState } from "@/components/DataState";
 import { FeedbackToast } from "@/components/FeedbackToast";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
+import { BenchmarkFetchChecks } from "@/components/BenchmarkFetchChecks";
 import { getPhase2HsCode, searchPhase2HsCodes } from "@/lib/phase2Api";
 import { displayHsCode, recommendedHsCode } from "@/lib/hs-recommendation";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
@@ -287,7 +288,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const canSearch = query.trim().length >= 2 && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
   const historicalInternationalValue = historical?.summary?.currentInternationalPrice ?? null;
-  const benchmarkPreferredValue = customsBenchmark?.unit === "u"
+  const benchmarkCodeDigits = (hsCode?.code ?? "").replace(/\D/g, "");
+  const benchmarkHsCode = (benchmarkCodeDigits.length >= 6 ? benchmarkCodeDigits : (hsCode?.tariffItemNo ?? "").replace(/\D/g, "")).slice(0, 6);
+  const tariffUnit = hsCode?.unit?.trim().toLowerCase() ?? "";
+  // When tariff unit metadata is absent, keep the existing item-price workspace
+  // preference. Only actual reported item counts qualify; weights stay references.
+  const benchmarkPreferredUnit = ["kg", "kilogram", "kilograms"].includes(tariffUnit) ? "kg" : !tariffUnit || ["u", "unit", "units", "item", "items", "pcs", "piece", "pieces"].includes(tariffUnit) ? "u" : "";
+  const benchmarkIsPerItem = customsBenchmark?.unit === "u" && benchmarkPreferredUnit === "u";
+  const benchmarkPreferredValue = benchmarkIsPerItem && customsBenchmark
     ? currency === "USD" ? customsBenchmark.unitValue : benchmarkConversion?.to === currency ? benchmarkConversion.convertedAmount : null
     : null;
   const selectedValue = selected === "internationalMedian" ? international?.statistics?.median
@@ -323,7 +331,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   }, [customsBenchmark, currency, benchmarkConversionRetry]);
 
   useEffect(() => {
-    if (!searchedTerm || !hsCode?.code) { setBenchmarkBusy(false); setBenchmarkError(""); return; }
+    if (!searchedTerm || benchmarkHsCode.length < 6) {
+      setBenchmarkBusy(false);
+      setBenchmarkError(searchedTerm && hsCode ? "Choose a complete six-digit HS category or tariff line before loading a benchmark." : "");
+      return;
+    }
     let cancelled = false;
     const abort = new AbortController();
     const token = getSessionAccessToken();
@@ -331,7 +343,9 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setBenchmarkBusy(true); setBenchmarkError(""); setCustomsBenchmark(null);
     updateValuationSession({ customsBenchmark: null, selectedValue: null });
     const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-    void fetch(`${base}/api/customs-trade-benchmark/search?${new URLSearchParams({ hsCode: hsCode.code })}`, { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal })
+    const params = new URLSearchParams({ hsCode: benchmarkHsCode });
+    if (benchmarkPreferredUnit) params.set("unit", benchmarkPreferredUnit);
+    void fetch(`${base}/api/customs-trade-benchmark/search?${params}`, { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal })
       .then(async response => {
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.detail ?? body.message ?? body.title ?? (response.status === 401
@@ -346,7 +360,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       .catch(reason => { if (!cancelled) setBenchmarkError(reason instanceof TypeError ? "The customs API could not be reached. Check that it is running, then retry." : reason instanceof Error ? reason.message : "Customs trade benchmark could not be loaded."); })
       .finally(() => { if (!cancelled) setBenchmarkBusy(false); });
     return () => { cancelled = true; abort.abort(); };
-  }, [hsCode, searchedTerm, benchmarkRetry]);
+  }, [hsCode, benchmarkHsCode, benchmarkPreferredUnit, searchedTerm, benchmarkRetry]);
 
   useEffect(() => {
     const amount = Number(declaredPrice);
@@ -525,6 +539,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
 
     {hasResults && <div className="officer-search-links"><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><FiGlobe />Global market details</Link><Link href="/historical-customs-prices"><FiArchive />Customs history</Link><Link href="/outlier-analysis"><FiBarChart2 />Price analysis</Link></div>}
     <FeedbackToast error={error} success={recordNotice} onDismissError={() => setError("")} onDismissSuccess={() => setRecordNotice("")} />
+    <BenchmarkFetchChecks hsCode={benchmarkHsCode} preferredUnit={benchmarkPreferredUnit} />
     {hasResults && (
       <>
         <div className="valuation-stat-grid valuation-results-overview">
@@ -546,11 +561,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
                 : customsBenchmark?.unitValue != null ? <>
                   <span className="valuation-label">{customsBenchmark.sourceLabel ?? "Ethiopia imports"} · HS {customsBenchmark.hsCode} · {customsBenchmark.period}{customsBenchmark.valuationBasis ? ` · ${customsBenchmark.valuationBasis}` : ""}</span>
                   <b>{money(customsBenchmark.unitValue, "USD")} / {customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}</b>
-                  <p className="manufacturer-price-note">{customsBenchmark.unit === "u" ? benchmarkPreferredValue == null ? benchmarkConversionError || "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Reported per ${customsBenchmark.unit}; not directly comparable to an item price.`}</p>
+                  <p className="manufacturer-price-note">{benchmarkIsPerItem ? benchmarkPreferredValue == null ? benchmarkConversionError || "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Benchmark loaded per ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}. Reference only: the invoice quantity and tariff units must be comparable before this can be used as a valuation amount.`}</p>
                   {benchmarkConversionError && <button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkConversionRetry(value => value + 1)}>Retry conversion</button>}
                   <p className="manufacturer-price-note">{customsBenchmark.message}</p>
                   {customsBenchmark.sourceUrl && <a className="manufacturer-source-link" href={customsBenchmark.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade source <FiArrowRight /></a>}
-                </> : <><p className="manufacturer-price-note">{customsBenchmark?.message ?? (hsCode ? "Waiting for trade statistics." : "Select an HS code to look up Ethiopia trade statistics.")}</p>{customsBenchmark && <button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkRetry(value => value + 1)}>Retry benchmark</button>}</>}
+                </> : <><p className="manufacturer-price-note">{customsBenchmark?.message ?? (hsCandidates.length > 1 && !hsCode ? "Choose the correct HS tariff line above to fetch this benchmark; the product matches multiple categories." : hsCode ? "Waiting for trade statistics." : "Select an HS code to look up Ethiopia trade statistics.")}</p>{customsBenchmark && <button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkRetry(value => value + 1)}>Retry benchmark</button>}</>}
             </section>
         </div>
         <div className="valuation-workspace-grid">
@@ -568,7 +583,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
           <div className="reference-options">
             <label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.median == null} checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International market median</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.median, currency)}</b></label>
             <label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.mean == null} checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.mean, currency)}</b></label>
-            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {customsBenchmark.period} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} · {customsBenchmark.isMirror ? "export mirror" : "import"}{customsBenchmark.valuationBasis ? ` (${customsBenchmark.valuationBasis})` : ""} · category average</small></span><b>{money(benchmarkPreferredValue, currency)}</b></label>}
+            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} title={!benchmarkIsPerItem ? `Reference only: reported per ${customsBenchmark.unit}; invoice quantity and units must be comparable.` : undefined} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {customsBenchmark.period} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} {!benchmarkIsPerItem && "(reference only)"} · {customsBenchmark.isMirror ? "export mirror" : "import"}{customsBenchmark.valuationBasis ? ` (${customsBenchmark.valuationBasis})` : ""} · category average</small></span><b>{benchmarkIsPerItem ? money(benchmarkPreferredValue, currency) : `${money(customsBenchmark.unitValue, "USD")} / ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}`}</b></label>}
             <label className={selected === "declaredPrice" ? "is-selected" : ""}><input type="radio" disabled={declaredConversion?.to !== currency || Number(declaredPrice) <= 0} checked={selected === "declaredPrice"} onChange={() => setSelected("declaredPrice")} /><span><strong>Customer’s original price paid</strong><small>{declaredPrice ? `Invoice ${declaredCurrency} ${Number(declaredPrice).toLocaleString()} · ${receiptFile ? "receipt attached" : "receipt required"}` : "Enter the invoice amount and attach its receipt above"}</small></span><b>{declaredConversion?.to === currency ? money(declaredConversion.convertedAmount, currency) : "—"}</b></label>
             <label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount · {currency}</small></span></label>
             {selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={"Enter amount in " + currency} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}
