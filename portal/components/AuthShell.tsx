@@ -7,6 +7,7 @@ import { FiArrowLeft, FiArrowRight, FiCheck, FiEye, FiEyeOff, FiGlobe, FiLock, F
 import { setSessionAccessToken } from "@/lib/auth/session";
 import { normalizeWorkspaceRole } from "@/lib/workspace";
 import { Brand, CustomsLogo } from "@/components/Brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
 export function LanguageSelect() {
   const { t, i18n } = useTranslation();
   return <label className="language-select"><FiGlobe aria-hidden="true"/><span className="sr-only">{t("language")}</span><select value={i18n.resolvedLanguage ?? "en"} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label>;
@@ -19,7 +20,7 @@ export function AuthShell({ children, signup = false, compact = false }: { child
       <div className="auth-hero-copy"><span className="hero-kicker">{t("auth.trade", "FACILITATING TRADE. PROTECTING OUR FUTURE.")}</span><h2>{t("auth.heroFirst", "Secure borders.")}<br/><span>{t("auth.heroSecond", "Prosperous nation.")}</span></h2><p>{t("auth.heroBody", "Better evidence. Informed decisions. A shared workspace for the people moving Ethiopian trade forward.")}</p></div>
       <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
     </section>}
-    <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<LanguageSelect/></div>
+    <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<div style={{ display: "flex", alignItems: "center", gap: "16px" }}><ThemeToggle/><LanguageSelect/></div></div>
       {compact && <div className="compact-auth-header"><Brand compact variant="dark"/><span>Employee application</span></div>}
       <div className="auth-card"><div className="auth-card-brand"><CustomsLogo/></div>{children}</div>
       <footer className="auth-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield aria-hidden="true"/>{t("auth.authorized", "For authorized personnel")}</span></footer>
