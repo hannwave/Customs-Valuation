@@ -9,10 +9,10 @@ The EF model is a design starting point, not a production-approved schema. `data
 | hs_code_correlations | Grouped from/to edges, six change kinds, optional target for deletion; code FKs | Mapped; cardinality/date validation pending |
 | national_tariff_lines | Separate national code and bilingual description with date validity | Mapped |
 | reference_prices | International trade fields; quantity, original totals/unit price, countries, Incoterm, provenance | Mapped |
-| local_prices | Market/supplier, five categories, nullable tax/VAT/transport flags, verification date | Mapped |
+| local_prices | Legacy marketplace-price storage retained for existing data | Mapped for compatibility; inactive |
 | historical_customs_prices | Proposed authorized declaration evidence pool with method and authorization reference | Mapped proposal; owner confirmation required |
 | price_sources | Pool and approval reference; enabled only after review | Mapped; application enforcement pending |
-| local_markets | Bilingual market name and region | Mapped |
+| local_markets | Legacy marketplace reference rows | Mapped for compatibility; inactive |
 | exchange_rates | Original/converted currency, positive directional rate, date, source, retrieval time | Mapped; official rate immutability/versioning pending |
 | valuation_decisions | HS code, selected reference amount/currency, optional Phase 1 initial duty, decision, justification, actor and time | Mapped; Phase 1 handoff implemented |
 | valuation_phase2 | One-to-one Phase 2 extension, preserved Phase 1 duty snapshot, currency conversion, relief/adjustment values, totals and calculation-rule version | Mapped; Phase 2 implemented with provisional rules |
@@ -28,9 +28,9 @@ The EF model is a design starting point, not a production-approved schema. `data
 | integration_jobs, import_batches, import_errors | Idempotency, staging provenance, retries and quarantine | Proposed supporting tables |
 | outlier_reviews, outlier_rule_versions | Flags and officer disposition without deletion | Proposed supporting tables |
 
-## Three pools
+## Active and retained evidence schemas
 
-`PriceEvidence` shares CLR fields only. EF table-per-concrete-type mapping produces distinct `reference_prices`, `local_prices`, and `historical_customs_prices` tables. No public base-price repository or blended statistics endpoint is provided. Before writes, enforce source-pool correspondence, approved source state and record comparability. Draft model setters alone do not enforce these business rules.
+`PriceEvidence` shares CLR fields only. EF table-per-concrete-type mapping produces distinct `reference_prices`, `local_prices`, and `historical_customs_prices` tables. International and historical evidence are active. Local-market collection/search/review is retired; its tables and relationships remain mapped so existing records are not destroyed. No local-price API or UI reads or writes those tables.
 
 ## Money and provenance
 

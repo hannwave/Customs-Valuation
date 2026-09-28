@@ -10,7 +10,7 @@ import { readValuationSession, updateValuationSession, type ValuationSession } f
 
 type Candidate = { key: string; title: string; market: string; currency: string; price: number | null };
 type Search = { searchId: string; items: Candidate[]; messages: string[] };
-type Comparison = { product: string; currency: string; asOf: string; countries: string[]; rows: HistoricalRow[]; messages: string[]; methodology: string; summary: { currentInternationalPrice: number | null; internationalAsOf: string | null; currentLocalPrice: number | null; sixMonthChange: number | null; differencePercent: number | null } };
+type Comparison = { product: string; currency: string; asOf: string; countries: string[]; rows: HistoricalRow[]; messages: string[]; methodology: string; summary: { currentInternationalPrice: number | null; internationalAsOf: string | null; sixMonthChange: number | null } };
 const money = (n: number | null) => n === null ? "Unavailable" : `ETB ${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const percent = (n: number | null) => n === null ? "Unavailable" : `${n > 0 ? "+" : ""}${n.toFixed(2)}%`;
 
@@ -67,7 +67,7 @@ export default function HistoricalCustomsPricesPage() {
   const pages = Math.max(1, Math.ceil(tableRows.length / 30));
 
   return <Box className="data-page"><Container fluid p={0}><Stack gap="xl">
-    <Box className="data-page-heading"><Text className="eyebrow">PRICE REVIEW / CUSTOMS HISTORY</Text><Title order={1}>Customs history</Title><Text c="dimmed" mt="xs">Compare saved international and Ethiopian observations for the exact product, in ETB.</Text></Box>
+    <Box className="data-page-heading"><Text className="eyebrow">PRICE REVIEW / CUSTOMS HISTORY</Text><Title order={1}>Customs history</Title><Text c="dimmed" mt="xs">Review saved international price observations for the exact product, in ETB.</Text></Box>
     {activeSession && <Alert color="blue" title="Active valuation session">This history review belongs to <strong>{activeSession.query}</strong>. Confirm the exact model and variant below; the comparison reads saved database observations only.</Alert>}
     <Paper component="form" onSubmit={find} withBorder radius="lg" p="lg"><Stack gap="md">
       <SimpleGrid cols={{ base: 1, sm: 3 }}><TextInput required maxLength={60} disabled={!!busy} label="Brand" placeholder="Apple" value={brand} onChange={e => setBrand(e.currentTarget.value)} /><TextInput required minLength={2} maxLength={100} disabled={!!busy} label="Exact model" placeholder="iPhone 15 Pro" value={model} onChange={e => setModel(e.currentTarget.value)} /><TextInput required maxLength={40} disabled={!!busy} label="Storage / variant" description="Use ‘standard’ if no storage or size variant." placeholder="128GB" value={variant} onChange={e => setVariant(e.currentTarget.value)} /></SimpleGrid>
@@ -81,15 +81,13 @@ export default function HistoricalCustomsPricesPage() {
     </Stack></Paper>}
     {!search && !busy && !error && <DataState kind="empty" title="Start with an exact product" description="Search the brand, model and storage variant, then confirm matching products before viewing history." />}
     {data && <>
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>{[
-        ["Current International Price", money(data.summary.currentInternationalPrice), `Latest search observation: ${data.summary.internationalAsOf ?? "unavailable"}`],
-        ["Current Local Price", money(data.summary.currentLocalPrice), "Today's comparable local observations"],
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>{[
+        ["Current International Price", money(data.summary.currentInternationalPrice), `Latest saved observation: ${data.summary.internationalAsOf ?? "unavailable"}`],
         ["6-month price change %", percent(data.summary.sixMonthChange), "International; exact six-month baseline required"],
-        ["Local vs International difference %", percent(data.summary.differencePercent), "(Local − International) ÷ International"],
       ].map(([label, value, help]) => <Paper withBorder radius="lg" p="lg" key={label}><Text size="sm" c="dimmed">{label}</Text><Text size="xl" fw={700} mt="xs">{value}</Text><Text size="xs" c="dimmed" mt="xs">{help}</Text></Paper>)}</SimpleGrid>
       {data.messages.map(message => <Alert key={message} color="yellow">{message}</Alert>)}
       <Paper withBorder radius="lg" p="lg"><Group justify="space-between" mb="lg"><Box><Title order={3}>{data.product}</Title><Text size="sm" c="dimmed">Daily medians · ETB · As of {data.asOf}</Text></Box><SegmentedControl aria-label="History date range" value={range} onChange={value => { setRange(value); setPage(1); }} data={["1M", "3M", "6M", "1Y", "ALL"]} /></Group><HistoricalMarketChart rows={rows} /><Group mt="md">{data.countries.map(country => <Badge key={country} variant="light">{country}</Badge>)}</Group></Paper>
-      <Paper withBorder radius="lg" p="lg"><Title order={3} mb="md">Historical price comparison</Title><Box style={{ overflowX: "auto" }}><Table striped><Table.Thead><Table.Tr>{["Date", "International Price", "Local Price", "Difference", "Percentage Difference"].map(h => <Table.Th key={h}>{h}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{tableRows.slice((page - 1) * 30, page * 30).map(row => <Table.Tr key={row.date}><Table.Td>{row.date}</Table.Td><Table.Td>{money(row.internationalPrice)}</Table.Td><Table.Td>{money(row.localPrice)}</Table.Td><Table.Td>{money(row.difference)}</Table.Td><Table.Td>{percent(row.percentageDifference)}</Table.Td></Table.Tr>)}</Table.Tbody></Table></Box><Group justify="space-between" mt="md"><Button variant="subtle" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><Text size="sm">Page {page} of {pages}</Text><Button variant="subtle" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next</Button></Group></Paper>
+      <Paper withBorder radius="lg" p="lg"><Title order={3} mb="md">Historical international prices</Title><Box style={{ overflowX: "auto" }}><Table striped><Table.Thead><Table.Tr>{["Date", "International Price", "Markets"].map(h => <Table.Th key={h}>{h}</Table.Th>)}</Table.Tr></Table.Thead><Table.Tbody>{tableRows.slice((page - 1) * 30, page * 30).map(row => <Table.Tr key={row.date}><Table.Td>{row.date}</Table.Td><Table.Td>{money(row.internationalPrice)}</Table.Td><Table.Td>{row.countryCount}</Table.Td></Table.Tr>)}</Table.Tbody></Table></Box><Group justify="space-between" mt="md"><Button variant="subtle" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button><Text size="sm">Page {page} of {pages}</Text><Button variant="subtle" disabled={page >= pages} onClick={() => setPage(p => p + 1)}>Next</Button></Group></Paper>
       <Text size="sm" c="dimmed">{data.methodology} These are market observations, not historical customs declarations.</Text>
     </>}
   </Stack></Container></Box>;

@@ -1,4 +1,4 @@
-import type { InternationalPriceSearch, LocalMarketPriceSearch } from "@/lib/types/customs";
+import type { CustomsTradeBenchmark, InternationalPriceSearch } from "@/lib/types/customs";
 
 export const ACTIVE_VALUATION_SESSION_KEY = "customs.active-valuation-session";
 
@@ -6,11 +6,7 @@ export interface HistoricalSessionEvidence {
   rows: {
     date: string;
     internationalPrice: number | null;
-    localPrice: number | null;
-    difference?: number | null;
-    percentageDifference?: number | null;
     countryCount?: number;
-    localCount?: number;
   }[];
   product: string;
   currency: string;
@@ -21,10 +17,7 @@ export interface HistoricalSessionEvidence {
   summary?: {
     currentInternationalPrice: number | null;
     internationalAsOf: string | null;
-    currentLocalPrice: number | null;
-    localAsOf?: string | null;
     sixMonthChange?: number | null;
-    differencePercent?: number | null;
   };
 }
 
@@ -46,13 +39,14 @@ export interface ValuationSession {
   query: string;
   market: string;
   international: InternationalPriceSearch | null;
-  local: LocalMarketPriceSearch | null;
+  customsBenchmark?: CustomsTradeBenchmark | null;
   historical?: HistoricalSessionEvidence | null;
   customerTransaction?: CustomerTransactionEvidence | null;
   preferredCurrency?: string;
   selectedSource?: string;
   createdAt: string;
   hsCode?: string;
+  hsCodeId?: string | null;
   selectedValue?: number | null;
   selectedCurrency?: string;
   decisionId?: string;
@@ -63,7 +57,7 @@ export function readValuationSession(): ValuationSession | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(ACTIVE_VALUATION_SESSION_KEY);
-    return raw ? JSON.parse(raw) as ValuationSession : null;
+    return raw ? stripLocalMarketEvidence(JSON.parse(raw) as ValuationSession & { local?: unknown }) : null;
   } catch {
     return null;
   }
@@ -71,16 +65,32 @@ export function readValuationSession(): ValuationSession | null {
 
 export function writeValuationSession(session: ValuationSession) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(ACTIVE_VALUATION_SESSION_KEY, JSON.stringify(session));
+    window.localStorage.setItem(ACTIVE_VALUATION_SESSION_KEY, JSON.stringify(stripLocalMarketEvidence(session as ValuationSession & { local?: unknown })));
     window.dispatchEvent(new Event("valuation-session-updated"));
   }
+}
+
+function stripLocalMarketEvidence(session: ValuationSession & { local?: unknown }): ValuationSession {
+  const { local: _local, ...withoutLocal } = session;
+  if (!withoutLocal.historical) return withoutLocal;
+
+  const history = withoutLocal.historical as unknown as Record<string, unknown> & { rows: Array<Record<string, unknown>>; summary?: Record<string, unknown> };
+  const rows = history.rows.map(({ localPrice: _localPrice, localCount: _localCount, difference: _difference, percentageDifference: _percentageDifference, ...row }) => row as HistoricalSessionEvidence["rows"][number]);
+  let summary: HistoricalSessionEvidence["summary"];
+  if (history.summary) {
+    const { currentLocalPrice: _currentLocalPrice, localAsOf: _localAsOf, differencePercent: _differencePercent, ...cleanSummary } = history.summary;
+    summary = cleanSummary as unknown as HistoricalSessionEvidence["summary"];
+  }
+  const { rows: _rows, summary: _summary, ...historyFields } = history;
+  if (typeof historyFields.methodology === "string" && /\blocal\b/i.test(historyFields.methodology)) delete historyFields.methodology;
+  return { ...withoutLocal, historical: { ...historyFields, rows, summary } as unknown as HistoricalSessionEvidence };
 }
 
 export function updateValuationSession(patch: Partial<ValuationSession>) {
   const current = readValuationSession();
   if (current) {
     const next = { ...current, ...patch };
-    if (patch.hsCode === undefined) delete next.hsCode;
+    if ("hsCode" in patch && patch.hsCode === undefined) delete next.hsCode;
     writeValuationSession(next);
   }
 }

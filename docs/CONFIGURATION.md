@@ -1,6 +1,6 @@
 # Configuration and secrets
 
-ASP.NET Core reads `appsettings.json`, Development user-secrets and environment variables. Environment variables override JSON values; nested keys use a double underscore (`__`). Never commit operational credentials.
+ASP.NET Core reads `appsettings.json`, Development user-secrets, the optional ignored `appsettings.Local.json`, and environment variables. Environment variables override JSON values; nested keys use a double underscore (`__`). Never commit operational credentials.
 
 ## Required API settings
 
@@ -50,22 +50,11 @@ dotnet user-secrets set "SerpApi:ApiKey" "YOUR_SERPAPI_KEY" `
 
 Optional settings are `SerpApi:DefaultMarket`, `SerpApi:DefaultLanguage` and `SerpApi:BaseUrl`. The API suppresses informational HttpClient URL logs because SerpAPI authenticates through a query parameter.
 
-## Local-market analysis
+## Apify manufacturer prices
 
-Safe defaults are kept in `appsettings.json`:
+Set `APIFY_API_TOKEN` on the API server, or put `Apify:ApiToken` in the API project's ignored `appsettings.Local.json`. The token is never sent to the portal. The officer can search a known brand automatically or enter an official manufacturer domain or direct product URL.
 
-```json
-{
-  "LocalMarketAnalysis": {
-    "RelevanceThreshold": 80,
-    "MaximumAgeDays": 180,
-    "DefaultCondition": "New",
-    "OutlierMethod": "Iqr"
-  }
-}
-```
-
-Officers can override the threshold, date window, condition, price type and outlier method per analysis. IQR, MAD and no-outlier modes are supported. Foreign-currency local observations are excluded unless an approved ETB conversion is available; original values remain preserved.
+The API runs Apify's Google Search Results Scraper for manufacturer-site discovery. For Apple product pages it calls the Apple Shop Scraper to retrieve structured price and storage/color variants, selects the requested variant, or the lowest-storage base variant when none is specified. Other manufacturers use Website Content Crawler for one exact product page. If that page exposes no price, Google Shopping Scraper can supply an indexed offer only when its merchant label matches the inferred manufacturer and the product model matches exactly. Indexed offers are labeled separately and should be verified on the linked manufacturer page; they are not represented as prices verified directly on that page. Missing prices remain missing. Apify bills Actor runs; each run is capped at $0.50 (the provider's minimum accepted cap). Results are cached for 15 minutes when priced and 5 minutes otherwise.
 
 ## Portal environment
 

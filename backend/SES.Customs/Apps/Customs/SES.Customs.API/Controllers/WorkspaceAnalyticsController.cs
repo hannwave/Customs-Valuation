@@ -173,28 +173,19 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
 
         var startDate = DateOnly.FromDateTime(from.UtcDateTime.Date);
         var endDate = DateOnly.FromDateTime(to.UtcDateTime.Date);
-        var localQuery = db.LocalMarketObservations.AsNoTracking().Where(observation => observation.RetrievalDate >= from && observation.RetrievalDate <= to);
         var referenceQuery = db.ReferencePrices.AsNoTracking().Where(price => price.PriceDate >= startDate && price.PriceDate <= endDate);
         var historicalQuery = db.HistoricalCustomsPrices.AsNoTracking().Where(price => price.PriceDate >= startDate && price.PriceDate <= endDate);
         if (!string.IsNullOrWhiteSpace(chapter))
         {
             Guid[] referenceHsIds = await db.HsCodes.AsNoTracking().Where(code => code.Code != null && code.Code.StartsWith(chapter)).Select(code => code.Id).ToArrayAsync(ct);
-            localQuery = localQuery.Where(observation => referenceHsIds.Contains(observation.HsCodeId));
             referenceQuery = referenceQuery.Where(price => referenceHsIds.Contains(price.HsCodeId));
             historicalQuery = historicalQuery.Where(price => referenceHsIds.Contains(price.HsCodeId));
         }
-        var localRows = await localQuery.Select(observation => new { observation.SourceId, observation.HsCodeId, observation.NormalizedUnitPrice, observation.ClassificationStatus, observation.IsPotentialOutlier, observation.ManualReviewStatus, observation.RetrievalDate }).ToListAsync(ct);
         var referenceRows = await referenceQuery.Select(price => new { price.SourceId, price.HsCodeId, price.ConvertedValue, price.ConvertedCurrency }).ToListAsync(ct);
         var historicalRows = await historicalQuery.Select(price => new { price.SourceId, price.HsCodeId }).ToListAsync(ct);
-        var validLocalRows = localRows.Where(row => row.NormalizedUnitPrice is > 0 && row.ClassificationStatus is LocalObservationStatus.ValidForStatistics or LocalObservationStatus.ManuallyApproved).ToArray();
-        var localValues = validLocalRows.Select(row => row.NormalizedUnitPrice!.Value).ToArray();
         var internationalValues = referenceRows.Where(row => row.ConvertedValue is > 0 && string.Equals(row.ConvertedCurrency, "ETB", StringComparison.OrdinalIgnoreCase)).Select(row => row.ConvertedValue!.Value).ToArray();
-        var localMedian = Median(localValues);
         var internationalMedian = Median(internationalValues);
-        var priceVariance = localMedian is decimal local && internationalMedian is decimal international && international != 0 ? Math.Round((local - international) / international * 100m, 1) : (decimal?)null;
-        var outlierTrend = BuildOutlierTrends(localRows.Where(row => row.IsPotentialOutlier).Select(row => row.RetrievalDate), from, to, grain);
-        var sourceRows = await db.PriceSources.AsNoTracking().OrderBy(source => source.Pool).ThenBy(source => source.Name).ToListAsync(ct);
-        var localSourceCounts = localRows.GroupBy(row => row.SourceId).ToDictionary(group => group.Key, group => group.Count());
+        var sourceRows = await db.PriceSources.AsNoTracking().Where(source => source.Pool != PricePool.Local).OrderBy(source => source.Pool).ThenBy(source => source.Name).ToListAsync(ct);
         var referenceSourceCounts = referenceRows.GroupBy(row => row.SourceId).ToDictionary(group => group.Key, group => group.Count());
         var historicalSourceCounts = historicalRows.GroupBy(row => row.SourceId).ToDictionary(group => group.Key, group => group.Count());
         var sourceCoverage = sourceRows.Select(source => new
@@ -203,8 +194,7 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
             name = source.Name,
             pool = source.Pool.ToString(),
             approved = source.IsApproved,
-            records = (localSourceCounts.TryGetValue(source.Id, out var localCount) ? localCount : 0) +
-                (referenceSourceCounts.TryGetValue(source.Id, out var referenceCount) ? referenceCount : 0) +
+            records = (referenceSourceCounts.TryGetValue(source.Id, out var referenceCount) ? referenceCount : 0) +
                 (historicalSourceCounts.TryGetValue(source.Id, out var historicalCount) ? historicalCount : 0)
         }).Where(source => source.records > 0 || source.approved).ToArray();
 
@@ -235,8 +225,6 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
         if (returned > 0) alerts.Add(new { severity = "MEDIUM", title = "Returned valuations need attention", detail = $"{returned:N0} valuation{(returned == 1 ? " was" : "s were")} returned for correction in the selected period." });
         if (suspendedOfficers > 0) alerts.Add(new { severity = "HIGH", title = "Employee access needs review", detail = $"{suspendedOfficers:N0} Officer account{(suspendedOfficers == 1 ? " is" : "s are")} suspended or locked." });
         if (missingEvidence > 0) alerts.Add(new { severity = "MEDIUM", title = "Evidence references are incomplete", detail = $"{missingEvidence:N0} visible valuation{(missingEvidence == 1 ? " is" : "s are")} missing evidence notes." });
-        var unreviewedOutliers = localRows.Count(row => row.IsPotentialOutlier && row.ManualReviewStatus == ManualReviewStatus.Unreviewed);
-        if (unreviewedOutliers > 0) alerts.Add(new { severity = "MEDIUM", title = "Shared outliers await review", detail = $"{unreviewedOutliers:N0} reference observation{(unreviewedOutliers == 1 ? " is" : "s are")} still unreviewed." });
         foreach (var branch in branchPerformance.Where(branch => branch.pending >= 5).Take(3))
             alerts.Add(new { severity = "MEDIUM", title = $"{branch.name} has a growing queue", detail = $"{branch.pending:N0} submitted or returned valuation{(branch.pending == 1 ? " case" : " cases")} require attention." });
         if (alerts.Count == 0) alerts.Add(new { severity = "INFO", title = "No urgent operational alerts", detail = "The selected region has no threshold alerts in this period." });
@@ -277,17 +265,8 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
             {
                 missingEvidence,
                 missingJustification,
-                validLocalObservations = validLocalRows.Length,
-                potentialOutliers = localRows.Count(row => row.IsPotentialOutlier),
-                unreviewedOutliers,
-                confirmedOutliers = localRows.Count(row => row.IsPotentialOutlier && row.ManualReviewStatus == ManualReviewStatus.ConfirmedOutlier),
-                rejectedOutliers = localRows.Count(row => row.IsPotentialOutlier && row.ManualReviewStatus == ManualReviewStatus.Rejected),
-                outlierTrend,
                 sharedReferenceData = true,
-                localMedianEtb = localMedian,
                 internationalMedianEtb = internationalMedian,
-                localVsInternationalVariancePercent = priceVariance,
-                localObservationCount = localValues.Length,
                 internationalObservationCount = internationalValues.Length
             },
             sourceCoverage,
@@ -342,23 +321,6 @@ public sealed class WorkspaceAnalyticsController(CustomsDbContext db, WorkspaceA
                 approved = rows.Count(decision => decision.Status == "Approved"),
                 returned = rows.Count(decision => decision.Status == "Returned"),
                 averageReviewHours = AverageReviewHours(rows)
-            });
-        }
-        return result.ToArray();
-    }
-
-    private static object[] BuildOutlierTrends(IEnumerable<DateTimeOffset> dates, DateTimeOffset from, DateTimeOffset to, string grain)
-    {
-        var values = dates.ToArray();
-        var result = new List<object>();
-        for (var period = PeriodStart(from, grain); period <= PeriodStart(to, grain); period = NextPeriod(period, grain))
-        {
-            var next = NextPeriod(period, grain);
-            result.Add(new
-            {
-                period = period.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                label = grain == "day" ? period.ToString("dd MMM", CultureInfo.InvariantCulture) : grain == "week" ? $"Week of {period:dd MMM}" : period.ToString("MMM yyyy", CultureInfo.InvariantCulture),
-                count = values.Count(date => date >= period && date < next)
             });
         }
         return result.ToArray();

@@ -10,7 +10,7 @@ import { Brand } from "@/components/Brand";
 
 const services = [
   { icon: FiFileText, title: "HS Code & Tariff Management", items: ["HS revisions", "National tariff codes", "Classification history", "Tariff rules"] },
-  { icon: FiLayers, title: "Price Intelligence", items: ["International reference prices", "Local market prices", "Historical prices", "Price sources"] },
+  { icon: FiLayers, title: "Price Intelligence", items: ["International reference prices", "Historical prices", "Price sources"] },
   { icon: FiBarChart2, title: "Analytics", items: ["Price statistics", "Historical trends", "Country comparisons", "Outlier detection"] },
   { icon: FiShield, title: "Decision Support", items: ["Evidence review", "Reference-value selection", "Officer justification", "Decision history"] },
 ];

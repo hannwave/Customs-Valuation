@@ -41,11 +41,8 @@ export interface CustomsAdminAnalytics {
   officerPerformance: Array<{ userId: string; name: string; employeeNumber: string; status: string; active: boolean; branch: string; responsibilities: string; lastLoginAt: string | null; decisions: number; pending: number; submitted: number; approved: number; returned: number; rejected: number; averageReviewHours: number | null; lastDecisionAt: string | null }>;
   topHsCodes: Array<{ hsCode: string; description: string; decisions: number; approved: number; returned: number; currencies: string; averageReferenceValue: number | null }>;
   quality: {
-    missingEvidence: number; missingJustification: number; validLocalObservations: number; potentialOutliers: number;
-    unreviewedOutliers: number; confirmedOutliers: number; rejectedOutliers: number;
-    outlierTrend: Array<{ period: string; label: string; count: number }>;
-    sharedReferenceData: boolean; localMedianEtb: number | null; internationalMedianEtb: number | null;
-    localVsInternationalVariancePercent: number | null; localObservationCount: number; internationalObservationCount: number;
+    missingEvidence: number; missingJustification: number;
+    sharedReferenceData: boolean; internationalMedianEtb: number | null; internationalObservationCount: number;
   };
   sourceCoverage: Array<{ sourceId: string; name: string; pool: string; approved: boolean; records: number }>;
   auditSummary: Array<{ action: string; count: number }>;

@@ -9,6 +9,31 @@ import { locationLabel, roleLabel, workspaceApi, type ValuationDecision, type Wo
 import { officerNoteIssue } from "@/lib/officer-note-quality";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+type DecisionEvidence = {
+  product?: string;
+  searchQuery?: string;
+  officer?: { name?: string };
+  tariff?: { rate?: number | null; amount?: number | null; source?: string };
+  internationalEvidence?: unknown[];
+  statistics?: { international?: unknown };
+  outliers?: { international?: unknown };
+};
+
+function parseDecisionEvidence(raw: string): DecisionEvidence | null {
+  try {
+    const source = JSON.parse(raw) as Record<string, unknown>;
+    const statisticsSource = source.statistics && typeof source.statistics === "object" ? source.statistics as Record<string, unknown> : null;
+    const outliersSource = source.outliers && typeof source.outliers === "object" ? source.outliers as Record<string, unknown> : null;
+    const { localEvidence: _legacyEvidence, statistics: _legacyStatistics, outliers: _legacyOutliers, ...visible } = source;
+    return {
+      ...visible,
+      internationalEvidence: Array.isArray(source.internationalEvidence) ? source.internationalEvidence : [],
+      statistics: statisticsSource ? { international: statisticsSource.international } : undefined,
+      outliers: outliersSource ? { international: outliersSource.international } : undefined,
+    } as DecisionEvidence;
+  } catch { return null; }
+}
+
 export default function ValuationDecisionsPage() {
   const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
   const [decisions, setDecisions] = useState<ValuationDecision[]>([]);
@@ -85,11 +110,12 @@ export default function ValuationDecisionsPage() {
   const operationalLocations = profile.locations.filter(location => location.status === "ACTIVE" && (location.supportsValuation || location.supportsInspection));
   const visibleDecisions = decisions.filter(decision => {
     const term = filter.trim().toLowerCase();
-    const matchesTerm = !term || [decision.id, decision.hsCodeId ?? "", decision.decision, decision.justification, decision.evidenceNotes].some(value => value.toLowerCase().includes(term));
+    const evidence = parseDecisionEvidence(decision.evidenceNotes);
+    const matchesTerm = !term || [decision.id, decision.hsCodeId ?? "", decision.decision, decision.justification, evidence?.product ?? "", evidence?.searchQuery ?? ""].some(value => value.toLowerCase().includes(term));
     return matchesTerm && (statusFilter === "ALL" || decision.status === statusFilter);
   });
   const selectedDetail = decisions.find(decision => decision.id === detailId) ?? null;
-  const detailEvidence = selectedDetail ? (() => { try { return JSON.parse(selectedDetail.evidenceNotes) as { product?: string; searchQuery?: string; officer?: { name?: string }; statistics?: unknown; outliers?: unknown; tariff?: { rate?: number | null; amount?: number | null; source?: string }; internationalEvidence?: unknown[]; localEvidence?: unknown[] }; } catch { return null; } })() : null;
+  const detailEvidence = selectedDetail ? parseDecisionEvidence(selectedDetail.evidenceNotes) : null;
   return <div className="management-page">
     <div className="page-heading"><div><p className="eyebrow">DECISION REGISTER</p><h1>Valuation records</h1><p className="lead">{isOfficer ? "Search and review every Price Review submitted by you." : "Review submitted determinations from locations within your authorized scope."}</p></div><span className="workspace-tag"><FiFileText />{roleLabel(profile.user.role)}</span></div>
     {error && <DataState kind="error" compact title="Decision action failed" description={error} onRetry={() => void load()} />}
@@ -118,7 +144,7 @@ export default function ValuationDecisionsPage() {
         const hs = decision.hsCodeId ? hsCodes[decision.hsCodeId] : null; const location = profile.locations.find(item => item.id === decision.locationId);
         const canReview = !isOfficer && decision.status === "Submitted"; const reason = reviewReasons[decision.id] ?? "";
         return <article className="decision-card" key={decision.id}><div className="decision-card-heading"><div><span className={`decision-status decision-status--${decision.status.toLowerCase()}`}>{decision.status}</span><h3>{hs ? `${hs.code} · ${hs.descriptionEn}` : "HS classification deferred to Phase 2"}</h3><small>{location?.displayName ?? location?.name ?? "Historical location"} · {new Date(decision.recordedAt).toLocaleString()}</small></div><strong>{decision.currency} {decision.selectedReferenceValue.toLocaleString()}</strong></div>
-          <dl className="decision-details"><div><dt>Decision</dt><dd>{decision.decision}</dd></div><div><dt>Price paid</dt><dd>{decision.declaredPriceAmount != null ? `${decision.declaredPriceCurrency} ${decision.declaredPriceAmount.toLocaleString()} → ${decision.declaredPriceConvertedCurrency} ${decision.declaredPriceConvertedAmount?.toLocaleString()}` : "Not captured (legacy record)"}</dd></div><div><dt>Receipt</dt><dd>{decision.receiptFileName ? <button className="link-button" type="button" onClick={() => void downloadReceipt(decision)}>{decision.receiptFileName}</button> : "Not captured (legacy record)"}</dd></div><div><dt>Officer justification</dt><dd>{decision.justification}</dd></div><div><dt>Evidence snapshot</dt><dd>{detailId === decision.id && detailEvidence ? `${detailEvidence.product ?? "Product"} · ${detailEvidence.internationalEvidence?.length ?? 0} global records · ${detailEvidence.localEvidence?.length ?? 0} local records` : "Stored evidence, statistics, outliers, and tariff calculation"}</dd></div>{decision.reviewJustification && <div><dt>Review</dt><dd>{decision.reviewJustification}</dd></div>}</dl>
+          <dl className="decision-details"><div><dt>Decision</dt><dd>{decision.decision}</dd></div><div><dt>Price paid</dt><dd>{decision.declaredPriceAmount != null ? `${decision.declaredPriceCurrency} ${decision.declaredPriceAmount.toLocaleString()} → ${decision.declaredPriceConvertedCurrency} ${decision.declaredPriceConvertedAmount?.toLocaleString()}` : "Not captured (legacy record)"}</dd></div><div><dt>Receipt</dt><dd>{decision.receiptFileName ? <button className="link-button" type="button" onClick={() => void downloadReceipt(decision)}>{decision.receiptFileName}</button> : "Not captured (legacy record)"}</dd></div><div><dt>Officer justification</dt><dd>{decision.justification}</dd></div><div><dt>Evidence snapshot</dt><dd>{detailId === decision.id && detailEvidence ? `${detailEvidence.product ?? "Product"} · ${detailEvidence.internationalEvidence?.length ?? 0} international records` : "Stored international evidence, statistics, and tariff calculation"}</dd></div>{decision.reviewJustification && <div><dt>Review</dt><dd>{decision.reviewJustification}</dd></div>}</dl>
           {detailId === decision.id && <div className="record-detail-panel"><p><strong>Product:</strong> {detailEvidence?.product ?? "Not provided"}</p><p><strong>Search:</strong> {detailEvidence?.searchQuery ?? "Not provided"}</p><p><strong>Officer:</strong> {detailEvidence?.officer?.name ?? profile.user.fullName}</p><p><strong>Tariff:</strong> {detailEvidence?.tariff?.rate != null ? `${detailEvidence.tariff.rate}% · ${detailEvidence.tariff.amount ?? "—"} ${decision.currency}` : detailEvidence?.tariff?.source ?? "Unavailable"}</p><pre>{JSON.stringify({ statistics: detailEvidence?.statistics, outliers: detailEvidence?.outliers }, null, 2)}</pre></div>}
           <div className="row-actions"><button className="secondary-button" type="button" onClick={() => setDetailId(current => current === decision.id ? null : decision.id)}><FiEye />{detailId === decision.id ? "Hide details" : "View details"}</button></div>
           {isOfficer && decision.status === "Draft" && decision.locationId && <div className="row-actions"><button className="approve-button" type="button" disabled={busy === decision.id} onClick={() => void submit(decision)}><FiSend />{busy === decision.id ? "Submitting…" : "Submit for review"}</button></div>}

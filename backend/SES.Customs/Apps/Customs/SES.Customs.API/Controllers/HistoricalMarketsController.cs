@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using SES.Customs.API.Integrations.LocalMarket;
 using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
@@ -17,7 +16,7 @@ public sealed class HistoricalMarketsController(PricesApiClient prices, Historic
 {
     public sealed record Selection(ExactProduct Product, ProductCandidate[] Candidates, string Owner);
     public sealed record CompareRequest(string SearchId, string[] Keys);
-    public sealed record Row(DateOnly Date, decimal? InternationalPrice, decimal? LocalPrice, decimal? Difference, decimal? PercentageDifference, int CountryCount, int LocalCount);
+    public sealed record Row(DateOnly Date, decimal? InternationalPrice, int CountryCount);
     private string Owner => User.Identity?.Name ?? "";
 
     [HttpPost("search")]
@@ -58,41 +57,12 @@ public sealed class HistoricalMarketsController(PricesApiClient prices, Historic
             .GroupBy(x => x.ObservedDate)
             .ToDictionary(x => x.Key, x => new { Price = HistoricalComparison.Median(x.Select(p => p.Price)), Count = x.Select(p => p.Source).Distinct().Count() });
 
-        var localSnapshots = snapshots
-            .Where(x => !x.Source.StartsWith("PricesAPI:", StringComparison.Ordinal)
-                && HistoricalComparison.MatchesQuery(query, x.Title, x.Condition));
-        var localObservations = await db.LocalMarketObservations.AsNoTracking()
-            .Where(x => x.RawCurrency == "ETB" && x.RawPrice > 0 && !x.IsDuplicate && !x.IsPotentialOutlier
-                && (x.ClassificationStatus == LocalObservationStatus.ValidForStatistics || x.ClassificationStatus == LocalObservationStatus.ManuallyApproved)
-                && x.ManualReviewStatus != ManualReviewStatus.Rejected
-                && x.RetrievalDate >= new DateTimeOffset(today.AddYears(-2).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero))
-            .ToArrayAsync(ct);
-        var legacyLocal = localObservations
-            .Where(x => HistoricalComparison.MatchesQuery(query, x.ListingTitle, x.Condition.ToString()))
-            .Select(x => new { Date = DateOnly.FromDateTime(x.RetrievalDate.UtcDateTime), x.RawPrice, Source = x.Marketplace, ListingId = x.SourceListingId });
-        var locals = localSnapshots.Select(x => new { Date = x.ObservedDate, x.Price, Source = x.Source, x.ListingId })
-            .Concat(legacyLocal.Select(x => new { x.Date, Price = x.RawPrice, x.Source, x.ListingId }))
-            .DistinctBy(x => (x.Date, x.Source, x.ListingId))
-            .GroupBy(x => x.Date)
-            .ToDictionary(x => x.Key, x => new { Price = HistoricalComparison.Median(x.Select(p => p.Price)), Count = x.Count() });
-
         var internationalDate = international.Count == 0 ? (DateOnly?)null : international.Keys.Max();
-        var localDate = locals.Count == 0 ? (DateOnly?)null : locals.Keys.Max();
         var latestInternational = internationalDate.HasValue ? international[internationalDate.Value].Price : null;
-        var latestLocal = localDate.HasValue ? locals[localDate.Value].Price : null;
-        var sameDateLocal = internationalDate.HasValue ? locals.GetValueOrDefault(internationalDate.Value)?.Price : null;
         var baseline = international.GetValueOrDefault(today.AddMonths(-6))?.Price;
-        var dates = international.Keys.Concat(locals.Keys).Distinct().Order().ToArray();
-        var rows = dates.Select(day =>
-        {
-            international.TryGetValue(day, out var i);
-            locals.TryGetValue(day, out var l);
-            return new Row(day, i?.Price, l?.Price, i?.Price is > 0 && l?.Price is > 0 ? l.Price - i.Price : null,
-                HistoricalComparison.Percent(l?.Price, i?.Price), i?.Count ?? 0, l?.Count ?? 0);
-        }).ToArray();
+        var rows = international.OrderBy(x => x.Key).Select(x => new Row(x.Key, x.Value.Price, x.Value.Count)).ToArray();
         var messages = new List<string>();
         if (international.Count == 0) messages.Add("No matching international observations have been saved from previous searches.");
-        if (locals.Count == 0) messages.Add("No matching local observations have been saved from previous searches.");
 
         return Ok(new
         {
@@ -104,10 +74,7 @@ public sealed class HistoricalMarketsController(PricesApiClient prices, Historic
             {
                 currentInternationalPrice = latestInternational,
                 internationalAsOf = internationalDate,
-                currentLocalPrice = latestLocal,
-                localAsOf = localDate,
-                sixMonthChange = HistoricalComparison.Percent(latestInternational, baseline),
-                differencePercent = HistoricalComparison.Percent(sameDateLocal, latestInternational)
+                sixMonthChange = HistoricalComparison.Percent(latestInternational, baseline)
             },
             messages,
             methodology = "Values are medians of comparable ETB observations already saved in the database. No provider or live market is queried; missing values remain unavailable."
@@ -141,37 +108,21 @@ public sealed class HistoricalMarketsController(PricesApiClient prices, Historic
 
         var currentDate = international.Count == 0 ? (DateOnly?)null : international.Keys.Max();
         var currentPrice = currentDate.HasValue ? international[currentDate.Value].Price : null;
-        var captured = await db.Set<MarketPriceSnapshot>().AsNoTracking()
-            .Where(x => x.Currency == "ETB" && x.Price > 0 && x.ObservedDate <= today && !x.Source.StartsWith("PricesAPI:"))
-            .ToArrayAsync(ct);
-        var existing = await db.LocalMarketObservations.AsNoTracking().Where(x => x.RawCurrency == "ETB" && x.RawPrice > 0 && !x.IsDuplicate && !x.IsPotentialOutlier
-            && (x.ClassificationStatus == LocalObservationStatus.ValidForStatistics || x.ClassificationStatus == LocalObservationStatus.ManuallyApproved)
-            && x.ManualReviewStatus != ManualReviewStatus.Rejected).ToArrayAsync(ct);
-        var legacy = existing.Select(x => new MarketPriceSnapshot { Source = x.Marketplace, ListingId = x.SourceListingId,
-            Title = x.ListingTitle, Url = x.ListingUrl, Condition = x.Condition.ToString(), Price = x.RawPrice, Currency = x.RawCurrency,
-            ObservedDate = DateOnly.FromDateTime(x.RetrievalDate.UtcDateTime) });
-        var localRows = captured.Concat(legacy).Where(x => x.ObservedDate <= today && HistoricalComparison.Matches(selection.Product, x.Title, x.Condition))
-            .DistinctBy(x => (x.Source, x.ListingId, x.ObservedDate)).ToArray();
-        if (localRows.Length == 0) messages.Add("No saved local observations were found for this exact product. Search the local market first to capture a database observation.");
-        var locals = localRows.GroupBy(x => x.ObservedDate).ToDictionary(x => x.Key, x => new { Price = HistoricalComparison.Median(x.Select(p => p.Price)), Count = x.Count() });
-        var first = international.Keys.Concat(locals.Keys).DefaultIfEmpty(today.AddMonths(-6)).Min();
+        var first = international.Keys.DefaultIfEmpty(today.AddMonths(-6)).Min();
         if (first > today.AddMonths(-12)) first = today.AddMonths(-12);
         var rows = new List<Row>();
         for (var day = first; day <= today; day = day.AddDays(1))
         {
-            international.TryGetValue(day, out var i); locals.TryGetValue(day, out var l);
-            rows.Add(new(day, i?.Price, l?.Price, l?.Price - i?.Price, HistoricalComparison.Percent(l?.Price, i?.Price), i?.Count ?? 0, l?.Count ?? 0));
+            international.TryGetValue(day, out var i);
+            rows.Add(new(day, i?.Price, i?.Count ?? 0));
         }
-        var localCurrentDate = locals.Count == 0 ? (DateOnly?)null : locals.Keys.Max();
-        var localCurrent = localCurrentDate.HasValue ? locals[localCurrentDate.Value].Price : null;
-        var localOnInternationalDate = currentDate.HasValue ? locals.GetValueOrDefault(currentDate.Value)?.Price : null;
         var baseline = currentDate.HasValue ? international.GetValueOrDefault(currentDate.Value.AddMonths(-6))?.Price : null;
         var result = new {
             currency = "ETB", asOf = today, product = selection.Product.Query, rows,
-            summary = new { currentInternationalPrice = currentPrice, internationalAsOf = currentDate, currentLocalPrice = localCurrent,
-                sixMonthChange = HistoricalComparison.Percent(currentPrice, baseline), differencePercent = HistoricalComparison.Percent(localOnInternationalDate, currentPrice) },
+            summary = new { currentInternationalPrice = currentPrice, internationalAsOf = currentDate,
+                sixMonthChange = HistoricalComparison.Percent(currentPrice, baseline) },
             messages, countries = chosen.Select(x => x.Market.ToUpperInvariant()),
-            methodology = "Daily medians are calculated only from ETB observations already saved in the database by earlier exact-product and local-market searches. The comparison never calls provider history endpoints or live marketplace searches. New international observations are normalized to ETB and saved when the exact-product search runs; missing days stay empty. Six-month change needs an observation on the exact baseline date. The current difference requires same-date prices."
+            methodology = "Daily medians are calculated only from exact-product international ETB observations already saved in the database by earlier searches. New international observations are normalized to ETB and saved when the exact-product search runs; missing days stay empty. Six-month change needs an observation on the exact baseline date."
         };
         cache.Set(memoKey, result, TimeSpan.FromMinutes(10));
         return Ok(result);

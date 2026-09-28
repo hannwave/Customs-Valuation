@@ -22,7 +22,7 @@ public sealed class BusinessRuleTests
     [Fact]
     public void Price_analysis_permissions_are_exclusive_to_customs_officers()
     {
-        var pricePermissions = new[] { "reference_prices.view", "local_prices.view", "historical_prices.view", "outliers.view" };
+        var pricePermissions = new[] { "reference_prices.view", "historical_prices.view", "outliers.view" };
         Assert.All(pricePermissions, permission => Assert.Contains(permission, AccessRules.Permissions(AccessRules.Officer)));
         Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.CustomsAdmin)));
         Assert.All(pricePermissions, permission => Assert.DoesNotContain(permission, AccessRules.Permissions(AccessRules.SystemAdmin)));
@@ -43,7 +43,7 @@ public sealed class BusinessRuleTests
         Assert.Equal(Math.Sqrt(74), result.PopulationStandardDeviation!.Value, 8);
     }
     [Theory]
-    [InlineData(PricePool.Local)] [InlineData(PricePool.HistoricalCustoms)]
+    [InlineData(PricePool.HistoricalCustoms)]
     public void RejectsMixedPools(PricePool pool) => Assert.Throws<ArgumentException>(() =>
         PriceStatisticsCalculator.Calculate([Observation(10), Observation(20, pool)]));
     [Fact] public void RejectsMixedUnitsAndComparisonGroupsAndCurrencies()

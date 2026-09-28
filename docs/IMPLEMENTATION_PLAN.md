@@ -25,7 +25,7 @@ People, effort, budget and calendar dates remain to be assigned. These are depen
 ## Phase 0 — scope and rules
 
 - Confirm MVP: HS revisions/search, national tariff link, read/import/verify evidence, exact-date NBE conversion policy, separate pool comparison, justified decisions and audit.
-- Define comparable groups across currency, quantity/unit, dates, countries, source reliability, product specification, brand/model, quality, local price category, taxes, VAT, transport, insurance, freight and Incoterm.
+- Define comparable groups across currency, quantity/unit, dates, countries, source reliability, product specification, brand/model, quality, taxes, VAT, transport, insurance, freight and Incoterm.
 - Define missing data behavior: unknown is not zero; missing rate leaves normalization pending; records failing verification stay quarantined.
 - Resolve the historical customs contract missing from the SRS table/API detail: authorized data owner, field mappings, access restrictions, retention and permitted uses.
 - Decide rate date policy, rate direction, corrections, calculation precision and rounding. Decide standard deviation convention and optional percentile/outlier algorithms and minimum sample size.
@@ -66,7 +66,7 @@ Exit: accepted sample mappings including split/merge/deletion; search by code, r
 
 - Add source approval lifecycle and country/currency/unit/market reference data. Confirm supplier identifiers and permitted source records.
 - Implement international records with source/import country, trade flow/period, quantity/unit, trade value, currency, calculated unit price, Incoterm, source reference and retrieval timestamp.
-- Implement local prices with market/supplier, date, quantity/unit, currency, category, VAT/tax/transport inclusion and verification date. Preserve unknown inclusion values.
+- Keep legacy local-market tables and records for compatibility, but do not expose collection, search, analysis or valuation-selection workflows.
 - Implement historical customs records using the approved proposed schema and a separate API/persistence boundary; restrict sensitive declaration access.
 - Add validated manual entry and staged file imports; validate zero/negative quantities, precision, dates, product/country/unit mappings and duplicate source records.
 - Add approved NBE import/adapter, missing-rate status, exact approved date resolution, rate source/retrieval timestamps and protection against unauthorized modifications.
@@ -92,10 +92,10 @@ Exit: an officer completes the workflow from search to saved decision; later pri
 ## Phase 5 — analysis, integrations and reporting
 
 - Implement monthly, quarterly, annual and custom-period trends using explicit aggregation and observation weighting rules.
-- Add source-country breakdown for international evidence and controlled local-versus-international comparison; expose historical evidence separately.
+- Add source-country breakdown for international evidence and expose saved international history separately.
 - Add configurable outlier rule versions, thresholds, minimum sample size and officer disposition; never automatically delete outliers.
-- Complete adapters only for approved and accessible WCO/national tariff, Comtrade, NBE, historical customs and local sources. ITC/WITS remain conditional on access and approval.
-- Implement the 12 report types: HS reference price, price by country, local market, local versus international, historical trend, mean/median/min/max, outlier, data source, NBE rate, HS revision, customs decision and audit.
+- Complete adapters only for approved and accessible WCO/national tariff, Comtrade, NBE and historical customs sources. ITC/WITS remain conditional on access and approval.
+- Implement the report types: HS reference price, price by country, historical trend, mean/median/min/max, outlier, data source, NBE rate, HS revision, customs decision and audit.
 - Add PDF/Excel/CSV exports as required per report, retaining filters, generation time, source/rate details and requesting user. Confirm Amharic font embedding and prevent CSV formula injection.
 - Add asynchronous export jobs for large datasets, permission checks on job download and report retention controls.
 

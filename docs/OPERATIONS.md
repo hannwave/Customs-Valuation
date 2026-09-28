@@ -66,18 +66,9 @@ The employee table at `/administration` supports search, profile edits, status a
 
 Authorization is applied by the API. Hiding navigation links is only a usability feature and is not the security boundary.
 
-## Local-market workflow
+## Retired local-market collection
 
-1. Enter an HS code and normalized product target.
-2. Select condition, price type, marketplaces, relevance threshold and outlier method.
-3. The API persists each fetched record as `Raw`, then classifies it.
-4. The UI shows used, excluded, wrong-variant, duplicate and outlier groups with reasons.
-5. The robust median is presented as the representative local price.
-6. An officer may approve, reject or confirm an outlier with mandatory justification.
-7. Every manual decision creates an audit record.
-8. **Save clean evidence to database** copies only the comparable pool into local reference evidence.
-
-The confidence score and representative price are decision-support indicators, not automatic Customs values.
+Local marketplace search, collection, classification, review and valuation selection are disabled. Existing local-market database tables and records are retained for compatibility and are not accessed by active workflows. No destructive cleanup migration has been applied.
 
 ## Live API integration test
 

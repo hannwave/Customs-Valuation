@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiActivity, FiArrowRight, FiArchive, FiBarChart2, FiBookOpen, FiCheckCircle,
   FiChevronRight, FiClock, FiFileText, FiGlobe, FiMapPin, FiSearch, FiShield,
-  FiShoppingBag, FiUploadCloud, FiUser, FiUserPlus, FiUsers, FiX,
+  FiUploadCloud, FiUser, FiUserPlus, FiUsers, FiX,
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { FeedbackToast } from "@/components/FeedbackToast";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
+import { getPhase2HsCode, searchPhase2HsCodes } from "@/lib/phase2Api";
+import { displayHsCode, recommendedHsCode } from "@/lib/hs-recommendation";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import type { InternationalPriceSearch, LocalMarketPriceSearch, PriceStatistics } from "@/lib/types/customs";
+import type { CustomsTradeBenchmark, HsCode, InternationalPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
-import { readValuationSession, updateValuationSession, writeValuationSession, addRecentSearch, readRecentSearches, removeRecentSearch, type HistoricalSessionEvidence } from "@/lib/valuation-session";
+import { clearValuationSession, readValuationSession, updateValuationSession, writeValuationSession, addRecentSearch, readRecentSearches, removeRecentSearch, type HistoricalSessionEvidence } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
 
 type Phase = "one" | "two";
@@ -49,26 +51,21 @@ function DashboardHeader({ profile, eyebrow, title, description, actions }: { pr
   return <div className="dashboard-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lead">{description}</p></div><div className="dashboard-heading-side"><span className="workspace-tag"><FiShield />{roleLabel(profile.user.role)}</span>{actions}</div></div>;
 }
 
-type EvidenceSource = "internationalMedian" | "internationalMean" | "localMedian" | "declaredPrice" | "custom";
+type EvidenceSource = "internationalMedian" | "internationalMean" | "customsBenchmark" | "declaredPrice" | "custom";
+type ConvertedPrice = { convertedAmount: number; to: string; rate: number; source: string; date?: string };
 
 function money(value: number | null | undefined, currency: string) {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
 }
 
-function convertStatistics(stats: PriceStatistics | null, rate: number): PriceStatistics | null {
-  if (!stats) return null;
-  const convert = (value: number) => value * rate;
-  return { ...stats, minimum: convert(stats.minimum), maximum: convert(stats.maximum), mean: convert(stats.mean), median: convert(stats.median), standardDeviation: convert(stats.standardDeviation), percentiles: { p25: convert(stats.percentiles.p25), p50: convert(stats.percentiles.p50), p75: convert(stats.percentiles.p75) }, potentialOutliers: stats.potentialOutliers.map(item => ({ ...item, price: convert(item.price) })) };
-}
-
-function StatisticCard({ title, icon, stats, currency, tone, href, rateNote, providerNote }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; tone: "international" | "local"; href: string; rateNote?: string; providerNote?: string }) {
+function StatisticCard({ title, icon, stats, currency, href }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; href: string }) {
+  const tone = "international";
   return <Link href={href} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
     <div className="valuation-card-title"><span>{icon}</span><strong>{title}</strong><em>n = {stats?.observationCount ?? "—"}</em></div>
     <span className="valuation-label">Median unit price</span>
     <b>{money(stats?.median, currency)}</b>
-    {rateNote && <small style={{ display: "block", fontSize: "0.75rem", color: "#64748b", marginTop: "2px", marginBottom: "6px" }}>{rateNote}</small>}
-    {(providerNote || stats?.observationCount === 0 || stats == null) && <p className="valuation-stat-provider-note">{providerNote || (stats?.observationCount === 0 ? "No comparable prices were returned for this search." : "Price statistics have not loaded.")}</p>}
+    {(stats?.observationCount === 0 || stats == null) && <p className="valuation-stat-provider-note">{stats?.observationCount === 0 ? "No comparable prices were returned for this search." : "Price statistics have not loaded."}</p>}
     <dl>
       <div><dt>Mean</dt><dd>{money(stats?.mean, currency)}</dd></div>
       <div><dt>Minimum</dt><dd>{money(stats?.minimum, currency)}</dd></div>
@@ -77,23 +74,21 @@ function StatisticCard({ title, icon, stats, currency, tone, href, rateNote, pro
   </Link>;
 }
 
-function EvidenceTrend({ international, local, customerPrice, currency }: { international: PriceStatistics | null; local: PriceStatistics | null; customerPrice: number | null; currency: string }) {
+function EvidenceTrend({ international, customerPrice, currency }: { international: PriceStatistics | null; customerPrice: number | null; currency: string }) {
   const internationalValue = international?.median;
-  const localValue = local?.median;
-  const scaleMaximum = Math.max(internationalValue ?? 0, localValue ?? 0, customerPrice ?? 0, 1);
+  const scaleMaximum = Math.max(internationalValue ?? 0, customerPrice ?? 0, 1);
   const customerY = customerPrice == null ? null : 68 - Math.min(42, Math.max(0, customerPrice / scaleMaximum * 34));
   const toPoints = (value: number | undefined, offset: number) => value == null ? "" : Array.from({ length: 6 }, (_, index) => `${8 + index * 17},${68 - Math.min(42, Math.max(0, value / scaleMaximum * 34) + ((index % 2) * 2) + offset)}`).join(" ");
-  return <section className="valuation-trend"><div className="valuation-trend-heading"><div><h3>Price evidence snapshot</h3><p>International and Ethiopian local medians in {currency}</p></div><span>Current search</span></div>
-    <div className="valuation-chart" aria-label="Current price evidence comparison"><svg viewBox="0 0 100 80" preserveAspectRatio="none" role="img"><path className="chart-grid" d="M0 15H100M0 40H100M0 65H100" />{internationalValue != null && <polyline className="chart-line chart-line--international" points={toPoints(internationalValue, 5)} />}{localValue != null && <polyline className="chart-line chart-line--local" points={toPoints(localValue, -5)} />}{customerPrice != null && customerY != null && <circle className="chart-point--customer" cx="92" cy={customerY} r="2.7"><title>Customer-paid price: {money(customerPrice, currency)}</title></circle>}</svg><div className="chart-legend"><span><i className="chart-key chart-key--international" />International median {money(internationalValue, currency)}</span><span><i className="chart-key chart-key--local" />Local median {money(localValue, currency)}</span>{customerPrice != null && <span><i className="chart-key chart-key--customer" />Customer-paid price {money(customerPrice, currency)}</span>}</div></div>
+  return <section className="valuation-trend"><div className="valuation-trend-heading"><div><h3>Price evidence snapshot</h3><p>International median and customer-declared price in {currency}</p></div><span>Current search</span></div>
+    <div className="valuation-chart" aria-label="International and customer-declared price comparison"><svg viewBox="0 0 100 80" preserveAspectRatio="none" role="img"><path className="chart-grid" d="M0 15H100M0 40H100M0 65H100" />{internationalValue != null && <polyline className="chart-line chart-line--international" points={toPoints(internationalValue, 5)} />}{customerPrice != null && customerY != null && <circle className="chart-point--customer" cx="92" cy={customerY} r="2.7"><title>Customer-paid price: {money(customerPrice, currency)}</title></circle>}</svg><div className="chart-legend"><span><i className="chart-key chart-key--international" />International median {money(internationalValue, currency)}</span>{customerPrice != null && <span><i className="chart-key chart-key--customer" />Customer-paid price {money(customerPrice, currency)}</span>}</div></div>
   </section>;
 }
 
-function HistoricalPriceCard({ historical, internationalPrice, localPrice, currency }: { historical: HistoricalSessionEvidence | null; internationalPrice: number | null; localPrice: number | null; currency: string }) {
+function HistoricalPriceCard({ historical, internationalPrice, currency }: { historical: HistoricalSessionEvidence | null; internationalPrice: number | null; currency: string }) {
   return <section className="valuation-history-card">
     <div className="valuation-history-heading"><div><span>Saved database evidence</span><h3>Historical prices</h3></div><Link href="/historical-customs-prices">Open history <FiArrowRight /></Link></div>
     <div className="valuation-history-values">
       <div><span>Latest international</span><strong>{money(internationalPrice, currency)}</strong><small>{historical?.summary?.internationalAsOf ? `Observed ${historical.summary.internationalAsOf}` : "No matching saved observation"}</small></div>
-      <div><span>Latest local</span><strong>{money(localPrice, currency)}</strong><small>{historical?.summary?.localAsOf ? `Observed ${historical.summary.localAsOf}` : "No matching saved observation"}</small></div>
     </div>
     <p>{historical?.methodology ?? "Only exact-query observations previously stored in the database are shown. No history is invented or fetched live."}</p>
   </section>;
@@ -103,9 +98,19 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
-  const [local, setLocal] = useState<LocalMarketPriceSearch | null>(null);
+  const [customsBenchmark, setCustomsBenchmark] = useState<CustomsTradeBenchmark | null>(null);
+  const [benchmarkBusy, setBenchmarkBusy] = useState(false);
+  const [benchmarkError, setBenchmarkError] = useState("");
+  const [benchmarkConversion, setBenchmarkConversion] = useState<ConvertedPrice | null>(null);
+  const [searchedTerm, setSearchedTerm] = useState("");
+  const searchSerial = useRef(0);
+  const hsLookupSerial = useRef(0);
+  const [hsInput, setHsInput] = useState("");
+  const [hsCode, setHsCode] = useState<HsCode | null>(null);
+  const [hsCandidates, setHsCandidates] = useState<HsCode[]>([]);
+  const [hsBusy, setHsBusy] = useState(false);
+  const [hsMessage, setHsMessage] = useState("");
   const [historical, setHistorical] = useState<HistoricalSessionEvidence | null>(null);
-  const [localRate, setLocalRate] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<EvidenceSource>("internationalMedian");
@@ -119,7 +124,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [declaredConversion, setDeclaredConversion] = useState<{ convertedAmount: number; rate: number; source: string; to?: string; date?: string } | null>(null);
-  const [fxMeta, setFxMeta] = useState<{ etbPerUnit?: number; source?: string; date?: string } | null>(null);
   const currency = ({ us: "USD", gb: "GBP", de: "EUR", ae: "AED", za: "ZAR" } as Record<string, string>)[market] ?? "USD";
   const justificationIssue = officerNoteIssue(justification);
 
@@ -134,40 +138,72 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setRecentSearches(readRecentSearches());
     const active = readValuationSession();
     if (!active) return;
-    setQuery(active.query); setMarket(active.market); setInternational(active.international); setLocal(active.local); setHistorical(active.historical ?? null);
+    setQuery(active.query); setMarket(active.market); setInternational(active.international); setHistorical(active.historical ?? null);
+    setCustomsBenchmark(active.customsBenchmark ?? null);
+    if (active.international || active.historical || active.customsBenchmark) setSearchedTerm(active.query);
+    if (active.hsCode) setHsInput(active.hsCode);
+    if (active.hsCodeId) {
+      void getPhase2HsCode(active.hsCodeId).then(setHsCode).catch(() => {});
+    }
     if (active.customerTransaction) {
       setDeclaredPrice(active.customerTransaction.amount?.toString() ?? "");
       setDeclaredCurrency(active.customerTransaction.currency || "USD");
     }
-    if (["internationalMedian", "internationalMean", "localMedian", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
+    if (["internationalMedian", "internationalMean", "customsBenchmark", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
       setSelected(active.selectedSource as EvidenceSource);
   }, []);
 
-  useEffect(() => {
-    if (currency === "ETB") {
-      setLocalRate(1);
-      setFxMeta(null);
-      return;
+  async function lookupHs(searchTerm: string, serial: number, automatic: boolean) {
+    setHsBusy(true);
+    setHsMessage("");
+    try {
+      const expected = automatic ? recommendedHsCode(searchTerm) : null;
+      const result = await searchPhase2HsCodes(expected ?? searchTerm);
+      if (serial !== hsLookupSerial.current) return;
+      setHsCandidates(result.items);
+      const exact = result.items.find(item =>
+        (item.code ?? "").replace(/\D/g, "") === (expected ?? searchTerm).replace(/\D/g, "") ||
+        (item.tariffItemNo ?? "").replace(/\D/g, "") === (expected ?? searchTerm).replace(/\D/g, ""));
+      const chosen = exact ?? (automatic && result.items.length === 1 ? result.items[0] : null);
+      if (chosen) {
+        setHsCode(chosen);
+        setHsInput(displayHsCode(chosen));
+        updateValuationSession({ hsCodeId: chosen.id, hsCode: displayHsCode(chosen) });
+      } else {
+        setHsMessage(result.items.length ? "Choose the correct tariff line below." : "No confident HS match. Search by code or product description, then choose a tariff line.");
+      }
+    } catch (reason) {
+      if (serial === hsLookupSerial.current) setHsMessage(reason instanceof Error ? reason.message : "HS lookup is unavailable. Try entering a code.");
+    } finally {
+      if (serial === hsLookupSerial.current) setHsBusy(false);
     }
-    const token = getSessionAccessToken();
-    if (!token) return;
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-    fetch(`${base}/api/exchange-rates?to=${currency}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data && typeof data.rate === "number" && data.rate > 0) {
-          setLocalRate(data.rate);
-          setFxMeta({
-            etbPerUnit: data.etbPerUnit,
-            source: data.source,
-            date: data.date
-          });
-        }
-      })
-      .catch(() => {});
-  }, [currency]);
+  }
+
+  function editHs(value: string) {
+    setHsInput(value);
+    setHsCode(null);
+    setHsCandidates([]);
+    setHsMessage("");
+    setCustomsBenchmark(null);
+    setBenchmarkConversion(null);
+    if (selected === "customsBenchmark") setSelected("internationalMedian");
+    updateValuationSession({ hsCodeId: null, hsCode: "" });
+    const serial = ++hsLookupSerial.current;
+    if (value.trim().length < 2) { setHsBusy(false); return; }
+    window.setTimeout(() => { if (serial === hsLookupSerial.current) void lookupHs(value.trim(), serial, false); }, 300);
+  }
+
+  function chooseHs(item: HsCode) {
+    setHsCode(item);
+    setHsInput(displayHsCode(item));
+    setHsCandidates([]);
+    setHsMessage("");
+    setCustomsBenchmark(null);
+    setBenchmarkConversion(null);
+    ++hsLookupSerial.current;
+    setHsBusy(false);
+    updateValuationSession({ hsCodeId: item.id, hsCode: displayHsCode(item) });
+  }
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -175,8 +211,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
     if (!Number.isFinite(Number(declaredPrice)) || Number(declaredPrice) <= 0) { setError("Enter the customer’s original price before searching."); document.getElementById("customer-price-input")?.focus(); return; }
     if (!receiptFile) { setError("Attach the customer’s receipt before searching."); document.getElementById("customer-receipt-input")?.focus(); return; }
-    setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setLocal(null); setHistorical(null); setLocalRate(1);
-    setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setFxMeta(null);
+    const serial = ++searchSerial.current;
+    const hsSerial = ++hsLookupSerial.current;
+    setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setHistorical(null);
+    setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setSearchedTerm(term);
+    setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage("");
+    setSelected("internationalMedian"); setCustomValue(""); setJustification("");
     // Start a fresh client-side session for this search. Later asynchronous
     // evidence responses merge into this record, so a late response cannot
     // overwrite a decision that was already submitted from Phase 1.
@@ -185,8 +225,10 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       query: term,
       market,
       international: null,
-      local: null,
+      customsBenchmark: null,
       historical: null,
+      hsCodeId: null,
+      hsCode: "",
       customerTransaction: null,
       createdAt: new Date().toISOString(),
     });
@@ -210,8 +252,6 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       return body as T;
     };
     let internationalValue: InternationalPriceSearch | null = null;
-    let localValue: LocalMarketPriceSearch | null = null;
-    let completed = 0;
     const persist = () => {
       const current = readValuationSession();
       writeValuationSession({
@@ -220,54 +260,70 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
         query: term,
         market,
         international: internationalValue ?? current?.international ?? null,
-        local: localValue ?? current?.local ?? null,
         historical: historicalValue ?? current?.historical ?? null,
         createdAt: current?.createdAt ?? new Date().toISOString(),
       });
     };
-    const finish = () => { completed += 1; if (completed === 2) setBusy(false); };
     let historicalValue: HistoricalSessionEvidence | null = null;
+    void lookupHs(term, hsSerial, true);
     void request<InternationalPriceSearch>(`${base}/api/international-prices/search?${new URLSearchParams({ q: term, market })}`)
       .then(result => { internationalValue = result; setInternational(result); persist(); if (result.statistics) setSelected("internationalMedian"); })
-      .catch(reason => { if (redirectingForExpiredSession) return; setError(current => current || (reason instanceof Error ? `International prices could not load: ${reason.message}` : "International evidence is unavailable. Local results will continue loading.")); })
-      .finally(finish);
-    void request<LocalMarketPriceSearch>(`${base}/api/local-prices/search?${new URLSearchParams({ q: term, sources: "jiji,ethioshop" })}`)
-      .then(result => { localValue = result; setLocal(result); persist(); if (!internationalValue?.statistics && result.statistics) setSelected("localMedian"); })
-      .catch(reason => { if (redirectingForExpiredSession) return; setError(current => current || (reason instanceof Error ? `Local prices could not load: ${reason.message}` : internationalValue ? "Local-market evidence is unavailable. International results are shown." : "Price evidence could not be loaded.")); })
-      .finally(finish);
+      .catch(reason => { if (redirectingForExpiredSession) return; setError(current => current || (reason instanceof Error ? `International prices could not load: ${reason.message}` : "International evidence is unavailable.")); })
+      .finally(() => setBusy(false));
     void request<HistoricalSessionEvidence>(`${base}/api/historical-markets/summary?${new URLSearchParams({ q: term })}`)
       .then(result => { historicalValue = result; setHistorical(result); persist(); })
       .catch(() => { historicalValue = null; setHistorical(null); });
-    if (currency !== "ETB") {
-      void request<{ rate: number; etbPerUnit?: number; source?: string; date?: string }>(`${base}/api/exchange-rates?to=${currency}`)
-        .then(result => {
-          setLocalRate(result.rate);
-          if (result.etbPerUnit) {
-            setFxMeta({ etbPerUnit: result.etbPerUnit, source: result.source, date: result.date });
-          }
-        })
-        .catch(reason => { if (redirectingForExpiredSession) return; setError(current => current || (reason instanceof Error ? `Exchange rate unavailable: ${reason.message}. Local amounts remain in ETB.` : "Local prices loaded, but the ETB exchange rate is unavailable. Local amounts remain in ETB.")); });
-    }
   }
 
-  const localCurrency = currency === "ETB" || localRate !== 1 ? currency : "ETB";
-  const displayLocal = local ? { ...local, statistics: localCurrency === currency ? convertStatistics(local.statistics, localRate) : local.statistics } : null;
   const declaredAmount = Number(declaredPrice);
   const hasDeclaredAmount = Number.isFinite(declaredAmount) && declaredAmount > 0;
   const hasRequiredCustomerEvidence = hasDeclaredAmount && Boolean(receiptFile);
   const canSearch = query.trim().length >= 2 && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
-  const declaredEtbEquivalent = declaredPreferredValue == null ? null : currency === "ETB" ? declaredPreferredValue : fxMeta?.etbPerUnit ? declaredPreferredValue * fxMeta.etbPerUnit : null;
-  const historicalRate = localCurrency === currency ? localRate : 1;
-  const historicalInternationalValue = historical?.summary?.currentInternationalPrice == null ? null : historical.summary.currentInternationalPrice * historicalRate;
-  const historicalLocalValue = historical?.summary?.currentLocalPrice == null ? null : historical.summary.currentLocalPrice * historicalRate;
+  const historicalInternationalValue = historical?.summary?.currentInternationalPrice ?? null;
+  const benchmarkPreferredValue = customsBenchmark?.unit === "u" && benchmarkConversion?.to === currency ? benchmarkConversion.convertedAmount : null;
   const selectedValue = selected === "internationalMedian" ? international?.statistics?.median
     : selected === "internationalMean" ? international?.statistics?.mean
-      : selected === "localMedian" ? displayLocal?.statistics?.median
-        : selected === "declaredPrice" ? declaredConversion?.convertedAmount
-          : Number(customValue);
-  const selectedCurrency = selected === "localMedian" ? localCurrency : currency;
-  const hasResults = Boolean(international || local || historical);
+      : selected === "customsBenchmark" ? benchmarkPreferredValue
+      : selected === "declaredPrice" ? declaredConversion?.convertedAmount
+        : Number(customValue);
+  const selectedCurrency = currency;
+  const hasResults = Boolean(searchedTerm || international || historical || customsBenchmark);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBenchmarkConversion(null);
+    const token = getSessionAccessToken();
+    if (!token || !customsBenchmark?.unitValue || customsBenchmark.unit !== "u") return;
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    void (async () => {
+      const params = new URLSearchParams({ amount: String(customsBenchmark.unitValue), from: "USD", to: currency });
+      const response = await fetch(`${base}/api/exchange-rates/convert?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) return;
+      const result = await response.json() as ConvertedPrice;
+      if (!cancelled) setBenchmarkConversion(result);
+    })().catch(() => { if (!cancelled) setBenchmarkConversion(null); });
+    return () => { cancelled = true; };
+  }, [customsBenchmark, currency]);
+
+  useEffect(() => {
+    if (!searchedTerm || !hsCode?.code) { setBenchmarkBusy(false); return; }
+    let cancelled = false;
+    const token = getSessionAccessToken();
+    if (!token) return;
+    setBenchmarkBusy(true); setBenchmarkError(""); setCustomsBenchmark(null);
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    void fetch(`${base}/api/customs-trade-benchmark/search?${new URLSearchParams({ hsCode: hsCode.code })}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail ?? body.title ?? "Customs trade benchmark could not be loaded.");
+        return body as CustomsTradeBenchmark;
+      })
+      .then(result => { if (!cancelled) { setCustomsBenchmark(result); updateValuationSession({ customsBenchmark: result }); } })
+      .catch(reason => { if (!cancelled) setBenchmarkError(reason instanceof Error ? reason.message : "Customs trade benchmark could not be loaded."); })
+      .finally(() => { if (!cancelled) setBenchmarkBusy(false); });
+    return () => { cancelled = true; };
+  }, [hsCode, searchedTerm]);
 
   useEffect(() => {
     const amount = Number(declaredPrice);
@@ -327,17 +383,22 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        if (!assignedLocationId) throw new Error("Assign an active valuation office before submitting this valuation.");
 
        const evidenceSnapshot = {
-         product: query.trim(), hsCode: null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+         product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
          selectedCurrency, supportingSource: selected, officer: { id: profile.user.id, name: profile.user.fullName },
-         decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [], localEvidence: local?.items ?? [],
-         statistics: { international: international?.statistics ?? null, local: local?.statistics ?? null },
+         decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
+         customsTradeBenchmark: customsBenchmark,
+         statistics: { international: international?.statistics ?? null },
          priceBasis: {
            preferredCurrency: currency,
            internationalMedian: international?.statistics?.median ?? null,
            internationalCurrency: currency,
-           localMedian: displayLocal?.statistics?.median ?? null,
-           localCurrency,
-           localExchangeRate: localCurrency === currency ? localRate : 1,
+           customsTradeBenchmark: customsBenchmark ? {
+             ...customsBenchmark,
+             convertedUnitValue: benchmarkPreferredValue,
+             convertedCurrency: currency,
+             exchangeRate: benchmarkConversion?.rate ?? null,
+             exchangeRateSource: benchmarkConversion?.source ?? null,
+           } : null,
            historical: historical ? { summary: historical.summary ?? null, rows: historical.rows, currency: historical.currency, asOf: historical.asOf ?? null } : null,
            customerDeclared: {
              originalAmount: Number(declaredPrice), originalCurrency: declaredCurrency,
@@ -346,11 +407,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
              receiptFileName: receiptFile?.name ?? null, receiptContentType: receiptFile?.type ?? null, receiptFileSize: receiptFile?.size ?? null,
            },
          },
-         outliers: { international: international?.statistics?.potentialOutliers ?? [], local: local?.statistics?.potentialOutliers ?? [] },
-         tariff: { rate: null, amount: null, source: "Classification and tariff lookup are completed in Phase 2." },
+         outliers: { international: international?.statistics?.potentialOutliers ?? [] },
+         tariff: { hsCodeId: hsCode?.id ?? null, hsCode: hsCode?.code ?? null, rate: hsCode?.duty ?? null, amount: null, source: hsCode ? "Matched against the active Ethiopian tariff; duty and tax assessment remains in Phase 2." : "HS classification will be reviewed in Phase 2." },
        };
 
        const form = new FormData();
+       if (hsCode) form.append("hsCodeId", hsCode.id);
        form.append("locationId", assignedLocationId); form.append("selectedReferenceValue", String(parsedSelectedValue));
        form.append("currency", selectedCurrency); form.append("decision", `Customs value selected for ${query.trim()}`);
        form.append("justification", justification.trim()); form.append("evidence", JSON.stringify(evidenceSnapshot));
@@ -361,15 +423,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        if (!response.ok) throw new Error(payload.message ?? "The valuation and receipt could not be saved.");
        const created = payload as { id: string; version: string };
        const submitted = await workspaceApi<{ status: string }>(`/decisions/${created.id}/submit`, { method: "POST", body: JSON.stringify({ version: created.version, justification: justification.trim() }) });
-       updateValuationSession({ hsCode: undefined, selectedValue: parsedSelectedValue, selectedCurrency, selectedSource: selected, decisionId: created.id, phase1Submitted: submitted.status === "Submitted" });
+       updateValuationSession({ hsCodeId: hsCode?.id ?? null, hsCode: hsCode ? displayHsCode(hsCode) : "", selectedValue: parsedSelectedValue, selectedCurrency, selectedSource: selected, decisionId: created.id, phase1Submitted: submitted.status === "Submitted" });
        setRecordNotice("Price Review submitted. Continuing to Final Assessment…");
        onSubmitted();
     } catch (exception) { setError(exception instanceof Error ? exception.message : "The valuation decision could not be saved."); }
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const localOutliers = local?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { setQuery(""); setInternational(null); setLocal(null); setHistorical(null); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
@@ -384,7 +445,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
           <label className="valuation-field-label" htmlFor="valuation-product-query">Product to search</label>
           <div className="valuation-search-input-wrap">
             <FiSearch aria-hidden="true" />
-          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by product name, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setError(""); }} required />
+          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
           </div>
         </div>
         <div className="valuation-market-select">
@@ -407,6 +468,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
         <button className="valuation-search-btn" type="submit" aria-describedby="valuation-search-requirement" aria-busy={busy || undefined} disabled={!canSearch}><FiSearch />{busy ? "Searching…" : "Search"}</button>
         <button className="valuation-clear-btn" type="button" onClick={clearAll}><FiX />Clear</button>
       </form>
+
+      <div className="valuation-hs-lookup">
+        <div><label htmlFor="valuation-hs-code">HS code</label><small>{hsCode ? "Matched to the active Ethiopian tariff. You can change it." : hsBusy ? "Matching the product to the tariff…" : "Search the product first, or enter an HS code manually."}</small></div>
+        <div className="valuation-hs-control"><input id="valuation-hs-code" value={hsInput} onChange={event => editHs(event.currentTarget.value)} placeholder="Search or enter HS code" autoComplete="off" aria-autocomplete="list" aria-expanded={hsCandidates.length > 0} />{hsCode && <span className="valuation-hs-confirmed"><FiCheckCircle /> Matched</span>}</div>
+        {hsCode && <p className="valuation-hs-description">{hsCode.descriptionEn}{hsCode.duty ? ` · Duty ${hsCode.duty}` : ""}</p>}
+        {hsMessage && <p className="valuation-hs-message" role="status">{hsMessage}</p>}
+        {hsCandidates.length > 0 && !hsCode && <div className="valuation-hs-candidates" role="listbox" aria-label="Matching HS codes">{hsCandidates.map(item => <button type="button" role="option" aria-selected={false} key={item.id} onClick={() => chooseHs(item)}><strong>{displayHsCode(item)}</strong><span>{item.descriptionEn}</span></button>)}</div>}
+      </div>
 
       {/* ── Upload Area ── */}
       <div className="valuation-upload-row">
@@ -431,14 +500,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       </div>
     </div>}
 
-    {hasResults && <div className="officer-search-links"><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><FiGlobe />Global market details</Link><Link href={`/local-prices?q=${encodeURIComponent(query.trim())}`}><FiShoppingBag />Local market details</Link><Link href="/historical-customs-prices"><FiArchive />Customs history</Link><Link href="/outlier-analysis"><FiBarChart2 />Price analysis</Link></div>}
+    {hasResults && <div className="officer-search-links"><Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><FiGlobe />Global market details</Link><Link href="/historical-customs-prices"><FiArchive />Customs history</Link><Link href="/outlier-analysis"><FiBarChart2 />Price analysis</Link></div>}
     <FeedbackToast error={error} success={recordNotice} onDismissError={() => setError("")} onDismissSuccess={() => setRecordNotice("")} />
     {hasResults && (
-      <div className="valuation-workspace-grid">
-        <div className="valuation-evidence-area">
-          <div className="valuation-stat-grid">
-            <StatisticCard title="Global market statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} tone="international" href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} />
-            <StatisticCard title="Local market statistics" icon={<FiMapPin />} stats={displayLocal?.statistics ?? null} currency={localCurrency} tone="local" href={`/local-prices?q=${encodeURIComponent(query.trim())}`} rateNote={localCurrency === currency && fxMeta?.etbPerUnit ? `1 ${currency} = ${fxMeta.etbPerUnit.toFixed(2)} ETB · CBE via exchange.et` : undefined} providerNote={local?.sources.map(source => `${source.name}: ${source.status}${source.resultCount ? ` (${source.resultCount} offers)` : source.message ? ` — ${source.message}` : ""}`).join(" · ")} />
+      <>
+        <div className="valuation-stat-grid valuation-results-overview">
+            <StatisticCard title="Global market statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} />
             <section className="paid-price-card paid-price-card--inline valuation-stat-card customer-price-card" aria-label="Required customer transaction evidence">
               <div className="valuation-card-title customer-price-card-title"><span><FiUser /></span><strong>Customer-paid price</strong><em>{hasDeclaredAmount ? "n = 1" : "Required"}</em></div>
               <div className="customer-price-readout" aria-live="polite">
@@ -449,32 +516,47 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
                 <a className={`customer-price-receipt-icon${receiptPreviewUrl ? "" : " is-unavailable"}`} href={receiptPreviewUrl ?? undefined} target="_blank" rel="noreferrer" aria-label={receiptPreviewUrl ? "View customer receipt" : "Receipt unavailable in this session"} title={receiptFile?.name ?? "Receipt unavailable in this session"} aria-disabled={!receiptPreviewUrl} tabIndex={receiptPreviewUrl ? 0 : -1} onClick={event => { if (!receiptPreviewUrl) event.preventDefault(); }}><FiFileText aria-hidden="true" /></a>
               </div>
             </section>
-          </div>
-          <EvidenceTrend international={international?.statistics ?? null} local={localCurrency === currency ? displayLocal?.statistics ?? null : null} customerPrice={declaredPreferredValue} currency={currency} />
-          <HistoricalPriceCard historical={historical} internationalPrice={historicalInternationalValue} localPrice={historicalLocalValue} currency={localCurrency} />
+            <section className="valuation-stat-card manufacturer-price-card" aria-label="Customs trade benchmark">
+              <div className="valuation-card-title"><span><FiArchive /></span><strong>Customs trade benchmark</strong><em>{customsBenchmark?.period ?? "HS category"}</em></div>
+              {benchmarkBusy ? <p role="status" className="manufacturer-price-note">Checking Ethiopia import statistics…</p>
+                : benchmarkError ? <p role="alert" className="manufacturer-price-error">{benchmarkError}</p>
+                : customsBenchmark?.unitValue != null ? <>
+                  <span className="valuation-label">Ethiopia imports · HS {customsBenchmark.hsCode} · {customsBenchmark.period}</span>
+                  <b>{money(customsBenchmark.unitValue, "USD")} / {customsBenchmark.unit}</b>
+                  <p className="manufacturer-price-note">{customsBenchmark.unit === "u" ? benchmarkPreferredValue == null ? "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Reported per ${customsBenchmark.unit}; not directly comparable to an item price.`}</p>
+                  <p className="manufacturer-price-note">{customsBenchmark.message}</p>
+                  {customsBenchmark.sourceUrl && <a className="manufacturer-source-link" href={customsBenchmark.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade source <FiArrowRight /></a>}
+                </> : <p className="manufacturer-price-note">{customsBenchmark?.message ?? (hsCode ? "Waiting for import statistics." : "Select an HS code to look up Ethiopia import statistics.")}</p>}
+            </section>
+        </div>
+        <div className="valuation-workspace-grid">
+        <div className="valuation-evidence-area">
+          <EvidenceTrend international={international?.statistics ?? null} customerPrice={declaredPreferredValue} currency={currency} />
+          <HistoricalPriceCard historical={historical} internationalPrice={historicalInternationalValue} currency="ETB" />
           <section className="valuation-insight-grid">
-            <Link href="/outlier-analysis"><strong>Price analysis</strong><span>{internationalOutliers + localOutliers} suspected outlier{internationalOutliers + localOutliers === 1 ? "" : "s"}</span><small>Global {internationalOutliers} · Local {localOutliers} · View reasons <FiArrowRight /></small></Link>
+            <Link href="/outlier-analysis"><strong>Price analysis</strong><span>{internationalOutliers} suspected outlier{internationalOutliers === 1 ? "" : "s"}</span><small>International market · View reasons <FiArrowRight /></small></Link>
             <Link href="/historical-customs-prices"><strong>Customs history</strong><span>Saved history review</span><small>Open the historical comparison <FiArrowRight /></small></Link>
             <Link href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`}><strong>Global market</strong><span>{international?.items.length ?? 0} offers</span><small>View exact offers <FiArrowRight /></small></Link>
           </section>
         </div>
         <aside className="valuation-decision-panel">
-          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose a comparable market value or the customer’s converted invoice price. Your selection is passed to Final Assessment.</p></div></div>
+          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose market evidence, an HS-category customs trade benchmark, or the customer’s converted invoice price. Your selection is passed to Final Assessment.</p></div></div>
           <div className="reference-options">
             <label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.median == null} checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International market median</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.median, currency)}</b></label>
             <label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.mean == null} checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.mean, currency)}</b></label>
-            <label className={selected === "localMedian" ? "is-selected" : ""}><input type="radio" disabled={displayLocal?.statistics?.median == null || localCurrency !== currency} checked={selected === "localMedian"} onChange={() => setSelected("localMedian")} /><span><strong>Local market median</strong><small>{local?.statistics?.observationCount ?? 0} local records · {localCurrency === currency ? `converted to ${currency}${fxMeta?.etbPerUnit ? ` at ${fxMeta.etbPerUnit.toFixed(2)} ETB/${currency}` : ""}` : "ETB shown; preferred-currency conversion unavailable"}</small></span><b>{money(displayLocal?.statistics?.median, localCurrency)}</b></label>
+            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {customsBenchmark.period} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} · category average</small></span><b>{money(benchmarkPreferredValue, currency)}</b></label>}
             <label className={selected === "declaredPrice" ? "is-selected" : ""}><input type="radio" disabled={declaredConversion?.to !== currency || Number(declaredPrice) <= 0} checked={selected === "declaredPrice"} onChange={() => setSelected("declaredPrice")} /><span><strong>Customer’s original price paid</strong><small>{declaredPrice ? `Invoice ${declaredCurrency} ${Number(declaredPrice).toLocaleString()} · ${receiptFile ? "receipt attached" : "receipt required"}` : "Enter the invoice amount and attach its receipt above"}</small></span><b>{declaredConversion?.to === currency ? money(declaredConversion.convertedAmount, currency) : "—"}</b></label>
             <label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount · {currency}</small></span></label>
             {selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={"Enter amount in " + currency} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}
           </div>
           <div className="overview-decision-fields"><label>Officer note (optional)<textarea maxLength={500} aria-invalid={Boolean(justificationIssue)} value={justification} onChange={event => setJustification(event.currentTarget.value)} placeholder="Add an optional note about this customs value…" rows={3} />{justificationIssue && <small className="field-validation-error" role="alert">{justificationIssue}</small>}</label></div>
           <div className="selected-reference"><span>Selected customs value</span><b>{money(selectedValue, selectedCurrency)}</b></div>
-          <button className="valuation-record-link" type="button" disabled={recording || Boolean(justificationIssue) || !Number.isFinite(Number(selectedValue)) || Number(selectedValue) <= 0 || !declaredPrice || !receiptFile || declaredConversion?.to !== currency} onClick={() => void recordDecision()}><FiFileText />{recording ? "Submitting valuation…" : "Continue to next phase"}</button>
+          <button className="valuation-record-link" type="button" disabled={recording || hsBusy || Boolean(justificationIssue) || !Number.isFinite(Number(selectedValue)) || Number(selectedValue) <= 0 || !declaredPrice || !receiptFile || declaredConversion?.to !== currency} onClick={() => void recordDecision()}><FiFileText />{recording ? "Submitting valuation…" : "Continue to next phase"}</button>
           {(!declaredPrice || !receiptFile || declaredConversion?.to !== currency) && <small className="decision-disclaimer">Enter the original paid price, complete its currency conversion, and attach the customer receipt to continue.</small>}
           <small className="decision-disclaimer">Your selected customs value and evidence will be carried into Final Assessment.</small>
         </aside>
       </div>
+      </>
     )}
   </section>;
 }

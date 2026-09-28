@@ -152,8 +152,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             .ThenByDescending(r => r.Number)
             .FirstOrDefaultAsync(ct);
         var activeHs = revision == null ? 0 : await db.HsCodes.CountAsync(h => h.RevisionId == revision.Id, ct);
-        var sources = await db.PriceSources.AsNoTracking().OrderBy(s => s.Pool).ThenBy(s => s.Name).ToListAsync(ct);
-        var outliers = await db.LocalMarketObservations.CountAsync(o => o.IsPotentialOutlier && o.ManualReviewStatus == ManualReviewStatus.Unreviewed, ct);
+        var sources = await db.PriceSources.AsNoTracking().Where(source => source.Pool != PricePool.Local).OrderBy(s => s.Pool).ThenBy(s => s.Name).ToListAsync(ct);
         var visibleBranches = locations.Count(l => l.LocationType == "BRANCH");
         var activeLocations = locations.Count(l => (access.Role != AccessRules.CustomsAdmin || l.LocationType == "BRANCH") && l.Status == "ACTIVE" && l.EffectiveFrom <= now && (l.EffectiveTo == null || l.EffectiveTo > now));
         var officers = dashboardEmployees.Count(u => AccessRules.NormalizeRole(u.Role) == AccessRules.Officer && u.Active);
@@ -184,7 +183,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             _ => [
                 new { key = "pending", label = "My pending cases", value = ownPending.ToString("N0"), detail = "Draft or returned", tone = "blue" },
                 new { key = "review", label = "Cases under review", value = submitted.ToString("N0"), detail = "Submitted", tone = "gold" },
-                new { key = "flagged", label = "Flagged observations", value = outliers.ToString("N0"), detail = "Evidence requiring attention", tone = outliers > 0 ? "red" : "green" },
                 new { key = "today", label = "Decisions today", value = todayCount.ToString("N0"), detail = "Recorded by me", tone = "teal" }
             ]
         };

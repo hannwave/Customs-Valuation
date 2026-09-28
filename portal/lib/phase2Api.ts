@@ -30,6 +30,7 @@ export const loadPhase2 = (decisionId: string) => request<Phase2Response>(`/api/
 export const calculatePhase2 = (decisionId: string, payload: Phase2Request) => request<Phase2Response>(`/api/valuation-decisions/${decisionId}/phase-2/calculate`, { method: "POST", body: JSON.stringify(payload) });
 export const savePhase2 = (decisionId: string, payload: Phase2Request, complete = false) => request<Phase2Response>(`/api/valuation-decisions/${decisionId}/phase-2${complete ? "/complete" : ""}`, { method: complete ? "POST" : "PUT", body: JSON.stringify(payload) });
 export const searchPhase2HsCodes = (search: string) => request<PagedResult<HsCode>>(`/api/hs-codes?${new URLSearchParams({ search, page: "1", pageSize: "8" })}`);
+export const getPhase2HsCode = (id: string) => request<HsCode>(`/api/hs-codes/${encodeURIComponent(id)}`);
 
 export async function downloadPhase1Receipt(decisionId: string) {
   const token = getSessionAccessToken();

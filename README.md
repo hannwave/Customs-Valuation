@@ -1,8 +1,8 @@
 # Ethiopian Customs Valuation Decision Support
 
-A .NET 8, Next.js 15 and PostgreSQL application for HS-code reference data, international and Ethiopian local-market price evidence, account administration and officer-facing valuation support.
+A .NET 8, Next.js 15 and PostgreSQL application for HS-code reference data, international price evidence, account administration and officer-facing valuation support.
 
-The system keeps international, Ethiopian local and historical Customs price pools separate. Local marketplace data is preserved as raw observations, classified for product comparability, normalized, checked for duplicates and outliers, and summarized with a median representative price and an explainable confidence score. It is decision support only: no calculated price automatically becomes a legally applicable Customs value.
+The system uses international price evidence and historical observations already saved from earlier searches. No market price automatically becomes a legally applicable Customs value. Local-market collection, search, analysis and valuation selection have been retired. Existing local-market database tables and records are retained for compatibility; this change does not delete stored data.
 
 ## Implemented modules
 
@@ -12,10 +12,8 @@ The system keeps international, Ethiopian local and historical Customs price poo
 - Officer valuation drafts/submission, scoped administrator review, and role-filtered audit visibility.
 - Ethiopian HS codes and tariff-line duty data stored in PostgreSQL/Supabase.
 - Google Shopping international-price search through SerpAPI, with optional HS-code synchronization.
-- Jiji Ethiopia and EthioShop local-market collection adapters.
-- Raw local-observation persistence, product relevance scoring, category exclusions, brand/model/variant matching, condition separation, duplicate detection and unit-price normalization.
-- IQR and MAD outlier detection, robust statistics, median representative price and confidence factors.
-- Transparent observation/exclusion UI and audited officer classification overrides.
+- Manufacturer-site price evidence through Apify, with exact product matching, source links, currency conversion and officer selection in Price Review.
+- International price search and product-specific saved history.
 
 TeleGebeya has moved to Zemen Gebeya inside the authenticated telebirr SuperApp. It is represented as `PartnerAccessRequired` until Ethio telecom supplies a supported partner API and credentials.
 

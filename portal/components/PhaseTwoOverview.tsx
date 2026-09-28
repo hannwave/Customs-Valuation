@@ -21,6 +21,7 @@ import { FeedbackToast } from "@/components/FeedbackToast";
 import {
   calculatePhase2,
   downloadPhase1Receipt,
+  getPhase2HsCode,
   loadPhase2,
   savePhase2,
   searchPhase2HsCodes,
@@ -33,32 +34,11 @@ import type {
 } from "@/lib/types/customs";
 import { readValuationSession } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
+import { recommendedHsCode } from "@/lib/hs-recommendation";
 
 type PhaseTwoOverviewProps = {
   onBackToReview?: () => void;
 };
-
-function recommendedHsCode(product: string) {
-  const normalized = product.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const phoneAccessory = /\b(case|cover|charger|charging|cable|adapter|screen protector|display|battery|earbuds?|headphones?|holder|mount|parts?)\b/.test(normalized);
-  if (/\b(iphones?|i phones?|smartphones?|smart phones?|mobile phones?|cellular phones?|samsung|galaxy|huawei|xiaomi|redmi|oppo|vivo|oneplus|pixel|nokia|motorola|tecno|infinix|itel|realme|poco|nothing phones?)\b/.test(normalized) && !phoneAccessory) return "851713";
-
-  // Cigars → HS 2402.10
-  const nonCigarProduct = /\b(electronic|e cigar|holder|case|cutter|humidor|lighter|ashtray|parts?)\b/.test(normalized);
-  if (/\b(cigar|cigars|habano|habanos|cohiba|montecristo|romeo y julieta|partagas|bolivar|punch|hoyo de monterrey)\b/.test(normalized) && !nonCigarProduct) return "240210";
-
-  // Cigarettes → HS 2402.20
-  const nonTobaccoProduct = /\b(electronic|e cigarette|ecigarette|vape|vaping|holder|paper|filter|case|machine|parts?)\b/.test(normalized);
-  if (/\b(cigarette|cigarettes|cigaret|cigarets|cigarate|cigarates|cigerette|cigerettes)\b/.test(normalized) && !nonTobaccoProduct) return "240220";
-
-  // Laptops / Notebooks → HS 8471.30
-  if (/\b(laptop|notebook|macbook|thinkpad|chromebook|computer|pc)\b/.test(normalized)) return "847130";
-
-  // Motor Vehicles → HS 8703.23
-  if (/\b(car|automobile|vehicle|sedan|suv|motor car|toyota|hyundai)\b/.test(normalized)) return "870323";
-
-  return null;
-}
 
 function displayHsCode(item: HsCode | null | undefined) {
   if (!item) return "";
@@ -227,7 +207,7 @@ function displayBasis(basis: string) {
 function draftFromResponse(data: Phase2Response): Phase2Request {
   const phase = data.phase2;
   const carriedValue = phase1Value(data);
-  if (!phase) return emptyDraft(carriedValue);
+  if (!phase) return { ...emptyDraft(carriedValue), selectedHsCodeId: data.phase1.hsCodeId };
 
   // A draft created by an older client may have been saved with CIF = 0.
   // Recover the authoritative Phase 1 selected value instead of displaying
@@ -452,9 +432,11 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
 
           const savedItem = nextDraft.selectedHsCodeId
             ? matches.items.find((item) => item.id === nextDraft.selectedHsCodeId)
+              ?? await getPhase2HsCode(nextDraft.selectedHsCodeId)
             : null;
 
           if (savedItem) {
+            setHsResults(previous => previous.some(item => item.id === savedItem.id) ? previous : [savedItem, ...previous]);
             setHsCodeInput(displayHsCode(savedItem));
             const isDifferent = Boolean(recCodeStr && displayHsCode(savedItem).replace(/\D/g, "") !== recCodeStr.replace(/\D/g, ""));
             setIsManuallyOverridden(isDifferent);

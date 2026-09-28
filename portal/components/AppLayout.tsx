@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
   FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
-  FiShield, FiShoppingBag, FiUser, FiUsers, FiX,
+  FiShield, FiUser, FiUsers, FiX,
 } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
@@ -19,7 +19,6 @@ type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid; 
 type NavGroup = { label: string; links: NavLink[] };
 const evidenceLinks: NavLink[] = [
     { href: "/international-prices", key: "international", label: "Global market", icon: FiGlobe },
-    { href: "/local-prices", key: "local", label: "Local market", icon: FiShoppingBag },
     { href: "/historical-customs-prices", key: "historical", label: "Customs history", icon: FiArchive },
     { href: "/outlier-analysis", key: "outliers", label: "Price analysis", icon: FiBarChart2 },
 ];

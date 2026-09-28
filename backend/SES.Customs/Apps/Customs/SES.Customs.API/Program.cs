@@ -7,7 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using SES.Customs.API.Security;
 using SES.Customs.API.Integrations.SerpApi;
-using SES.Customs.API.Integrations.LocalMarket;
+using SES.Customs.API.Integrations.Apify;
 using SES.Customs.API.Integrations.PriceWatcha;
 using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.Core.Features.HsCodes.Contract.Query;
@@ -16,6 +16,9 @@ using SES.Customs.Infrastructure.Dependency;
 using SES.Customs.Infrastructure.Context;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables();
 // Console logging works in local, CI and container environments without Event Log privileges.
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole();
@@ -47,11 +50,20 @@ builder.Services.AddHttpClient<SerpApiClient>((services, client) =>
     client.Timeout = TimeSpan.FromSeconds(60);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
-builder.Services.Configure<LocalMarketOptions>(builder.Configuration.GetSection(LocalMarketOptions.SectionName));
+builder.Services.AddHttpClient<ApifyManufacturerPriceClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.apify.com/v2/");
+    client.Timeout = TimeSpan.FromSeconds(210);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
+});
+builder.Services.AddHttpClient("UNComtrade", client =>
+{
+    client.BaseAddress = new Uri("https://comtradeapi.un.org/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
+});
 builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));
 builder.Services.AddHttpClient<PriceWatchaClient>((services, client) => { var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PriceWatchaOptions>>().Value; client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/"); client.Timeout = TimeSpan.FromSeconds(45); if (!string.IsNullOrWhiteSpace(o.ApiKey)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", o.ApiKey); });
-builder.Services.AddScoped<LocalMarketSearchService>();
-builder.Services.AddScoped<LocalSnapshotStore>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
     client.BaseAddress = new Uri("https://api.pricesapi.io/api/v1/");
@@ -60,21 +72,6 @@ builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
     if (!string.IsNullOrWhiteSpace(key)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
 });
 builder.Services.AddHttpClient<HistoricalFxClient>(client => client.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddHttpClient("JijiEthiopia", (services, client) =>
-{
-    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalMarketOptions>>().Value;
-    client.BaseAddress = new Uri(options.JijiBaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; SES-Customs-Valuation/1.0; +government-market-research)");
-    client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
-});
-builder.Services.AddHttpClient("EthioShop", (services, client) =>
-{
-    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalMarketOptions>>().Value;
-    client.BaseAddress = new Uri(options.EthioShopApiUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
-});
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters

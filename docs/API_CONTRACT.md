@@ -38,23 +38,21 @@ These are controller route declarations, not completed endpoints. Policies below
 | GET | `/api/reference-prices` | CustomsOfficer |
 | GET | `/api/reference-prices/{id}` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/international-prices` | CustomsOfficer |
-| GET | `/api/local-prices` | CustomsOfficer |
-| GET | `/api/local-prices/{id}` | CustomsOfficer |
-| GET | `/api/hs-codes/{id}/local-prices` | CustomsOfficer |
-| GET | `/api/local-markets` | CustomsOfficer |
+| GET | `/api/manufacturer-prices/search?q={product}&market={market}&site={optionalDomainOrUrl}` | CustomsOfficer |
 | GET | `/api/historical-customs-prices` | CustomsOfficer |
 | GET | `/api/historical-customs-prices/{id}` | CustomsOfficer |
+| GET | `/api/customs-trade-benchmark/search?hsCode={six-or-more-digits}` | CustomsOfficer |
+
+The customs trade benchmark uses UN Comtrade's keyless annual preview for Ethiopia imports (reporter 231, world partner, six-digit HS code). It returns the newest of the last three years with positive `primaryValue` and `qty`, calculates USD per reported unit, and includes the source URL, period, unit, and an explanation. An absent quantity or match yields null `unitValue`; it never fabricates a product price. The result is an HS-category average, not an exact product or previously accepted customs valuation. The preview service is rate limited; responses are cached server-side.
 | GET | `/api/hs-codes/{id}/historical-customs-prices` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/statistics` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/trend` | CustomsOfficer |
 | GET | `/api/hs-codes/{id}/country-comparison` | CustomsOfficer |
-| GET | `/api/hs-codes/{id}/local-vs-international` | CustomsOfficer |
 | POST | `/api/integrations/hs/sync` | SystemAdministrator |
 | POST | `/api/integrations/comtrade/sync` | SystemAdministrator |
 | POST | `/api/integrations/itc/sync` | SystemAdministrator |
 | POST | `/api/integrations/wits/sync` | SystemAdministrator |
 | POST | `/api/integrations/nbe/exchange-rates/sync` | SystemAdministrator |
-| POST | `/api/local-prices` | CustomsAdministrator |
 | POST | `/api/hs-revisions` | CustomsAdministrator |
 | GET | `/api/price-sources` | CustomsAdministrator |
 | POST | `/api/price-sources` | CustomsAdministrator |
@@ -63,7 +61,8 @@ These are controller route declarations, not completed endpoints. Policies below
 
 ## Contract work for feature implementation
 
-- Prices: paginated query by HS code/revision, pool-specific filters, date range, source, unit and verification status. Never return a blended pool as an ordinary list. Add metadata and provenance DTOs before write endpoints.
+- Prices: paginated international and historical queries by HS code/revision, date range, source and unit. Never return a blended evidence set as an ordinary list. Add metadata and provenance DTOs before write endpoints.
+- Manufacturer prices: Apify searches an inferred or officer-supplied official site and returns exact product-page links, original prices/currencies when available, source labels, and a status (`found`, `no_price`, or `site_required`). The portal converts eligible offers through `/api/exchange-rates/convert`; the chosen offer and provenance are captured in the Phase 1 valuation evidence snapshot.
 - Analytics: require explicit currency/unit/date window and comparison policy version; return one result per pool with eligibility/exclusion counts. Include null statistics for no observations; outlier flags do not remove records.
 - Decisions: POST body includes HS code ID, selected reference amount/currency, decision, mandatory justification and typed evidence IDs. Server resolves actor, policy and immutable snapshots. Use an idempotency key and concurrency/version rule; return 201 with saved decision URL after atomic audit commit.
 - Integrations: request source/period/revision and idempotency key; validate source approval before enqueue; return 202 with a job-status URL. Add `GET /api/integration-jobs/{id}` with progress/quarantine counts. Never claim completion on enqueue.
