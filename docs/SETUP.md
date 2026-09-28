@@ -58,7 +58,7 @@ dotnet ef database update `
   --context CustomsDbContext
 ```
 
-This creates authentication, HS-code, price-evidence, audit, raw local-market observation, Customs location, user-scope and valuation-workflow tables. Review migrations before applying them to a shared database.
+This creates authentication, HS-code, price-evidence, audit, Customs location, user-scope and valuation-workflow tables. The legacy local-market tables remain mapped for data compatibility but are not used by active application workflows. Review migrations before applying them to a shared database.
 
 After the first database migration, sign in as the System Administrator and create at least one active location under **Administration → Locations**. Mark `supports_valuation` or `supports_inspection` for offices where Officers will record decisions. Then create or assign Customs Administrators and Officers under **Administration**. No operational location list is hard-coded into the application.
 
@@ -100,4 +100,4 @@ npm run typecheck
 npm run build
 ```
 
-The local-market integration test is opt-in because it calls the running API and a live marketplace. See [OPERATIONS.md](OPERATIONS.md#live-api-integration-test).
+No local-market integration test or live marketplace adapter remains in the active application.

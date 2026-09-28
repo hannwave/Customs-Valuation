@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SES.Customs.API.Integrations;
 using SES.Customs.API.Integrations.SerpApi;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
@@ -29,10 +30,12 @@ public sealed class InternationalPricesController(
             return BadRequest(new { message = "Market must be a two-letter country code, such as US, GB, or DE." });
 
         if (!serpApi.IsConfigured)
+        {
             return Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "International price provider is not configured",
-                detail: "Configure the SerpApi:ApiKey server setting to enable Google Shopping searches.");
+                detail: "Configure SerpApi:ApiKey on the API server. Synthetic sample prices are not used for customs valuation.");
+        }
 
         try
         {
@@ -194,7 +197,7 @@ public sealed class InternationalPricesController(
 
         return Ok(new InternationalPriceSyncDto(
             hsCode.Id,
-            hsCode.Code,
+            hsCode.Code!,
             hsCode.DescriptionEn,
             search.Query,
             search.Market,
@@ -231,4 +234,5 @@ public sealed class InternationalPricesController(
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity));
         return $"serpapi:google-shopping:{Convert.ToHexString(hash).ToLowerInvariant()}";
     }
+
 }

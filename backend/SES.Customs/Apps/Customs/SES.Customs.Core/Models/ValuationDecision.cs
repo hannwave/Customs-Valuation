@@ -1,10 +1,14 @@
 namespace SES.Customs.Core.Models;
 
+using System.Text.Json.Serialization;
+
 // Office and hierarchy snapshots preserve the context of an operational decision.
 public sealed class ValuationDecision
 {
     public Guid Id { get; set; }
-    public Guid HsCodeId { get; set; }
+    // Classification is intentionally deferred to Phase 2. Phase 1 evaluates
+    // the product and supporting price evidence without requiring an HS code.
+    public Guid? HsCodeId { get; set; }
     public decimal SelectedReferenceValue { get; set; }
     public string Currency { get; set; } = "";
     // Phase 1 may populate this explicitly. The Phase 2 handoff falls back to
@@ -19,6 +23,23 @@ public sealed class ValuationDecision
     public Guid? LocationId { get; set; }
     public string LocationSnapshotJson { get; set; } = "{}";
     public string EvidenceNotes { get; set; } = "";
+    // Customer-declared transaction price and receipt evidence captured in
+    // Phase 1. Legacy records remain nullable and are shown as not captured.
+    public decimal? DeclaredPriceAmount { get; set; }
+    public string DeclaredPriceCurrency { get; set; } = "";
+    public decimal? DeclaredPriceConvertedAmount { get; set; }
+    public string DeclaredPriceConvertedCurrency { get; set; } = "";
+    public decimal? DeclaredPriceExchangeRate { get; set; }
+    public string DeclaredPriceExchangeRateSource { get; set; } = "";
+    public DateOnly? DeclaredPriceExchangeRateDate { get; set; }
+    public string ReceiptFileName { get; set; } = "";
+    public string ReceiptContentType { get; set; } = "";
+    public long? ReceiptFileSize { get; set; }
+    public string ReceiptSha256 { get; set; } = "";
+    public DateTimeOffset? ReceiptUploadedAt { get; set; }
+    public string ReceiptUploadedBy { get; set; } = "";
+    [JsonIgnore]
+    public byte[]? ReceiptData { get; set; }
     public string Status { get; set; } = "Draft";
     public DateTimeOffset? SubmittedAt { get; set; }
     public string? ReviewedBy { get; set; }
@@ -40,6 +61,7 @@ public sealed class DecisionEvidence
 public sealed class AuditLog
 {
     public Guid? LocationId { get; set; }
+    public Guid? SubjectUserId { get; set; }
     public Guid Id { get; set; }
     public string UserId { get; set; } = "";
     public string Username { get; set; } = "";

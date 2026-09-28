@@ -1,6 +1,7 @@
-export type PricePool = "International" | "Local" | "HistoricalCustoms";
-export interface HsCode { id: string; revisionId: string; code: string; descriptionEn: string; descriptionAm: string | null; duty: string | null }
-export interface HsRevision { id: string; name: string; number: number; effectiveDate: string; endDate: string | null; status: string }
+export type PricePool = "International" | "HistoricalCustoms";
+export interface HsCodeCandidate { hsCode: string; description: string }
+export interface HsCode { id: string; revisionId: string; code: string | null; descriptionEn: string; descriptionAm: string | null; duty: string | null; tariffItemNo?: string | null; unit?: string; sectionNumber?: string; sectionName?: string; chapterNumber?: number | null; chapterName?: string; headingNumber?: string; hsUpdateStatus?: string | null; hsUpdateNote?: string | null; hsUpdateCandidates?: HsCodeCandidate[] | null }
+export interface HsRevision { id: string; name: string; number: number; effectiveDate: string; endDate: string | null; status: string; originalHsVersion?: string; updatedHsVersion?: string; totalRecords?: number }
 export interface PagedResult<T> { items: T[]; totalCount: number; page: number; pageSize: number }
 export interface PriceOutlier {
   title: string;
@@ -38,6 +39,35 @@ export interface InternationalPriceSearch {
   items: InternationalMarketPrice[];
   statistics: PriceStatistics | null;
 }
+export interface ManufacturerPriceOffer {
+  title: string;
+  manufacturerDomain: string;
+  productUrl: string;
+  price: number | null;
+  currency: string | null;
+  evidenceSource: string;
+}
+export interface ManufacturerPriceSearch {
+  query: string;
+  market: string;
+  manufacturerDomain: string | null;
+  retrievedAt: string;
+  status: "found" | "no_price" | "site_required";
+  message: string;
+  items: ManufacturerPriceOffer[];
+}
+export interface CustomsTradeBenchmark {
+  hsCode: string;
+  period: number | null;
+  reporter: string;
+  currency: "USD";
+  unit: string | null;
+  tradeValue: number | null;
+  quantity: number | null;
+  unitValue: number | null;
+  sourceUrl: string | null;
+  message: string;
+}
 export interface InternationalPriceSync extends InternationalPriceSearch {
   hsCodeId: string;
   hsCode: string;
@@ -46,117 +76,8 @@ export interface InternationalPriceSync extends InternationalPriceSearch {
   updatedCount: number;
   skippedCount: number;
 }
-export interface LocalMarketOffer {
-  source: string;
-  title: string;
-  description: string | null;
-  price: number;
-  currency: string;
-  productUrl: string;
-  thumbnailUrl: string | null;
-  location: string | null;
-  condition: string | null;
-  sourceListingId: string;
-  sellerName: string | null;
-  listingDate: string | null;
-  rawCategory: string | null;
-}
-export interface LocalMarketSourceStatus {
-  id: "jiji" | "ethioshop" | "telegebeya";
-  name: string;
-  status: "Available" | "Unavailable" | "PartnerAccessRequired";
-  resultCount: number;
-  message: string | null;
-  websiteUrl: string;
-}
-export interface LocalMarketPriceSearch {
-  query: string;
-  retrievedAt: string;
-  items: LocalMarketOffer[];
-  sources: LocalMarketSourceStatus[];
-  statistics: PriceStatistics | null;
-}
-export interface LocalMarketPriceSync extends LocalMarketPriceSearch {
-  hsCodeId: string;
-  hsCode: string;
-  hsDescription: string;
-  savedCount: number;
-  updatedCount: number;
-  skippedCount: number;
-}
-export type LocalObservationStatus =
-  | "Raw" | "Processing" | "ValidForStatistics" | "RejectedIrrelevant" | "WrongBrand"
-  | "WrongModel" | "WrongVariant" | "IncompatibleCondition" | "IncompatibleUnit"
-  | "InvalidPrice" | "Duplicate" | "PotentialOutlier" | "ManuallyApproved" | "ManuallyRejected";
-export interface ClassifiedLocalListing {
-  id: string;
-  listing: {
-    source: string; sourceListingId: string; url: string; title: string; description: string | null;
-    seller: string | null; location: string | null; price: number; currency: string;
-    retrievedAt: string; listingDate: string | null; imageUrl: string | null; rawCategory: string | null;
-    condition: "New" | "Used" | "Refurbished" | "Unknown";
-    priceType: "Retail" | "Wholesale" | "Distributor" | "Manufacturer" | "SupplierQuotation" | "Unknown";
-  };
-  relevanceScore: number;
-  status: LocalObservationStatus;
-  reason: string;
-  matchedKeywords: string[];
-  excludedKeywords: string[];
-  originalQuantity: number;
-  originalUnit: string;
-  normalizedQuantity: number;
-  normalizedUnit: string;
-  normalizedUnitPrice: number | null;
-  duplicateOfId: string | null;
-  isPotentialOutlier: boolean;
-  outlierScore: number | null;
-  outlierReason: string | null;
-  includedInStatistics: boolean;
-}
-export interface LocalAnalysisStatistics {
-  count: number; minimum: number; maximum: number; mean: number; median: number;
-  populationStandardDeviation: number; q1: number; q3: number; iqr: number;
-  oldestObservation: string; newestObservation: string;
-}
-export interface LocalMarketAnalysisResponse {
-  hsCodeId: string;
-  hsCode: string;
-  hsDescription: string;
-  sources: LocalMarketSourceStatus[];
-  analysis: {
-    product: {
-      hsCode: string; query: string; category: string | null; productType: string | null;
-      brand: string | null; model: string | null; variant: string | null;
-      condition: string; unit: string; priceType: string;
-    };
-    collection: {
-      rawListings: number; validObservations: number; rejectedIrrelevant: number;
-      wrongBrand: number; wrongModel: number; wrongVariant: number;
-      incompatibleCondition: number; incompatibleUnit: number; invalidPrice: number;
-      duplicates: number; potentialOutliers: number; excluded: number;
-    };
-    statisticsIncludingOutliers: LocalAnalysisStatistics | null;
-    robustStatistics: LocalAnalysisStatistics | null;
-    representativePrice: { value: number | null; method: string; currency: string; comparableListings: number; excludesOutliers: boolean };
-    confidence: {
-      score: number; level: "HIGH" | "MEDIUM" | "LOW" | "INSUFFICIENT_DATA";
-      factors: { name: string; score: number; maximum: number; explanation: string }[];
-      disclaimer: string;
-    };
-    observations: ClassifiedLocalListing[];
-    outlierMethod: "Iqr" | "Mad" | "None";
-    relevanceThreshold: number;
-  };
-}
-export interface LocalMarketSyncResponse {
-  result: LocalMarketAnalysisResponse;
-  savedCount: number;
-  updatedCount: number;
-  skippedCount: number;
-}
-
 export type Phase2Status = "InProgress" | "Completed" | "RequiresReview";
-export type Phase2CalculationType = "Percentage" | "Fixed";
+export type Phase2CalculationType = "Percentage" | "Fixed" | "PerUnit";
 
 export interface Phase2TaxLine {
   id: string;
@@ -166,24 +87,53 @@ export interface Phase2TaxLine {
   currency: string;
   order: number;
   calculationBasis: string;
+  recommendedValue: number;
   baseAmount: number;
   calculatedAmount: number;
   notes: string;
+  status: "Recommended" | "OfficerAdjusted" | "NotApplicable" | "ReviewRequired" | string;
+  sourceReference: string;
+  isApplicable: boolean;
 }
 
 export interface Phase2Response {
   decisionId: string;
   phase1: {
-    hsCodeId: string;
+    hsCodeId: string | null;
     initialDuty: number;
     initialDutyCurrency: string;
     source: string;
+    declaredPriceAmount: number | null;
+    declaredPriceCurrency: string;
+    declaredPriceConvertedAmount: number | null;
+    declaredPriceConvertedCurrency: string;
+    declaredPriceExchangeRate: number | null;
+    declaredPriceExchangeRateSource: string;
+    declaredPriceExchangeRateDate: string | null;
+    receiptFileName: string;
+    receiptContentType: string;
+    receiptFileSize: number | null;
+    receiptSha256: string;
+    receiptUploadedAt: string | null;
   };
   phase2: {
     id: string;
     status: Phase2Status;
-    originalHsCodeId: string;
+    originalHsCodeId: string | null;
     selectedHsCodeId: string | null;
+    customsValueAmount: number;
+    customsValueCurrency: string;
+    quantity: number;
+    unit: string;
+    originCountry: string;
+    productCategory: string;
+    exemptionCodes: string[];
+    originPreferenceClaimed: boolean;
+    exciseTaxApplicable: boolean;
+    isCommercialImport: boolean;
+    withholdingApplicable: boolean;
+    adjustmentReason: string;
+    officerConfirmed: boolean;
     initialDutyAmount: number;
     initialDutyCurrency: string;
     targetCurrency: string;
@@ -196,6 +146,8 @@ export interface Phase2Response {
     manualAdjustmentType: "Fixed" | "Percentage";
     notes: string;
     totalAdditionalTax: number;
+    totalTax: number;
+    finalPayableAmount: number;
     finalAmount: number;
     calculationRuleVersion: string;
     calculatedAt: string | null;
@@ -212,6 +164,12 @@ export interface Phase2TaxLineRequest {
   order: number;
   calculationBasis: string;
   notes: string;
+  recommendedValue?: number;
+  baseAmount?: number;
+  calculatedAmount?: number;
+  status?: string;
+  sourceReference?: string;
+  isApplicable?: boolean;
 }
 
 export interface Phase2Request {
@@ -226,5 +184,18 @@ export interface Phase2Request {
   manualAdjustmentType: "Fixed" | "Percentage";
   notes: string;
   taxLines: Phase2TaxLineRequest[];
+  customsValueAmount: number;
+  customsValueCurrency: string;
+  quantity: number;
+  unit: string;
+  originCountry: string;
+  productCategory: string;
+  exemptionCodes: string[];
+  originPreferenceClaimed: boolean;
+  exciseTaxApplicable: boolean;
+  isCommercialImport: boolean;
+  withholdingApplicable: boolean;
+  adjustmentReason: string;
+  officerConfirmation: boolean;
   expectedVersion?: string;
 }

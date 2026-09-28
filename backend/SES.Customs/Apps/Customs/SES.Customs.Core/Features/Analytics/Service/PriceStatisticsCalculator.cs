@@ -6,7 +6,7 @@ public sealed record PriceStatistics(int Count, decimal? Minimum, decimal? Maxim
 
 // Pure calculation primitive, not an approved production comparison engine.
 // A future comparison policy must create the key after checking dates, products,
-// taxes, local price category, Incoterms and adjustment provenance.
+// taxes, Incoterms and adjustment provenance.
 public static class PriceStatisticsCalculator
 {
     public static PriceStatistics Calculate(IReadOnlyCollection<ComparableObservation> observations)

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Badge,
   Button,
   Paper,
   Table,
@@ -145,6 +146,11 @@ export function HsResultsTable({
                   "hsCatalogue.codeLabel",
                   "HS code",
                 )}
+              </Table.Th>
+
+              {/* HS 2022 classification */}
+              <Table.Th style={{ background: "var(--surface)", padding: "13px 16px", fontSize: "10px", fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", whiteSpace: "nowrap", color: "var(--muted)", borderBottom: "1px solid var(--line)" }}>
+                Classification
               </Table.Th>
 
               {/* Description */}
@@ -301,8 +307,15 @@ export function HsResultsTable({
                           "nowrap",
                       }}
                     >
-                      {item.code}
+                      {item.code || "No HS code assigned"}
                     </span>
+                  </Table.Td>
+
+                  {/* HS 2022 classification */}
+                  <Table.Td style={{ padding: "18px 16px", fontSize: "11px", verticalAlign: "middle", borderBottom: "1px solid var(--line)", minWidth: "190px" }}>
+                    <Text size="xs" c="var(--muted)">{item.sectionNumber || "—"} · Chapter {item.chapterNumber ?? "—"}</Text>
+                    <Text size="xs" fw={600} c="var(--navy)">{item.headingNumber || "Heading unavailable"}</Text>
+                    {item.hsUpdateStatus && <Badge size="xs" color={item.hsUpdateStatus === "SPLIT_REVIEW_REQUIRED" ? "orange" : "blue"} variant="light">{item.hsUpdateStatus === "SPLIT_REVIEW_REQUIRED" ? "Mapping review" : item.hsUpdateStatus}</Badge>}
                   </Table.Td>
 
                   {/* Description */}

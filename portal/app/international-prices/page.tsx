@@ -19,12 +19,14 @@ import {
   Title,
 } from "@mantine/core";
 import { DataState } from "@/components/DataState";
+import { FeedbackToast } from "@/components/FeedbackToast";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { PriceStatisticsPanel } from "@/components/prices/PriceStatisticsPanel";
 import type {
   InternationalPriceSearch,
   InternationalPriceSync,
 } from "@/lib/types/customs";
+import { readValuationSession, updateValuationSession } from "@/lib/valuation-session";
 
 const markets = [
   { value: "us", label: "United States (USD)" },
@@ -50,6 +52,11 @@ export default function InternationalPricesPage() {
   const [busyAction, setBusyAction] = useState<Action | null>(null);
 
   useEffect(() => {
+    const active = readValuationSession();
+    if (active?.international) {
+      setQuery(active.query); setMarket(active.market); setData(active.international);
+      return;
+    }
     const parameters = new URLSearchParams(window.location.search);
     const overviewQuery = parameters.get("q")?.trim();
     const overviewMarket = parameters.get("market");
@@ -113,6 +120,7 @@ export default function InternationalPricesPage() {
       }
 
       setData(body);
+      if (action === "search") updateValuationSession({ query: trimmedQuery, market, international: body as InternationalPriceSearch });
 
       if (action === "sync") {
         const sync = body as InternationalPriceSync;
@@ -140,8 +148,8 @@ export default function InternationalPricesPage() {
       <Container fluid p={0}>
         <Stack gap="xl">
           <Box className="data-page-heading">
-            <Text className="eyebrow">PRICE EVIDENCE / INTERNATIONAL MARKETS</Text>
-            <Title order={1}>International prices</Title>
+            <Text className="eyebrow">PRICE REVIEW / GLOBAL MARKET</Text>
+            <Title order={1}>Global market</Title>
             <Text c="dimmed" mt="xs">
               Compare overseas offers in their original market and currency. Associate results with an HS code to save them for review.
             </Text>
@@ -184,9 +192,8 @@ export default function InternationalPricesPage() {
             </Stack>
           </Paper>
 
+          <FeedbackToast error={error} success={status} onDismissError={() => setError("")} onDismissSuccess={() => setStatus("")} />
           {!data && !loading && !error && <DataState kind="empty" title="Explore prices in their market context" description="Enter a product and choose a market to see offers, sellers and source links. Saving evidence requires an HS code."/>}
-          {error && <DataState kind="error" title="Prices could not be loaded" description={error}/>}
-          {status && <Alert color="green" title="Evidence saved">{status}</Alert>}
 
           {loading && (
             <DataState kind="loading" title={busyAction === "sync" ? "Saving international evidence" : "Searching international offers"} description="Collecting marketplace prices and source details. Statistics will appear when the search completes."/>

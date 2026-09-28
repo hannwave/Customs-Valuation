@@ -1,15 +1,24 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
 using System.Text;
 using SES.Customs.API.Security;
 using SES.Customs.API.Integrations.SerpApi;
-using SES.Customs.API.Integrations.LocalMarket;
+using SES.Customs.API.Integrations.Apify;
+using SES.Customs.API.Integrations.PriceWatcha;
+using SES.Customs.API.Integrations.PricesApi;
 using SES.Customs.Core.Features.HsCodes.Contract.Query;
+using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Dependency;
+using SES.Customs.Infrastructure.Context;
 
 var builder = WebApplication.CreateBuilder(args);
+if (builder.Environment.IsDevelopment())
+    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables();
 // Console logging works in local, CI and container environments without Event Log privileges.
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole();
@@ -41,23 +50,28 @@ builder.Services.AddHttpClient<SerpApiClient>((services, client) =>
     client.Timeout = TimeSpan.FromSeconds(60);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
-builder.Services.Configure<LocalMarketOptions>(builder.Configuration.GetSection(LocalMarketOptions.SectionName));
-builder.Services.AddScoped<LocalMarketSearchService>();
-builder.Services.AddHttpClient("JijiEthiopia", (services, client) =>
+builder.Services.AddHttpClient<ApifyManufacturerPriceClient>(client =>
 {
-    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalMarketOptions>>().Value;
-    client.BaseAddress = new Uri(options.JijiBaseUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; SES-Customs-Valuation/1.0; +government-market-research)");
-    client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
-});
-builder.Services.AddHttpClient("EthioShop", (services, client) =>
-{
-    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalMarketOptions>>().Value;
-    client.BaseAddress = new Uri(options.EthioShopApiUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.BaseAddress = new Uri("https://api.apify.com/v2/");
+    client.Timeout = TimeSpan.FromSeconds(210);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
+builder.Services.AddHttpClient("UNComtrade", client =>
+{
+    client.BaseAddress = new Uri("https://comtradeapi.un.org/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
+});
+builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));
+builder.Services.AddHttpClient<PriceWatchaClient>((services, client) => { var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PriceWatchaOptions>>().Value; client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/"); client.Timeout = TimeSpan.FromSeconds(45); if (!string.IsNullOrWhiteSpace(o.ApiKey)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", o.ApiKey); });
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
+    client.BaseAddress = new Uri("https://api.pricesapi.io/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(100);
+    var key = services.GetRequiredService<IConfiguration>()["PRICES_API_KEY"];
+    if (!string.IsNullOrWhiteSpace(key)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
+});
+builder.Services.AddHttpClient<HistoricalFxClient>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -65,6 +79,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
         ValidateIssuer = true, ValidIssuer = jwt["Issuer"], ValidateAudience = true, ValidAudience = jwt["Audience"],
         ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30), NameClaimType = System.Security.Claims.ClaimTypes.Name, RoleClaimType = System.Security.Claims.ClaimTypes.Role
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var rawId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? context.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(rawId, out var id)) { context.Fail("Invalid account."); return; }
+            var accounts = context.HttpContext.RequestServices.GetRequiredService<SES.Customs.Infrastructure.Context.CustomsDbContext>();
+            var account = await accounts.AuthAccounts.AsNoTracking().Where(u => u.Id == id)
+                .Select(u => new { u.Active, u.Status, u.ArchivedAt, u.Role }).SingleOrDefaultAsync();
+            if (account is null || !account.Active || account.Status != "ACTIVE" || account.ArchivedAt != null)
+            {
+                context.Fail("Account is inactive.");
+                return;
+            }
+            var tokenRole = AccessRules.NormalizeRole(context.Principal?.FindFirstValue(ClaimTypes.Role));
+            if (tokenRole is null || tokenRole != AccessRules.NormalizeRole(account.Role))
+                context.Fail("Account role changed. Sign in again.");
+        }
     };
 });
 builder.Services.AddAuthorization(options =>
@@ -81,10 +115,16 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
         .AllowAnyHeader().AllowAnyMethod()));
 var app = builder.Build();
+if (!demo)
+{
+    using var migrationScope = app.Services.CreateScope();
+    var db = migrationScope.ServiceProvider.GetRequiredService<CustomsDbContext>();
+    db.Database.Migrate();
+}
 app.UseExceptionHandler();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapGet("/health/live", () => Results.Ok(new { status = "ok", mode = demo ? "demo" : "development-database" })).AllowAnonymous();
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok", mode = demo ? "demo" : "development-database", capabilities = new { regionalEmployeeManagement = true } })).AllowAnonymous();
 app.MapControllers();
 app.Run();

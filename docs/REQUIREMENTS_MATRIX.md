@@ -10,7 +10,7 @@ Source identifiers: SRS = `SRS_HS_Code_Customs_Valuation_System (1).docx`; Overv
 | 6 | Revision number/dates/status/source | HsRevision; HsRevisions | HS revision filter | Model and synthetic list | 2 |
 | 7 | One-to-one/split/merge and change types | HsCodeCorrelation with mapping group | HS history/correlation views planned | Draft mapping; no workflow | 2 |
 | 8 | International evidence fields | InternationalReferencePrice | `/international-prices` | Model and protected route shell | 3 |
-| 9–10 | Local evidence and five categories | LocalMarketPrice, LocalMarket | `/local-prices` | Model and protected route shell | 3 |
+| 9–10 | Retired local-market evidence feature | Legacy `LocalMarketPrice` storage | No active route | Database records retained; collection and APIs removed | Retired |
 | 11–12 | Controlled comparisons and comparability fields | Analytics comparison policy | `/analytics` | Primitive rejects mixed keys; policy planned | 4 |
 | 13 | NBE date/source, original preserved | ExchangeRate, PriceConverter | Integration/rate views planned | Tested primitive; ingestion planned | 3 |
 | 14 | Min/max/mean/median/count/std dev | PriceStatisticsCalculator | Analytics planned | Tested pure primitive; API planned | 4–5 |

@@ -16,6 +16,9 @@ public sealed class HsCodeConfiguration : IEntityTypeConfiguration<HsCode>
     public void Configure(EntityTypeBuilder<HsCode> b)
     {
         b.ToTable("hs_codes"); b.HasKey(x => x.Id); b.Property(x => x.Code).HasMaxLength(6);
+        b.Property(x => x.OfficialLetterFileName).HasMaxLength(255).IsRequired();
+        b.Property(x => x.OfficialLetterContentType).HasMaxLength(120).IsRequired();
+        b.Property(x => x.OfficialLetterContent).HasColumnType("bytea").IsRequired();
         b.HasIndex(x => new { x.RevisionId, x.Code }).IsUnique();
         b.HasOne<HsRevision>().WithMany().HasForeignKey(x => x.RevisionId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -128,6 +131,14 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
     {
         b.ToTable("valuation_decisions"); b.HasKey(x => x.Id);
         b.Property(x => x.SelectedReferenceValue).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceAmount).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceConvertedAmount).HasPrecision(24, 8);
+        b.Property(x => x.DeclaredPriceExchangeRate).HasPrecision(24, 12);
+        b.Property(x => x.DeclaredPriceCurrency).HasMaxLength(3);
+        b.Property(x => x.DeclaredPriceConvertedCurrency).HasMaxLength(3);
+        b.Property(x => x.ReceiptFileName).HasMaxLength(260);
+        b.Property(x => x.ReceiptContentType).HasMaxLength(100);
+        b.Property(x => x.ReceiptSha256).HasMaxLength(64);
         b.Property(x => x.LocationSnapshotJson).HasColumnType("jsonb");
         b.Property(x => x.InitialDuty).HasPrecision(24, 8);
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
@@ -140,6 +151,14 @@ public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<Valu
     {
         b.ToTable("valuation_phase2"); b.HasKey(x => x.Id);
         b.HasIndex(x => x.ValuationDecisionId).IsUnique();
+        b.Property(x => x.CustomsValueAmount).HasPrecision(24, 8);
+        b.Property(x => x.CustomsValueCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.Quantity).HasPrecision(24, 8);
+        b.Property(x => x.Unit).HasMaxLength(40).IsRequired();
+        b.Property(x => x.OriginCountry).HasMaxLength(120).IsRequired();
+        b.Property(x => x.ProductCategory).HasMaxLength(120).IsRequired();
+        b.Property(x => x.ExemptionCodes).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.AdjustmentReason).HasMaxLength(2000).IsRequired();
         b.Property(x => x.InitialDutyAmount).HasPrecision(24, 8);
         b.Property(x => x.ExchangeRate).HasPrecision(24, 12);
         b.Property(x => x.ExemptionAmount).HasPrecision(24, 8);
@@ -147,6 +166,7 @@ public sealed class ValuationPhase2Configuration : IEntityTypeConfiguration<Valu
         b.Property(x => x.ManualAdjustmentAmount).HasPrecision(24, 8);
         b.Property(x => x.TotalAdditionalTax).HasPrecision(24, 8);
         b.Property(x => x.FinalAmount).HasPrecision(24, 8);
+        b.Property(x => x.TotalTax).HasPrecision(24, 8);
         b.Property(x => x.InitialDutyCurrency).HasMaxLength(3).IsRequired();
         b.Property(x => x.TargetCurrency).HasMaxLength(3).IsRequired();
         b.Property(x => x.Status).HasMaxLength(30).IsRequired();
@@ -165,10 +185,13 @@ public sealed class ValuationPhase2TaxLineConfiguration : IEntityTypeConfigurati
         b.Property(x => x.Value).HasPrecision(24, 8);
         b.Property(x => x.BaseAmount).HasPrecision(24, 8);
         b.Property(x => x.CalculatedAmount).HasPrecision(24, 8);
+        b.Property(x => x.RecommendedValue).HasPrecision(24, 8);
         b.Property(x => x.Name).HasMaxLength(120).IsRequired();
         b.Property(x => x.CalculationType).HasMaxLength(30).IsRequired();
         b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
         b.Property(x => x.CalculationBasis).HasMaxLength(40).IsRequired();
+        b.Property(x => x.Status).HasMaxLength(40).IsRequired();
+        b.Property(x => x.SourceReference).HasMaxLength(1000).IsRequired();
         b.HasIndex(x => new { x.ValuationPhase2Id, x.Order });
     }
 }
