@@ -1,8 +1,6 @@
 "use client";
 
 import { GeoJSON, MapContainer, Marker, Popup, useMap } from "react-leaflet";
-// Leaflet is installed as a runtime dependency in this workspace without its optional typings.
-// @ts-expect-error Leaflet runtime import has no local declaration file.
 import { divIcon } from "leaflet";
 import type { ComponentType } from "react";
 import { useEffect, useRef, useState } from "react";

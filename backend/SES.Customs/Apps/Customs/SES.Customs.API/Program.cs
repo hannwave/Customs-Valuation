@@ -10,6 +10,7 @@ using SES.Customs.API.Integrations.SerpApi;
 using SES.Customs.API.Integrations.Apify;
 using SES.Customs.API.Integrations.PriceWatcha;
 using SES.Customs.API.Integrations.PricesApi;
+using SES.Customs.API.Integrations.Comtrade;
 using SES.Customs.Core.Features.HsCodes.Contract.Query;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Dependency;
@@ -17,8 +18,12 @@ using SES.Customs.Infrastructure.Context;
 
 var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
+    // Local JSON supplies defaults; private user-secrets, environment variables,
+    // and command-line settings must retain their normal override precedence.
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
-        .AddEnvironmentVariables();
+        .AddUserSecrets<AuthService>(optional: true)
+        .AddEnvironmentVariables()
+        .AddCommandLine(args);
 // Console logging works in local, CI and container environments without Event Log privileges.
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole();
@@ -65,6 +70,7 @@ builder.Services.AddHttpClient("UNComtrade", client =>
 builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));
 builder.Services.AddHttpClient<PriceWatchaClient>((services, client) => { var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PriceWatchaOptions>>().Value; client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/"); client.Timeout = TimeSpan.FromSeconds(45); if (!string.IsNullOrWhiteSpace(o.ApiKey)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", o.ApiKey); });
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ComtradeBenchmarkClient>();
 builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
     client.BaseAddress = new Uri("https://api.pricesapi.io/api/v1/");
     client.Timeout = TimeSpan.FromSeconds(100);

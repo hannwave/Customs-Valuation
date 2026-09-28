@@ -1,6 +1,6 @@
 # Configuration and secrets
 
-ASP.NET Core reads `appsettings.json`, Development user-secrets, the optional ignored `appsettings.Local.json`, and environment variables. Environment variables override JSON values; nested keys use a double underscore (`__`). Never commit operational credentials.
+ASP.NET Core reads `appsettings.json`, environment-specific JSON, the optional ignored `appsettings.Local.json`, Development user-secrets, environment variables, and command-line settings (later sources override earlier ones). Private user-secrets override local JSON defaults, so a stale local database/JWT setting cannot shadow working user-secrets. Environment variables override JSON and user-secrets; nested keys use a double underscore (`__`). Never commit operational credentials.
 
 ## Required API settings
 

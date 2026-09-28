@@ -50,6 +50,24 @@ export interface CustomsAdminAnalytics {
   alerts: Array<{ severity: string; title: string; detail: string }>;
 }
 
+// Existing fallback records have no customer invoice/receipt evidence.
+// Represent that absence explicitly rather than fabricating evidence.
+const missingCustomerEvidence = {
+  declaredPriceAmount: null,
+  declaredPriceCurrency: "",
+  declaredPriceConvertedAmount: null,
+  declaredPriceConvertedCurrency: "",
+  declaredPriceExchangeRate: null,
+  declaredPriceExchangeRateSource: "",
+  declaredPriceExchangeRateDate: null,
+  receiptFileName: "",
+  receiptContentType: "",
+  receiptFileSize: null,
+  receiptSha256: "",
+  receiptUploadedAt: null,
+  receiptUploadedBy: "",
+};
+
 export const fallbackProfile: WorkspaceProfile = {
   user: {
     id: "usr-officer-01",
@@ -63,6 +81,7 @@ export const fallbackProfile: WorkspaceProfile = {
     primaryLocationId: "loc-addis-1",
     employeeNumber: "EMP-94021",
     phone: "+251 91 123 4567",
+    responsibilities: "Valuation & Inspection",
     createdAt: "2024-01-15T08:00:00Z",
     lastLoginAt: new Date().toISOString(),
   },
@@ -153,9 +172,9 @@ export const fallbackDashboard: WorkspaceDashboard = {
   ],
   employees: [],
   decisions: [
-    { id: "dec-101", hsCodeId: "hs-8703", hsCode: "8703.23.90", product: "Motor Vehicles for Transport of Persons", selectedReferenceValue: 18500, currency: "USD", decision: "ACCEPTED", status: "APPROVED", recordedAt: new Date(Date.now() - 3600000 * 4).toISOString(), locationId: "loc-addis-1" },
-    { id: "dec-102", hsCodeId: "hs-8517", hsCode: "8517.13.00", product: "Smartphones & Cellular Network Devices", selectedReferenceValue: 420, currency: "USD", decision: "ADJUSTED", status: "PENDING_REVIEW", recordedAt: new Date(Date.now() - 3600000 * 24).toISOString(), locationId: "loc-mojo-1" },
-    { id: "dec-103", hsCodeId: "hs-1001", hsCode: "1001.99.00", product: "Wheat & Meslin Grain", selectedReferenceValue: 310, currency: "USD", decision: "ACCEPTED", status: "APPROVED", recordedAt: new Date(Date.now() - 3600000 * 48).toISOString(), locationId: "loc-addis-1" },
+    { ...missingCustomerEvidence, id: "dec-101", hsCodeId: "hs-8703", hsCode: "8703.23.90", product: "Motor Vehicles for Transport of Persons", selectedReferenceValue: 18500, currency: "USD", decision: "ACCEPTED", status: "APPROVED", recordedAt: new Date(Date.now() - 3600000 * 4).toISOString(), locationId: "loc-addis-1" },
+    { ...missingCustomerEvidence, id: "dec-102", hsCodeId: "hs-8517", hsCode: "8517.13.00", product: "Smartphones & Cellular Network Devices", selectedReferenceValue: 420, currency: "USD", decision: "ADJUSTED", status: "PENDING_REVIEW", recordedAt: new Date(Date.now() - 3600000 * 24).toISOString(), locationId: "loc-mojo-1" },
+    { ...missingCustomerEvidence, id: "dec-103", hsCodeId: "hs-1001", hsCode: "1001.99.00", product: "Wheat & Meslin Grain", selectedReferenceValue: 310, currency: "USD", decision: "ACCEPTED", status: "APPROVED", recordedAt: new Date(Date.now() - 3600000 * 48).toISOString(), locationId: "loc-addis-1" },
   ],
   sources: [
     { id: "src-1", name: "UN Comtrade Data Pool", pool: "International", isApproved: true },
@@ -165,8 +184,8 @@ export const fallbackDashboard: WorkspaceDashboard = {
 };
 
 export const fallbackDecisions: ValuationDecision[] = [
-  { id: "dec-101", hsCodeId: "hs-8703", selectedReferenceValue: 18500, currency: "USD", decision: "ACCEPTED", justification: "Verified against transaction value evidence.", evidenceNotes: "Invoice matching bill of lading.", officerSubjectId: "usr-officer-01", recordedAt: new Date(Date.now() - 3600000 * 4).toISOString(), locationId: "loc-addis-1", locationSnapshotJson: "{}", status: "APPROVED", submittedAt: new Date(Date.now() - 3600000 * 4).toISOString(), reviewedBy: "usr-admin-01", reviewJustification: "Approved", reviewedAt: new Date(Date.now() - 3600000 * 2).toISOString(), version: "1.0" },
-  { id: "dec-102", hsCodeId: "hs-8517", selectedReferenceValue: 420, currency: "USD", decision: "ADJUSTED", justification: "Declared value below reference threshold.", evidenceNotes: "Market price reference #2026-8517.", officerSubjectId: "usr-officer-01", recordedAt: new Date(Date.now() - 3600000 * 24).toISOString(), locationId: "loc-mojo-1", locationSnapshotJson: "{}", status: "PENDING_REVIEW", submittedAt: new Date(Date.now() - 3600000 * 24).toISOString(), reviewedBy: null, reviewJustification: null, reviewedAt: null, version: "1.0" },
+  { ...missingCustomerEvidence, id: "dec-101", hsCodeId: "hs-8703", selectedReferenceValue: 18500, currency: "USD", decision: "ACCEPTED", justification: "Verified against transaction value evidence.", evidenceNotes: "Invoice matching bill of lading.", officerSubjectId: "usr-officer-01", recordedAt: new Date(Date.now() - 3600000 * 4).toISOString(), locationId: "loc-addis-1", locationSnapshotJson: "{}", status: "APPROVED", submittedAt: new Date(Date.now() - 3600000 * 4).toISOString(), reviewedBy: "usr-admin-01", reviewJustification: "Approved", reviewedAt: new Date(Date.now() - 3600000 * 2).toISOString(), version: "1.0" },
+  { ...missingCustomerEvidence, id: "dec-102", hsCodeId: "hs-8517", selectedReferenceValue: 420, currency: "USD", decision: "ADJUSTED", justification: "Declared value below reference threshold.", evidenceNotes: "Market price reference #2026-8517.", officerSubjectId: "usr-officer-01", recordedAt: new Date(Date.now() - 3600000 * 24).toISOString(), locationId: "loc-mojo-1", locationSnapshotJson: "{}", status: "PENDING_REVIEW", submittedAt: new Date(Date.now() - 3600000 * 24).toISOString(), reviewedBy: null, reviewJustification: null, reviewedAt: null, version: "1.0" },
 ];
 
 export const fallbackEmployees: EmployeeRecord[] = [
@@ -174,7 +193,7 @@ export const fallbackEmployees: EmployeeRecord[] = [
 ];
 
 export const fallbackAudit: AuditRecord[] = [
-  { id: "aud-1", userId: fallbackProfile.user.id, username: fallbackProfile.user.username, occurredAt: new Date(Date.now() - 3600000 * 2).toISOString(), action: "DECISION_RECORDED", module: "Valuation", recordId: "dec-101", locationId: "loc-addis-1", previousValueJson: null, newValueJson: "{}", decision: "ACCEPTED", justification: "Standard reference value applied" }
+  { id: "aud-1", userId: fallbackProfile.user.id, username: fallbackProfile.user.username ?? "", occurredAt: new Date(Date.now() - 3600000 * 2).toISOString(), action: "DECISION_RECORDED", module: "Valuation", recordId: "dec-101", locationId: "loc-addis-1", previousValueJson: null, newValueJson: "{}", decision: "ACCEPTED", justification: "Standard reference value applied" }
 ];
 
 export async function workspaceApi<T>(path: string, init?: RequestInit): Promise<T> {

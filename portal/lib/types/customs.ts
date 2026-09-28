@@ -67,6 +67,13 @@ export interface CustomsTradeBenchmark {
   unitValue: number | null;
   sourceUrl: string | null;
   message: string;
+  // Optional for valuation sessions saved before provenance was introduced.
+  isMirror?: boolean;
+  sourceLabel?: string;
+  valuationBasis?: "CIF" | "FOB" | "Reported trade value" | null;
+  reporters?: { code: number; name: string }[];
+  reporterCount?: number;
+  quantityEstimated?: boolean;
 }
 export interface InternationalPriceSync extends InternationalPriceSearch {
   hsCodeId: string;
