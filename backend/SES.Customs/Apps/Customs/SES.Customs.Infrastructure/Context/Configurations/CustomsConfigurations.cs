@@ -136,6 +136,12 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
         b.Property(x => x.DeclaredPriceExchangeRate).HasPrecision(24, 12);
         b.Property(x => x.DeclaredPriceCurrency).HasMaxLength(3);
         b.Property(x => x.DeclaredPriceConvertedCurrency).HasMaxLength(3);
+        b.Property(x => x.ProductName).HasMaxLength(300).IsRequired();
+        b.Property(x => x.PurchaseCountryCode).HasMaxLength(2).IsRequired();
+        b.Property(x => x.PurchaseCountryName).HasMaxLength(120).IsRequired();
+        b.Property(x => x.SelectedPriceSource).HasMaxLength(80).IsRequired();
+        b.Property(x => x.ValuationMethod).HasMaxLength(120).IsRequired();
+        b.Property(x => x.ProductPhotoUrl).HasMaxLength(2048).IsRequired();
         b.Property(x => x.ReceiptFileName).HasMaxLength(260);
         b.Property(x => x.ReceiptContentType).HasMaxLength(100);
         b.Property(x => x.ReceiptSha256).HasMaxLength(64);
@@ -214,5 +220,47 @@ public sealed class AuditConfiguration : IEntityTypeConfiguration<AuditLog>
         b.ToTable("audit_logs"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.RecordId, x.OccurredAt });
         b.Property(x => x.PreviousValueJson).HasColumnType("jsonb");
         b.Property(x => x.NewValueJson).HasColumnType("jsonb");
+    }
+}
+
+public sealed class ValuationAuditSnapshotConfiguration : IEntityTypeConfiguration<ValuationAuditSnapshot>
+{
+    public void Configure(EntityTypeBuilder<ValuationAuditSnapshot> b)
+    {
+        b.ToTable("valuation_audit_snapshots");
+        b.HasKey(x => x.AuditLogId);
+        b.HasIndex(x => new { x.ValuationDecisionId, x.AuditLogId });
+        b.HasIndex(x => new { x.PurchaseCountryCode, x.ValuationDecisionId });
+        b.Property(x => x.ProductName).HasMaxLength(300).IsRequired();
+        b.Property(x => x.HsCode).HasMaxLength(30).IsRequired();
+        b.Property(x => x.HsDescription).HasMaxLength(1000).IsRequired();
+        b.Property(x => x.PurchaseCountryCode).HasMaxLength(2).IsRequired();
+        b.Property(x => x.PurchaseCountryName).HasMaxLength(120).IsRequired();
+        b.Property(x => x.OriginCountry).HasMaxLength(120).IsRequired();
+        b.Property(x => x.SelectedPriceAmount).HasPrecision(24, 8);
+        b.Property(x => x.SelectedPriceCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.SelectedPriceSource).HasMaxLength(80).IsRequired();
+        b.Property(x => x.ValuationMethod).HasMaxLength(120).IsRequired();
+        b.Property(x => x.TotalTaxDue).HasPrecision(24, 8);
+        b.Property(x => x.CustomsDutyAmount).HasPrecision(24, 8);
+        b.Property(x => x.ExciseAdValoremAmount).HasPrecision(24, 8);
+        b.Property(x => x.ExciseSpecificAmount).HasPrecision(24, 8);
+        b.Property(x => x.ExciseTotalAmount).HasPrecision(24, 8);
+        b.Property(x => x.VatAmount).HasPrecision(24, 8);
+        b.Property(x => x.SurtaxAmount).HasPrecision(24, 8);
+        b.Property(x => x.OtherTaxAmount).HasPrecision(24, 8);
+        b.Property(x => x.TaxCurrency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.TaxBreakdownJson).HasColumnType("jsonb").IsRequired();
+        b.Property(x => x.OfficerName).HasMaxLength(240).IsRequired();
+        b.Property(x => x.OfficerLocationName).HasMaxLength(300).IsRequired();
+        b.Property(x => x.ProductPhotoUrl).HasMaxLength(2048).IsRequired();
+        b.Property(x => x.ReceiptFileName).HasMaxLength(260).IsRequired();
+        b.Property(x => x.ReceiptContentType).HasMaxLength(100).IsRequired();
+        b.Property(x => x.DecisionDetailsJson).HasColumnType("jsonb").IsRequired();
+        b.HasOne<AuditLog>().WithOne().HasForeignKey<ValuationAuditSnapshot>(x => x.AuditLogId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ValuationDecision>().WithMany().HasForeignKey(x => x.ValuationDecisionId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ValuationPhase2>().WithMany().HasForeignKey(x => x.ValuationPhase2Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<AuthAccountEntity>().WithMany().HasForeignKey(x => x.OfficerAccountId).OnDelete(DeleteBehavior.SetNull);
+        b.HasOne<CustomsLocation>().WithMany().HasForeignKey(x => x.OfficerLocationId).OnDelete(DeleteBehavior.SetNull);
     }
 }
