@@ -22,7 +22,10 @@ public sealed class HsCodeRepository(CustomsDbContext db) : IHsCodeRepository
             var recommendedCode = RecommendedProductCode(search);
             var term = recommendedCode ?? search.Trim().ToLowerInvariant();
             var code = term.Replace(".", "");
-            query = query.Where(x => (x.Code != null && x.Code.Contains(code)) || x.DescriptionEn.ToLower().Contains(term)
+            if (recommendedCode == "1006")
+                query = query.Where(x => (x.Code != null && x.Code.StartsWith(code)) || x.HeadingNumber == code
+                    || db.NationalTariffLines.Any(line => line.HsCodeId == x.Id && line.TariffItemNo != null && line.TariffItemNo.StartsWith(code)));
+            else query = query.Where(x => (x.Code != null && x.Code.Contains(code)) || x.DescriptionEn.ToLower().Contains(term)
                 || (x.DescriptionAm != null && x.DescriptionAm.Contains(term))
                 || x.SectionName.ToLower().Contains(term) || x.ChapterName.ToLower().Contains(term)
                 || x.HeadingNumber.Contains(code)
@@ -52,6 +55,10 @@ public sealed class HsCodeRepository(CustomsDbContext db) : IHsCodeRepository
     {
         var normalized = Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]+", " ").Trim();
         if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+        // Rice has several six-digit categories. Narrow the catalogue search to
+        // its heading without guessing a type or matching liquorice/dentifrices.
+        if (normalized == "rice") return "1006";
 
         var phoneAccessory = Regex.IsMatch(normalized, @"\b(case|cover|charger|charging|cable|adapter|screen protector|display|battery|earbuds?|headphones?|holder|mount|parts?)\b");
         var smartphone = Regex.IsMatch(normalized, @"\b(iphones?|i phones?|smartphones?|smart phones?|mobile phones?|cellular phones?)\b");

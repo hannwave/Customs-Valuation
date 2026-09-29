@@ -1,5 +1,7 @@
 export function recommendedHsCode(product: string): string | null {
   const normalized = product.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // A heading narrows the choices; it is not a default six-digit rice category.
+  if (normalized === "rice") return "1006";
   const phoneAccessory = /\b(case|cover|charger|charging|cable|adapter|screen protector|display|battery|earbuds?|headphones?|holder|mount|parts?)\b/.test(normalized);
   if (/\b(iphones?|i phones?|smartphones?|smart phones?|mobile phones?|cellular phones?|galaxy(?: s| a| z)?|pixel phones?|redmi phones?)\b/.test(normalized) && !phoneAccessory) return "851713";
 

@@ -63,6 +63,86 @@ public sealed class ComtradeBenchmarkTests
         Assert.All(fixture.Requests, uri => Assert.Contains("reporterCode=231", uri.Query));
     }
 
+    [Theory]
+    [InlineData("100630", "341803946.55", "190490947.412", "0.56")]
+    [InlineData("240210", "605.24", "78304.831", "129.38")]
+    public async Task AcceptsMatchingRiceAndCigarCategoryTotalsAggregatedFromTariffLines(string code, string quantity, string value, string expectedPrice)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var row = Row(year: 2023, unit: 8, quantity: decimal.Parse(quantity, culture), value: decimal.Parse(value, culture), code: code, aggregate: true);
+        using var fixture = new Fixture(uri => uri.Query.Contains("period=2023") ? Data(row) : Data());
+        var result = await fixture.Client.SearchAsync(code, CancellationToken.None);
+        Assert.False(result.IsMirror);
+        Assert.Equal(2023, result.Period);
+        Assert.Equal("CIF", result.ValuationBasis);
+        Assert.Equal("kg", result.Unit);
+        Assert.Equal(decimal.Parse(expectedPrice, culture), result.UnitValue);
+        Assert.Equal(decimal.Parse(quantity, culture), result.Quantity);
+        Assert.Equal(231, Assert.Single(result.Reporters).Code);
+        Assert.Equal(3, fixture.Requests.Count);
+    }
+
+    [Fact]
+    public async Task AcceptsMatchingAggregatedSupplierTotalsWithoutIncludingParentOrWorldTotals()
+    {
+        var china = Row(reporter: 156, mirror: true, quantity: 10, value: 100, aggregate: true);
+        var usa = Row(reporter: 842, mirror: true, quantity: 30, value: 900);
+        using var fixture = new Fixture(uri => uri.Query.Contains("flowCode=M") ? Data() : Data(
+            china, china, usa, Row(reporter: 528, mirror: true, code: "8517", aggregate: true, value: 100000),
+            Row(reporter: 0, mirror: true, aggregate: true, value: 100000)));
+        var result = await fixture.Client.SearchAsync("851713", CancellationToken.None);
+        Assert.True(result.IsMirror);
+        Assert.Equal(2, result.ReporterCount);
+        Assert.Equal(25m, result.UnitValue);
+        Assert.Equal(1000m, result.TradeValue);
+        Assert.Equal(40m, result.Quantity);
+    }
+
+    [Fact]
+    public async Task ItemTariffUsesSupplierCountsRatherThanReplacingPhoneBenchmarkWithImportWeight()
+    {
+        var imports = Row(unit: 8, quantity: 20, value: 1000, aggregate: true);
+        using var fixture = new Fixture(uri => uri.Query.Contains("flowCode=M") ? Data(imports)
+            : Data(Row(reporter: 156, mirror: true, quantity: 100, value: 2000, aggregate: true)));
+        var result = await fixture.Client.SearchAsync("851713", CancellationToken.None, "u");
+        Assert.Equal("u", result.Unit);
+        Assert.True(result.IsMirror);
+        Assert.Equal(20m, result.UnitValue);
+        Assert.Equal(4, fixture.Requests.Count);
+    }
+
+    [Fact]
+    public async Task KilogramTariffUsesWeightEvenWhenAlternativeCountsExistAndCachesUnitsSeparately()
+    {
+        var row = Row(unit: 8, quantity: 10, value: 100, aggregate: true);
+        row["altQty"] = 50;
+        row["altQtyUnitCode"] = 5;
+        using var fixture = new Fixture(_ => Data(row));
+        var weight = await fixture.Client.SearchAsync("851713", CancellationToken.None, "kg");
+        var count = await fixture.Client.SearchAsync("851713", CancellationToken.None, "u");
+        Assert.Equal("kg", weight.Unit);
+        Assert.Equal(10m, weight.UnitValue);
+        Assert.Equal("u", count.Unit);
+        Assert.Equal(2m, count.UnitValue);
+        Assert.Equal(2, fixture.Requests.Count);
+        Assert.Same(weight, await fixture.Client.SearchAsync("851713", CancellationToken.None, "kg"));
+        Assert.Same(count, await fixture.Client.SearchAsync("851713", CancellationToken.None, "u"));
+        Assert.Equal(2, fixture.Requests.Count);
+    }
+
+    [Fact]
+    public async Task MissingRequestedCountsRemainExplicitlyLabelledWeightReference()
+    {
+        using var fixture = new Fixture(uri => uri.Query.Contains("flowCode=M") ? Data(Row(unit: 8, quantity: 10, value: 100)) : Data());
+        var result = await fixture.Client.SearchAsync("851713", CancellationToken.None, "u");
+        Assert.Equal("kg", result.Unit);
+        Assert.False(result.IsMirror);
+        Assert.Equal(10m, result.UnitValue);
+        Assert.Contains("No benchmark in the requested unit (u)", result.Message);
+        Assert.Contains("no weight-to-item conversion", result.Message);
+        Assert.Equal(6, fixture.Requests.Count);
+    }
+
     [Fact]
     public async Task FallsBackToQuantityWeightedCompatibleExportsWithoutDoubleCounting()
     {
@@ -92,11 +172,11 @@ public sealed class ComtradeBenchmarkTests
     [Fact]
     public async Task ExcludesConflictingReporterTotalsAndUnrelatedDimensions()
     {
-        var nonmatching = new[] { "cmdCode", "flowCode", "partnerCode", "partner2Code", "customsCode", "motCode", "period", "reporterCode", "isOriginalClassification", "isAggregate" }
+        var nonmatching = new[] { "cmdCode", "flowCode", "partnerCode", "partner2Code", "customsCode", "motCode", "period", "reporterCode", "isOriginalClassification" }
             .Select(field => { var row = Row(reporter: 528, mirror: true, value: 100000); row[field] = field switch
             {
                 "cmdCode" => "851712", "flowCode" => "M", "customsCode" => "C01", "period" => 2024,
-                "reporterCode" => 97, "isOriginalClassification" => false, "isAggregate" => true, _ => 1
+                "reporterCode" => 97, "isOriginalClassification" => false, _ => 1
             }; return row; }).ToArray();
         using var fixture = new Fixture(uri => uri.Query.Contains("flowCode=M") ? Data() : Data([
             Row(reporter: 156, mirror: true, value: 100), Row(reporter: 156, mirror: true, value: 200),
@@ -207,19 +287,20 @@ public sealed class ComtradeBenchmarkTests
         using var fixture = new Fixture(_ => Data(Row()));
         var controller = new CustomsTradeBenchmarkController(fixture.Client);
         Assert.IsType<BadRequestObjectResult>(await controller.Search("85.17", CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.Search("851713", CancellationToken.None, "box"));
         Assert.Empty(fixture.Requests);
         var result = Assert.IsType<OkObjectResult>(await controller.Search("8517.13.00", CancellationToken.None));
         Assert.Equal("851713", Assert.IsType<CustomsTradeBenchmark>(result.Value).HsCode);
     }
 
-    private static Dictionary<string, object?> Row(int reporter = 231, int year = 2025, bool mirror = false, int unit = 5, decimal quantity = 10, decimal value = 100) => new()
+    private static Dictionary<string, object?> Row(int reporter = 231, int year = 2025, bool mirror = false, int unit = 5, decimal quantity = 10, decimal value = 100, string code = "851713", bool aggregate = false) => new()
     {
-        ["cmdCode"] = "851713", ["period"] = year.ToString(), ["reporterCode"] = reporter,
+        ["cmdCode"] = code, ["period"] = year.ToString(), ["reporterCode"] = reporter,
         ["flowCode"] = mirror ? "X" : "M", ["partnerCode"] = mirror ? 231 : 0,
         ["partner2Code"] = 0, ["customsCode"] = "C00", ["motCode"] = 0,
         ["qtyUnitCode"] = unit, ["qtyUnitAbbr"] = null, ["qty"] = quantity,
         ["primaryValue"] = value, [mirror ? "fobvalue" : "cifvalue"] = value,
-        ["isOriginalClassification"] = true, ["isAggregate"] = false
+        ["isOriginalClassification"] = true, ["isAggregate"] = aggregate
     };
 
     private static HttpResponseMessage Data(params Dictionary<string, object?>[] rows) => new(HttpStatusCode.OK)

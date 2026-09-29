@@ -28,10 +28,10 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
     private readonly SemaphoreSlim lookupGate = new(1, 1);
     private DateTimeOffset nextRequestAt;
 
-    public async Task<CustomsTradeBenchmark> SearchAsync(string code, CancellationToken ct)
+    public async Task<CustomsTradeBenchmark> SearchAsync(string code, CancellationToken ct, string? preferredUnit = null)
     {
         var lastYear = clock.GetUtcNow().Year - 1;
-        var cacheKey = $"comtrade:benchmark:v2:{code}:{lastYear}";
+        var cacheKey = $"comtrade:benchmark:v4:{code}:{lastYear}:{preferredUnit ?? "any"}";
         if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out var cached) && cached is not null) return cached;
 
         await lookupGate.WaitAsync(ct);
@@ -39,7 +39,9 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
         {
             if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out cached) && cached is not null) return cached;
             var http = factory.CreateClient("UNComtrade");
-            // Prefer Ethiopia's own imports, even when a supplier has a newer report.
+            CustomsTradeBenchmark? differentUnitReference = null;
+            // Prefer Ethiopia's own imports in the requested unit. If imports
+            // only report weight for an item tariff, try supplier item counts.
             foreach (var mirror in new[] { false, true })
             {
                 for (var year = lastYear; year >= lastYear - 2; year--)
@@ -49,13 +51,27 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
                     var origin = mirror ? "partnerCode=231&flowCode=X" : "reporterCode=231&partnerCode=0&flowCode=M";
                     var path = $"public/v1/preview/C/A/HS?{origin}&period={year}&cmdCode={code}&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500";
                     using var document = await ReadAsync(http, path, ct);
-                    var result = Calculate(document.RootElement, code, year, mirror, new Uri(http.BaseAddress!, path).AbsoluteUri);
+                    var result = Calculate(document.RootElement, code, year, mirror, new Uri(http.BaseAddress!, path).AbsoluteUri, preferredUnit);
                     if (result is null) continue;
+                    if (preferredUnit is not null && result.Unit != preferredUnit)
+                    {
+                        differentUnitReference ??= result;
+                        continue;
+                    }
                     cache.Set(cacheKey, result, TimeSpan.FromHours(12));
                     return result;
                 }
             }
 
+            if (differentUnitReference is not null)
+            {
+                var reference = differentUnitReference with
+                {
+                    Message = differentUnitReference.Message + $" No benchmark in the requested unit ({preferredUnit}) was available. This value remains a reference per {differentUnitReference.Unit}; no weight-to-item conversion has been inferred."
+                };
+                cache.Set(cacheKey, reference, TimeSpan.FromHours(12));
+                return reference;
+            }
             var unavailable = new CustomsTradeBenchmark(code, null, "Ethiopia", "USD", null, null, null, null, null,
                 "Neither Ethiopia imports nor supplier exports to Ethiopia had a usable reported quantity for this HS category in the last three completed years. No product price has been inferred.",
                 false, "No usable trade benchmark", null, [], false);
@@ -92,7 +108,7 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
         }
     }
 
-    private static CustomsTradeBenchmark? Calculate(JsonElement root, string code, int year, bool mirror, string sourceUrl)
+    private static CustomsTradeBenchmark? Calculate(JsonElement root, string code, int year, bool mirror, string sourceUrl, string? preferredUnit)
     {
         if (root.ValueKind != JsonValueKind.Object || !string.IsNullOrWhiteSpace(Text(root, "error")) ||
             !root.TryGetProperty("data", out var rows) || rows.ValueKind != JsonValueKind.Array)
@@ -103,17 +119,22 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
         var records = new List<TradeRecord>();
         foreach (var row in rows.EnumerateArray())
         {
+            // isAggregate can mean national tariff lines were rolled up into
+            // this exact HS category. That is valid for a category benchmark;
+            // exclude unrelated totals by code, reporter and dimensions instead.
             if (row.ValueKind != JsonValueKind.Object || Text(row, "cmdCode") != code ||
                 Text(row, "flowCode") != (mirror ? "X" : "M") || Number(row, "partnerCode") != (mirror ? 231 : 0) ||
-                Number(row, "period") != year || True(row, "isAggregate") || False(row, "isOriginalClassification") ||
+                Number(row, "period") != year || False(row, "isOriginalClassification") ||
                 !DefaultDimension(row, "partner2Code", "0") || !DefaultDimension(row, "customsCode", "C00") || !DefaultDimension(row, "motCode", "0")) continue;
             var reporter = Number(row, "reporterCode");
             if (reporter is null || reporter != decimal.Truncate(reporter.Value) || reporter is <= 0 or > 999 ||
                 (mirror ? reporter is 231 or 97 : reporter != 231)) continue;
             var primary = Quantity(row, "qty", "qtyUnitCode", "qtyUnitAbbr", "isQtyEstimated");
             var alternative = Quantity(row, "altQty", "altQtyUnitCode", "altQtyUnitAbbr", "isAltQtyEstimated");
-            // An explicit alternative count is usable; never infer items from weight.
-            var quantity = primary?.Unit == "u" ? primary : alternative?.Unit == "u" ? alternative : primary ?? alternative;
+            // Prefer an explicitly reported quantity matching the tariff unit;
+            // never infer items from weight or weight from an item count.
+            var preferred = preferredUnit ?? "u";
+            var quantity = primary?.Unit == preferred ? primary : alternative?.Unit == preferred ? alternative : primary ?? alternative;
             var basisValue = Number(row, mirror ? "fobvalue" : "cifvalue");
             var value = basisValue is > 0 ? basisValue : Number(row, "primaryValue");
             if (value is not > 0 || quantity is null) continue;
@@ -128,7 +149,7 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
         var unique = records.GroupBy(record => record.ReporterCode)
             .Select(group => group.Distinct().ToArray()).Where(group => group.Length == 1).Select(group => group[0]);
         var cohort = unique.GroupBy(record => (record.Unit, record.Basis))
-            .OrderByDescending(group => group.Key.Unit == "u")
+            .OrderByDescending(group => group.Key.Unit == (preferredUnit ?? "u"))
             .ThenByDescending(group => group.Sum(record => record.Value)).FirstOrDefault();
         if (cohort is null) return null;
         var tradeValue = cohort.Sum(record => record.Value);
@@ -136,7 +157,7 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
         var reporters = cohort.OrderBy(record => record.ReporterCode).Select(record => new BenchmarkReporter(record.ReporterCode, record.ReporterName)).ToArray();
         var label = mirror ? $"Supplier exports to Ethiopia ({reporters.Length} reporters)" : "Ethiopia imports";
         var message = mirror
-            ? "Mirror-data fallback: Ethiopia's import reports had no usable quantity. This quantity-weighted HS-category average covers only supplier reports with compatible units, not all Ethiopian imports. Export values exclude import freight and insurance; they are not equivalent to a CIF import value."
+            ? "Mirror-data fallback: Ethiopia's import reports had no usable quantity in the required unit. This quantity-weighted HS-category average covers only supplier reports with compatible units, not all Ethiopian imports. Export values exclude import freight and insurance; they are not equivalent to a CIF import value."
             : "HS-category import unit value (trade value divided by reported quantity).";
         message += " This is not an exact brand/model price or an accepted customs valuation.";
         var estimated = cohort.Any(record => record.Estimated);
