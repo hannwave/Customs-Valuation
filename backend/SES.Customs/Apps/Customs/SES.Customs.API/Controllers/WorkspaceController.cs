@@ -118,7 +118,11 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     [HttpGet("dashboard")]
     public async Task<IActionResult> Dashboard(CancellationToken ct)
     {
-        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin);
+        // The operational dashboard is also the entry point for Customs
+        // Officers (valuation search, their pending work and recent activity).
+        // Keep the role-specific projections below while allowing officers to
+        // reach the endpoint they are shown in the portal.
+        access.Require(AccessRules.SystemAdmin, AccessRules.CustomsAdmin, AccessRules.Officer);
         var scope = await access.Locations(ct);
         var locations = await db.CustomsLocations.AsNoTracking().Where(l => scope.Contains(l.Id)).OrderBy(l => l.Name).ToListAsync(ct);
         var now = DateTimeOffset.UtcNow; var today = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
@@ -611,7 +615,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             : new List<Guid>();
         var scopedPhase2Ids = access.Role == AccessRules.CustomsAdmin ? await db.ValuationPhase2s.AsNoTracking().Where(p => scopedDecisionIds.Contains(p.ValuationDecisionId)).Select(p => p.Id).ToListAsync(ct) : new List<Guid>();
         var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && ((administratorBranchId.HasValue && a.LocationId == administratorBranchId.Value) || (a.Module == "EthiopianImportTaxAssessment" && scopedPhase2Ids.Contains(a.RecordId))) || access.Role == AccessRules.Officer && a.UserId == subject);
-        var records = await query.OrderByDescending(a => a.OccurredAt).Take(200).ToListAsync(ct);
+        // The audit screen provides its own pagination after applying role-aware
+        // visibility rules. Do not truncate the history before the user can
+        // search it; older valuation decisions must remain discoverable.
+        var records = await query.OrderByDescending(a => a.OccurredAt).ToListAsync(ct);
         if (access.Role == AccessRules.CustomsAdmin)
         {
             var actorIds = records.Select(r => r.UserId).Distinct().ToArray();

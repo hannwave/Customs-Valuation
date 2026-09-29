@@ -39,7 +39,9 @@ export function LoginForm() {
     e.preventDefault(); const data = new FormData(e.currentTarget); setBusy(true); setError("");
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-      const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity: data.get("identity"), password: data.get("password") }) });
+      const identity = String(data.get("identity") ?? "").trim();
+      const password = String(data.get("password") ?? "");
+      const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identity, password }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message ?? t("auth.invalid", "Check your username and password and try again."));
       setSessionAccessToken(body.accessToken);

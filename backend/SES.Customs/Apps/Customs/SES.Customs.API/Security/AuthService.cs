@@ -263,8 +263,15 @@ public sealed class AuthService(CustomsDbContext db, IConfiguration configuratio
 
     public async Task<AuthUser?> FindAsync(string identity, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(identity)) return null;
+
         await EnsureSeededAsync(ct);
-        var entity = await db.AuthAccounts.FirstOrDefaultAsync(u => u.Username == identity || u.Email == identity, ct);
+        // Usernames and email addresses are identifiers, so tolerate casing and
+        // whitespace differences introduced by copy/paste in the sign-in form.
+        var normalizedIdentity = identity.Trim().ToUpperInvariant();
+        var entity = await db.AuthAccounts.FirstOrDefaultAsync(
+            u => u.Username.ToUpper() == normalizedIdentity || u.Email.ToUpper() == normalizedIdentity,
+            ct);
         return entity is null ? null : Map(entity);
     }
 
