@@ -161,7 +161,7 @@ export default function AdministrationPage() {
   }
 
   function openOfficerReview(request: RegistrationRequest) {
-    const activeBranch = profile?.locations.find(location => location.id === request.locationId && location.status === "ACTIVE" && location.locationType === "BRANCH" && new Date(location.effectiveFrom).getTime() <= Date.now() && (!location.effectiveTo || new Date(location.effectiveTo).getTime() > Date.now()))?.id ?? "";
+    const activeBranch = profile?.locations.find(location => location.id === request.locationId && location.status === "ACTIVE" && location.locationType === "BRANCH" && (location.supportsValuation || location.supportsInspection) && new Date(location.effectiveFrom).getTime() <= Date.now() && (!location.effectiveTo || new Date(location.effectiveTo).getTime() > Date.now()))?.id ?? "";
     setReviewRequest(request);
     setReviewForm({ locationId: activeBranch, responsibilities: [] });
     setError(""); setNotice("");
@@ -219,7 +219,7 @@ export default function AdministrationPage() {
   if (loading) return <DataState kind="loading" title="Loading user administration" description="Checking your role and employee assignments." />;
   if (!profile) return <DataState kind="error" title="Administration is unavailable" description={error} onRetry={() => void load()} />;
   const now = Date.now();
-  const activeLocations = profile.locations.filter(location => location.status === "ACTIVE" && location.locationType === "BRANCH" && new Date(location.effectiveFrom).getTime() <= now && (!location.effectiveTo || new Date(location.effectiveTo).getTime() > now));
+  const activeLocations = profile.locations.filter(location => location.status === "ACTIVE" && location.locationType === "BRANCH" && new Date(location.effectiveFrom).getTime() <= now && (!location.effectiveTo || new Date(location.effectiveTo).getTime() > now) && (profile.user.role !== "CustomsAdministrator" || location.supportsValuation || location.supportsInspection));
   const canCreateOfficer = profile.user.role === "CustomsAdministrator";
   const availableResponsibilities = profile.employeeResponsibilities?.length ? profile.employeeResponsibilities : responsibilityOptions;
   const normalizedSearch = search.trim().toLowerCase();

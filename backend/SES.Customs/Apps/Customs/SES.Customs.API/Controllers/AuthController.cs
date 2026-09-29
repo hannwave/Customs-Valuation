@@ -62,7 +62,7 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
     }
 
     [AllowAnonymous, HttpGet("registration-locations")]
-    public async Task<IActionResult> RegistrationLocations([FromServices] SES.Customs.Infrastructure.Context.CustomsDbContext db, CancellationToken ct) => Ok(await db.CustomsLocations.AsNoTracking().Where(l => l.Status == "ACTIVE" && l.LocationType == "BRANCH" && l.EffectiveFrom <= DateTimeOffset.UtcNow && (l.EffectiveTo == null || l.EffectiveTo > DateTimeOffset.UtcNow)).OrderBy(l => l.Name).Select(l => new { l.Id, l.OfficialCode, l.Name, l.DisplayName, l.LocationType, l.ParentLocationId, l.Region, l.Zone }).ToListAsync(ct));
+    public async Task<IActionResult> RegistrationLocations([FromServices] SES.Customs.Infrastructure.Context.CustomsDbContext db, CancellationToken ct) => Ok(await db.CustomsLocations.AsNoTracking().Where(l => l.Status == "ACTIVE" && l.LocationType == "BRANCH" && (l.SupportsValuation || l.SupportsInspection) && l.EffectiveFrom <= DateTimeOffset.UtcNow && (l.EffectiveTo == null || l.EffectiveTo > DateTimeOffset.UtcNow)).OrderBy(l => l.Name).Select(l => new { l.Id, l.OfficialCode, l.Name, l.DisplayName, l.LocationType, l.ParentLocationId, l.Region, l.Zone }).ToListAsync(ct));
 
     [AllowAnonymous, HttpGet("administrator-registration-locations")]
     public async Task<IActionResult> AdministratorRegistrationLocations(CancellationToken ct)

@@ -1684,8 +1684,8 @@ textarea[aria-invalid="true"]{border-color:#dc2626!important;box-shadow:0 0 0 2p
 .overview-evidence-workspace .valuation-page-heading h1{margin:0;color:#102b56;font-size:clamp(27px,2.6vw,36px);font-weight:750;line-height:1.15;letter-spacing:-.8px}
 .overview-evidence-workspace .valuation-page-heading p{margin:8px 0 0;color:#5f7189;font-size:13px;line-height:1.55}
 .overview-evidence-workspace .valuation-search-card{margin:0 0 18px;padding:20px;border:1px solid #d7e3f0;border-radius:14px;background:#fff;box-shadow:0 4px 16px #102a5608}
-.overview-evidence-workspace .valuation-search-row{display:grid;grid-template-columns:minmax(250px,1.4fr) minmax(155px,.72fr) minmax(220px,1fr) 112px 88px;align-items:end;gap:12px}
-.overview-evidence-workspace .valuation-search-product,.overview-evidence-workspace .valuation-market-select,.overview-evidence-workspace .valuation-price-group{display:grid;min-width:0;gap:6px}
+.overview-evidence-workspace .valuation-search-row{display:grid;grid-template-columns:minmax(230px,1.25fr) minmax(145px,.67fr) minmax(190px,.82fr) minmax(210px,.95fr) 112px 88px;align-items:end;gap:12px}
+.overview-evidence-workspace .valuation-search-product,.overview-evidence-workspace .valuation-market-select,.overview-evidence-workspace .valuation-country-select,.overview-evidence-workspace .valuation-price-group{display:grid;min-width:0;gap:6px}
 .overview-evidence-workspace .valuation-field-label,.overview-evidence-workspace .valuation-price-label{display:block;margin:0;color:#405b79;font-size:11px;font-weight:700;line-height:1.3}
 .overview-evidence-workspace .valuation-search-input-wrap,.overview-evidence-workspace .valuation-market-control,.overview-evidence-workspace .valuation-price-input-wrap{position:relative;display:flex;align-items:center;min-width:0;height:46px;border:1px solid #cbd9e8;border-radius:8px;background:#fff;transition:border-color .15s,box-shadow .15s}
 .overview-evidence-workspace .valuation-search-input-wrap:focus-within,.overview-evidence-workspace .valuation-market-control:focus-within,.overview-evidence-workspace .valuation-price-input-wrap:focus-within{border-color:#3983c6;box-shadow:0 0 0 3px #1768bd1a}
@@ -1694,6 +1694,11 @@ textarea[aria-invalid="true"]{border-color:#dc2626!important;box-shadow:0 0 0 2p
 .overview-evidence-workspace .valuation-search-input-wrap input{width:100%;padding:0 13px 0 40px}
 .overview-evidence-workspace .valuation-search-input-wrap input::placeholder,.overview-evidence-workspace .valuation-price-input-wrap input::placeholder{color:#98a8bb;opacity:1}
 .overview-evidence-workspace .valuation-market-control select{width:100%;padding:0 30px 0 39px;appearance:none;cursor:pointer}
+.overview-evidence-workspace .valuation-country-input{min-height:46px;height:46px;border:1px solid #cbd9e8;border-radius:8px;background:#fff;color:#173657;font-size:12px}
+.overview-evidence-workspace .valuation-country-input:focus{border-color:#3983c6;box-shadow:0 0 0 3px #1768bd1a}
+.valuation-country-option{display:inline-flex;align-items:center;gap:9px}
+.valuation-country-option [class^="flag:"]{--CountryFlagIcon-height:15px;border-radius:2px;box-shadow:0 0 0 1px #12304a26}
+.overview-evidence-workspace .valuation-country-select [class^="flag:"]{--CountryFlagIcon-height:15px;border-radius:2px;box-shadow:0 0 0 1px #12304a26}
 .overview-evidence-workspace .valuation-market-control:after{position:absolute;right:14px;width:7px;height:7px;border-right:1.5px solid #607790;border-bottom:1.5px solid #607790;content:"";transform:rotate(45deg) translateY(-2px);pointer-events:none}
 .overview-evidence-workspace .valuation-price-input-wrap{overflow:hidden}
 .overview-evidence-workspace .valuation-price-icon{display:grid;place-items:center;flex:0 0 38px;height:100%;color:#7187a1}
@@ -1754,7 +1759,7 @@ textarea[aria-invalid="true"]{border-color:#dc2626!important;box-shadow:0 0 0 2p
 .phase-bar button.is-upcoming:not(:disabled):hover{border-color:#c9dced;background:#f5f9fd;color:var(--navy)}
 @media(max-width:1100px){
   .overview-evidence-workspace .valuation-search-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .overview-evidence-workspace .valuation-search-product{grid-column:1/-1}
+  .overview-evidence-workspace .valuation-search-product,.overview-evidence-workspace .valuation-price-group{grid-column:1/-1}
   .overview-evidence-workspace .valuation-search-btn,.overview-evidence-workspace .valuation-clear-btn{width:100%}
   .overview-evidence-workspace .valuation-upload-row{grid-template-columns:40px minmax(0,1fr) auto}
 }

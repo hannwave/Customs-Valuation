@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Select } from "@mantine/core";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FiActivity, FiArrowRight, FiArchive, FiBarChart2, FiBookOpen, FiCheckCircle,
@@ -54,6 +55,9 @@ function DashboardHeader({ profile, eyebrow, title, description, actions }: { pr
 
 type EvidenceSource = "internationalMedian" | "internationalMean" | "customsBenchmark" | "declaredPrice" | "custom";
 type ConvertedPrice = { convertedAmount: number; to: string; rate: number; source: string; date?: string };
+type CountryOption = { code: string; name: string };
+
+const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW".split(" ");
 
 function money(value: number | null | undefined, currency: string) {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -98,6 +102,8 @@ function HistoricalPriceCard({ historical, internationalPrice, currency }: { his
 function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: WorkspaceProfile; onSubmitted: () => void }) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
+  const [purchaseCountry, setPurchaseCountry] = useState("");
+  const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
   const [customsBenchmark, setCustomsBenchmark] = useState<CustomsTradeBenchmark | null>(null);
   const [benchmarkBusy, setBenchmarkBusy] = useState(false);
@@ -130,6 +136,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const [declaredConversion, setDeclaredConversion] = useState<{ convertedAmount: number; rate: number; source: string; to?: string; date?: string } | null>(null);
   const currency = ({ us: "USD", gb: "GBP", de: "EUR", ae: "AED", za: "ZAR" } as Record<string, string>)[market] ?? "USD";
   const justificationIssue = officerNoteIssue(justification);
+
+  useEffect(() => {
+    const names = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
+    setCountryOptions(COUNTRY_CODES.map(code => ({ code, name: names?.of(code) ?? code }))
+      .sort((a, b) => a.name.localeCompare(b.name, "en")));
+  }, []);
 
   useEffect(() => {
     if (!receiptFile) { setReceiptPreviewUrl(null); return; }
@@ -406,18 +418,16 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setRecording(true); setError(""); setRecordNotice("");
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
-       const assignedLocationId = (
-        profile.locations.find(location =>
-          location.id === profile.user.primaryLocationId &&
-          location.status === "ACTIVE" &&
-          (location.supportsValuation || location.supportsInspection)
-        ) ??
-        profile.locations.find(location =>
-          location.status === "ACTIVE" &&
-          (location.supportsValuation || location.supportsInspection)
-        )
+       const now = Date.now();
+       const assignedLocationId = profile.locations.find(location =>
+         location.id === profile.user.primaryLocationId &&
+         location.locationType === "BRANCH" &&
+         location.status === "ACTIVE" &&
+         new Date(location.effectiveFrom).getTime() <= now &&
+         (!location.effectiveTo || new Date(location.effectiveTo).getTime() > now) &&
+         (location.supportsValuation || location.supportsInspection)
        )?.id ?? null;
-       if (!assignedLocationId) throw new Error("Assign an active valuation office before submitting this valuation.");
+       if (!assignedLocationId) throw new Error("Your assigned office is not enabled for valuation or inspection. Ask your Customs Administrator to assign an active valuation office.");
 
        const evidenceSnapshot = {
          product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
@@ -467,7 +477,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
@@ -493,6 +503,24 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
               <option value="us">US - USD</option><option value="gb">UK - GBP</option><option value="de">DE - EUR</option><option value="ae">UAE - AED</option><option value="za">ZA - ZAR</option>
             </select>
           </div>
+        </div>
+        <div className="valuation-country-select">
+          <label className="valuation-field-label" htmlFor="valuation-purchase-country">Country where bought</label>
+          <Select
+            id="valuation-purchase-country"
+            title="Display only; does not change market prices or customs origin."
+            placeholder="Select country"
+            searchable
+            clearable
+            limit={20}
+            nothingFoundMessage="No country found"
+            data={countryOptions.map(country => ({ value: country.code, label: country.name }))}
+            value={purchaseCountry || null}
+            onChange={value => setPurchaseCountry(value ?? "")}
+            leftSection={purchaseCountry ? <span className={`flag:${purchaseCountry}`} aria-hidden="true" /> : <FiGlobe aria-hidden="true" />}
+            renderOption={({ option }) => <span className="valuation-country-option"><span className={`flag:${option.value}`} aria-hidden="true" />{option.label}</span>}
+            classNames={{ input: "valuation-country-input" }}
+          />
         </div>
         <div className="valuation-price-group">
           <label className="valuation-price-label" htmlFor="customer-price-input">Price paid by customer</label>

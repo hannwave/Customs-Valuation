@@ -297,7 +297,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         var role = AccessRules.NormalizeRole(input.Role);
         Validate(role == AccessRules.Officer || access.IsSystem && role == AccessRules.CustomsAdmin, "Customs Administrators can create Customs Officers only.");
-        await RequireEmployeeLocation(input.LocationId, ct);
+        await RequireEmployeeLocation(input.LocationId, role, ct);
         var username = (input.Username ?? "").Trim();
         var email = (input.Email ?? "").Trim().ToLowerInvariant();
         var fullName = (input.FullName ?? "").Trim();
@@ -333,7 +333,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
         Validate(new[] { "ACTIVE", "PENDING_VALIDATION", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
         Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
-        await RequireEmployeeLocation(input.LocationId, ct);
+        await RequireEmployeeLocation(input.LocationId, user.Role, ct);
         var (requestedResponsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
         Validate(invalidResponsibilities.Length == 0, "Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
         var responsibilities = string.IsNullOrWhiteSpace(input.Responsibilities) ? user.Responsibilities : requestedResponsibilities;
@@ -405,11 +405,13 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         return query;
     }
 
-    private async Task RequireEmployeeLocation(Guid locationId, CancellationToken ct)
+    private async Task RequireEmployeeLocation(Guid locationId, string? role, CancellationToken ct)
     {
         await access.RequireLocation(locationId, true, ct);
         var location = await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(l => l.Id == locationId, ct);
         Validate(location?.LocationType == "BRANCH", "Employees must be assigned to an active branch.");
+        if (AccessRules.NormalizeRole(role) == AccessRules.Officer)
+            Validate(location!.SupportsValuation || location.SupportsInspection, "Assign Customs Officers to a branch that supports valuation or inspection work.");
     }
 
     private static (string Normalized, string[] Invalid) NormalizeResponsibilities(string? value)
@@ -493,6 +495,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             await access.RequireLocation(input.LocationId.Value, true, ct);
             office = await db.CustomsLocations.FindAsync([input.LocationId.Value], ct);
             Validate(office is not null && office.Status == "ACTIVE" && office.LocationType == "BRANCH", "The valuation must use an active branch location.");
+            Validate(office!.SupportsValuation || office.SupportsInspection, "The valuation office must support valuation or inspection work.");
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
         Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
@@ -532,8 +535,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(decision.OfficerSubjectId == access.UserId.ToString() && decision.Status == "Draft" && decision.Version == input.Version, "Only your current saved draft may be submitted.");
         Validate(decision.DeclaredPriceAmount > 0 && decision.ReceiptData is { Length: > 0 }, "Capture the customer's price paid and attach a PDF, JPG, or PNG receipt before submission.");
-        if (decision.LocationId.HasValue)
-            await access.RequireLocation(decision.LocationId.Value, true, ct);
+        Validate(decision.LocationId.HasValue, "Assign an active valuation office before submitting this valuation.");
+        await access.RequireLocation(decision.LocationId!.Value, true, ct);
+        var office = await db.CustomsLocations.FindAsync([decision.LocationId.Value], ct);
+        Validate(office is not null && office.LocationType == "BRANCH" && (office.SupportsValuation || office.SupportsInspection), "The valuation office must support valuation or inspection work.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
         access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
     }

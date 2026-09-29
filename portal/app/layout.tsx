@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "@mantine/core/styles.css";
+import "country-flag-icons/3x2/flags.css";
 import "./globals.css";
 import Providers from "./providers";
 import { AppLayout } from "@/components/AppLayout";
