@@ -38,6 +38,8 @@ export interface ValuationSession {
   id: string;
   query: string;
   market: string;
+  purchaseCountryCode?: string;
+  purchaseCountryName?: string;
   international: InternationalPriceSearch | null;
   customsBenchmark?: CustomsTradeBenchmark | null;
   historical?: HistoricalSessionEvidence | null;

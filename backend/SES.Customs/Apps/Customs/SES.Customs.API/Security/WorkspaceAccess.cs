@@ -85,14 +85,16 @@ public sealed class WorkspaceAccess(CustomsDbContext db, IHttpContextAccessor ht
         }
         return location.OfficialCode.Trim().ToUpperInvariant();
     }
-    public void Audit(string action, string module, Guid id, object? before, object? after, string reason, Guid? location = null)
+    public AuditLog Audit(string action, string module, Guid id, object? before, object? after, string reason, Guid? location = null)
     {
-        db.AuditLogs.Add(new AuditLog {
+        var audit = new AuditLog {
             Id = Guid.NewGuid(), UserId = UserId.ToString(), Username = http.HttpContext?.User.Identity?.Name ?? "",
             Action = action, Module = module, RecordId = id, LocationId = location, SubjectUserId = module == "Users" ? id : null, OccurredAt = DateTimeOffset.UtcNow,
             PreviousValueJson = before == null ? null : JsonSerializer.Serialize(before), NewValueJson = after == null ? null : JsonSerializer.Serialize(after),
             Justification = reason, IpDeviceInformation = $"{http.HttpContext?.Connection.RemoteIpAddress} | {http.HttpContext?.Request.Headers.UserAgent}"
-        });
+        };
+        db.AuditLogs.Add(audit);
+        return audit;
     }
     public static object PublicUser(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.RegionKey, u.RegionJoinedAt, u.ArchivedAt, u.ArchivedBy, u.ArchiveReason, u.Version, u.EmployeeNumber, u.Phone, u.Responsibilities, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };
     public static object PublicEmployee(AuthAccountEntity u) => new { u.Id, u.Username, u.Email, u.FullName, role = AccessRules.NormalizeRole(u.Role), roleCode = AccessRules.Code(u.Role), u.Active, u.Status, u.PrimaryLocationId, u.RegionKey, u.RegionJoinedAt, u.ArchivedAt, u.ArchivedBy, u.ArchiveReason, u.Version, u.EmployeeNumber, u.Phone, u.Responsibilities, u.CreatedAt, u.UpdatedAt, u.LastLoginAt };

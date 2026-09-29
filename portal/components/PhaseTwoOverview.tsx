@@ -53,9 +53,9 @@ function displayHsCode(item: HsCode | null | undefined) {
 
 function exciseUnitFor(item: HsCode): string {
   const code = `${item.tariffItemNo ?? ""}${item.code ?? ""}`.replace(/\D/g, "");
-  if (code.startsWith("240210") || code.startsWith("39232110") || code.startsWith("39232910")) return "Kilograms (KG)";
-  if (code.startsWith("240220")) return "Pack (20 sticks)";
-  if (code.startsWith("220300") || code.startsWith("220600") || code.startsWith("22089010")) return "Litres (L)";
+  if (code.startsWith("2401") || code.startsWith("240210") || code.startsWith("240319") || code.startsWith("240391") || code.startsWith("240399") || code.startsWith("39232110") || code.startsWith("39232910")) return "Kilograms (KG)";
+  if (code.startsWith("240220") || code.startsWith("240290")) return "Pack (20 sticks)";
+  if (code.startsWith("2203") || code.startsWith("2204") || code.startsWith("22060010") || code.startsWith("220720") || code.startsWith("2208")) return "Litres (L)";
   return "Pieces (PCS)";
 }
 
@@ -105,7 +105,28 @@ const permanentTaxDefinitions = [
   { name: "Social Welfare Levy", calculationBasis: "CIF", order: 7 },
 ] as const;
 
-const standardTaxNames: string[] = permanentTaxDefinitions.map((line) => line.name);
+const standardTaxNames: string[] = [...permanentTaxDefinitions.map((line) => line.name), "Excise Tax (specific)"];
+const currentPhase2RuleVersion = "officer-sequential-duty-excise-surtax-v2";
+
+function draftWithCurrentRecommendations(draft: Phase2Request): Phase2Request {
+  return {
+    ...draft,
+    exciseTaxApplicable: false,
+    taxLines: draft.taxLines.filter((line) => line.status === "OfficerAdjusted"),
+  };
+}
+
+function isExciseComparisonLine(line: Pick<Phase2TaxLineRequest, "name" | "calculationBasis">) {
+  return line.name === "Excise Tax (specific)" && line.calculationBasis === "UNIT_RATE_ETB_GREATER_OF";
+}
+
+function exciseUnitAbbreviation(unit: string) {
+  const normalized = unit.toLowerCase();
+  if (normalized.includes("kilogram") || normalized.includes("kg")) return "kg";
+  if (normalized.includes("litre") || normalized.includes("liter") || normalized === "l") return "L";
+  if (normalized.includes("pack")) return "pack of 20";
+  return unit || "unit";
+}
 
 function pendingTaxLines(): Phase2TaxLineRequest[] {
   return permanentTaxDefinitions.map((line) => ({
@@ -188,9 +209,12 @@ function money(value: number | null | undefined, currency = "ETB") {
   })}`;
 }
 
-function displayTaxName(name: string) {
+function displayTaxName(name: string, calculationBasis?: string) {
   if (name === "VAT") return "Value Added Tax (VAT)";
   if (name === "Surtax") return "Import Surtax";
+  if (name === "Excise Tax (specific)") return calculationBasis === "UNIT_RATE_ETB_GREATER_OF"
+    ? "Specific excise comparison"
+    : "Specific excise amount";
   return name;
 }
 
@@ -199,7 +223,8 @@ function displayBasis(basis: string) {
   if (normalized === "CIFPLUSDUTY") return "CIF + Duty";
   if (normalized === "CIFPLUSDUTYPLUSEXCISE") return "CIF + Duty + Excise";
   if (normalized === "CIFPLUSDUTYPLUSEXCISEPLUSSURTAX") return "CIF + Duty + Excise + Surtax";
-  if (normalized === "UNITRATEETB") return "ETB rate × shipment quantity";
+  if (normalized === "UNITRATEETBGREATEROF") return "Compare ETB/unit × quantity with % tax";
+  if (normalized === "UNITRATEETB") return "ETB amount × shipment quantity";
   if (normalized === "CIFPLUSDUTYPLUSVATPLUSEXCISE") return "CIF + Duty + Excise + VAT";
   return "CIF value";
 }
@@ -257,11 +282,31 @@ function draftFromResponse(data: Phase2Response): Phase2Request {
   };
 }
 
+function draftFromCalculationResponse(data: Phase2Response, expectedVersion?: string): Phase2Request {
+  return { ...draftFromResponse(data), expectedVersion };
+}
+
 function previewLines(lines: Phase2TaxLineRequest[], cif: number, quantity: number, currency: string) {
   let duty = 0;
   let excise = 0;
   let surtax = 0;
   let vat = 0;
+  const specificLine = lines.find((line) => line.name === "Excise Tax (specific)");
+  const specificLineAmountIsCurrent = Boolean(
+    specificLine && specificLine.status !== "Pending" && specificLine.status !== "ReviewRequired" &&
+    specificLine.calculatedAmount !== undefined && specificLine.baseAmount === quantity,
+  );
+  const canCalculateEtbSpecificAmount = Boolean(
+    specificLine && specificLine.isApplicable !== false &&
+    specificLine.status !== "Pending" && specificLine.status !== "ReviewRequired" && currency === "ETB",
+  );
+  const currentSpecificAmount = specificLine
+    ? canCalculateEtbSpecificAmount
+      ? (Number(specificLine.value) || 0) * quantity
+      : specificLineAmountIsCurrent
+        ? specificLine.calculatedAmount ?? 0
+        : null
+    : null;
 
   return [...lines].sort((a, b) => a.order - b.order).map((line) => {
     const basis = line.name === "Excise Tax"
@@ -276,22 +321,31 @@ function previewLines(lines: Phase2TaxLineRequest[], cif: number, quantity: numb
     const serverAmountIsCurrent = line.status === "Recommended" &&
       line.calculatedAmount !== undefined && line.baseAmount === basis &&
       (line.recommendedValue === undefined || line.value === line.recommendedValue);
+    const percentageAmount = (basis * (Number(line.value) || 0)) / 100;
+    const comparisonOnly = isExciseComparisonLine(line);
+    const isGreaterOfExcise = line.name === "Excise Tax" && Boolean(specificLine && isExciseComparisonLine(specificLine));
     const amount =
       line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false
         ? 0
         : line.calculationType === "PerUnit"
           ? currency === "ETB"
             ? Number(line.value) * quantity
-            : serverAmountIsCurrent ? line.calculatedAmount ?? 0 : 0
-        : line.name === "Excise Tax" && line.notes.includes("greater of") && serverAmountIsCurrent
-          ? line.calculatedAmount ?? 0
+            : line.name === "Excise Tax (specific)" && specificLineAmountIsCurrent
+              ? line.calculatedAmount ?? 0
+              : serverAmountIsCurrent ? line.calculatedAmount ?? 0 : 0
+        : isGreaterOfExcise
+          ? specificLine?.isApplicable === false
+            ? percentageAmount
+            : currentSpecificAmount !== null
+              ? Math.max(percentageAmount, currentSpecificAmount)
+              : serverAmountIsCurrent && specificLineAmountIsCurrent ? line.calculatedAmount ?? percentageAmount : percentageAmount
         : line.calculationType === "Fixed"
           ? Number(line.value) || 0
-          : (basis * (Number(line.value) || 0)) / 100;
+          : percentageAmount;
 
     if (line.name === "Customs Duty") duty = amount;
     if (line.name === "Excise Tax") excise += amount;
-    if (line.name === "Excise Tax (specific)") excise += amount;
+    if (line.name === "Excise Tax (specific)" && !comparisonOnly) excise += amount;
     if (line.name === "Surtax") surtax = amount;
     if (line.name === "VAT") vat = amount;
 
@@ -331,7 +385,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const phase = data?.phase2;
   const currency = draft.targetCurrency || "ETB";
   const remarksIssue = officerNoteIssue(draft.notes);
   const adjustmentNoteIssue = officerNoteIssue(draft.adjustmentReason);
@@ -347,8 +400,14 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   );
 
   const totalTaxPreview = rows
-    .filter((line) => line.isApplicable !== false)
+    .filter((line) => line.isApplicable !== false && !isExciseComparisonLine(line))
     .reduce((sum, line) => sum + (line.calculatedAmount ?? 0), 0);
+  const specificExciseInput = draft.taxLines.find((line) => line.name === "Excise Tax (specific)");
+  const specificExciseNeedsRefresh = Boolean(
+    currency !== "ETB" && specificExciseInput && specificExciseInput.isApplicable !== false &&
+    specificExciseInput.status !== "Pending" && specificExciseInput.status !== "ReviewRequired" &&
+    (specificExciseInput.calculatedAmount === undefined || specificExciseInput.baseAmount !== Number(draft.quantity)),
+  );
 
   const finalPreview = Math.max(
     0,
@@ -416,6 +475,12 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     try {
       const response = await loadPhase2(id.trim());
       const nextDraft = draftFromResponse(response);
+      if (!searchTerm.trim() && response.phase1.productName) {
+        setQuery(response.phase1.productName);
+        setKeywordQuery(response.phase1.productName);
+        searchTerm = response.phase1.productName;
+      }
+      if (response.phase1.productPhotoUrl) setProductImage(response.phase1.productPhotoUrl);
 
       if (searchTerm.trim()) {
         try {
@@ -457,10 +522,14 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
       setDraft(nextDraft);
       setDecisionId(id.trim());
       if (nextDraft.selectedHsCodeId && nextDraft.customsValueAmount > 0 &&
-          (!response.phase2?.taxLines?.length || response.phase2.selectedHsCodeId !== nextDraft.selectedHsCodeId)) {
-        const calculated = await calculatePhase2(id.trim(), requestPayload(nextDraft));
+          (!response.phase2?.taxLines?.length || response.phase2.selectedHsCodeId !== nextDraft.selectedHsCodeId || response.phase2.calculationRuleVersion !== currentPhase2RuleVersion)) {
+        const needsRuleRefresh = response.phase2?.calculationRuleVersion !== currentPhase2RuleVersion;
+        const calculationDraft = needsRuleRefresh
+          ? draftWithCurrentRecommendations(nextDraft)
+          : nextDraft;
+        const calculated = await calculatePhase2(id.trim(), requestPayload(calculationDraft));
         setData(calculated);
-        setDraft(draftFromResponse(calculated));
+        setDraft(draftFromCalculationResponse(calculated, nextDraft.expectedVersion));
       }
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "The assessment could not be loaded.");
@@ -491,7 +560,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
       void calculatePhase2(decisionId, requestPayload(nextDraft))
         .then((response) => {
           setData(response);
-          setDraft(draftFromResponse(response));
+          setDraft(draftFromCalculationResponse(response, nextDraft.expectedVersion));
           setNotice(`Tariff ${itemCode} selected. Duty and tax recommendations recalculated from the backend tariff and excise schedule.`);
         })
         .catch((exception) => setError(exception instanceof Error ? exception.message : "Tax recommendations could not be calculated."))
@@ -583,8 +652,21 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function updateUnit(unit: string) {
+    setDraft((current) => ({
+      ...current,
+      unit,
+      taxLines: current.taxLines.map((line) => line.name === "Excise Tax (specific)"
+        ? { ...line, status: "ReviewRequired", baseAmount: undefined, calculatedAmount: undefined }
+        : line),
+    }));
+  }
+
   function updateLine(index: number, patch: Partial<Phase2TaxLineRequest>) {
-    update("taxLines", draft.taxLines.map((line, itemIndex) => itemIndex === index ? { ...line, ...patch } : line));
+    const changesCalculation = "value" in patch || "isApplicable" in patch;
+    update("taxLines", draft.taxLines.map((line, itemIndex) => itemIndex === index
+      ? { ...line, ...(changesCalculation ? { baseAmount: undefined, calculatedAmount: undefined } : {}), ...patch }
+      : line));
   }
 
   function toggleLine(index: number) {
@@ -670,9 +752,11 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     setNotice("");
     setWarningDismissed(false);
     try {
-      const response = await calculatePhase2(decisionId, payload());
+      const needsRuleRefresh = Boolean(data?.phase2 && data.phase2.calculationRuleVersion !== currentPhase2RuleVersion);
+      const calculationDraft = needsRuleRefresh ? draftWithCurrentRecommendations(draft) : draft;
+      const response = await calculatePhase2(decisionId, requestPayload(calculationDraft));
       setData(response);
-      setDraft(draftFromResponse(response));
+      setDraft(draftFromCalculationResponse(response, draft.expectedVersion));
       setNotice("Default rates and assessment calculations refreshed.");
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "The assessment could not be calculated.");
@@ -709,7 +793,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     setError("");
     setNotice("");
     try {
-      const response = await savePhase2(decisionId, payload(), complete);
+      const needsRuleRefresh = Boolean(data?.phase2 && data.phase2.calculationRuleVersion !== currentPhase2RuleVersion);
+      const saveDraft = needsRuleRefresh ? draftWithCurrentRecommendations(draft) : draft;
+      const response = await savePhase2(decisionId, requestPayload(saveDraft), complete);
       setData(response);
       setDraft(draftFromResponse(response));
       setNotice(complete ? "Assessment confirmed and recorded in the official audit history." : "Assessment draft saved.");
@@ -987,7 +1073,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
             </label>
             <label>
               Unit
-              <select value={draft.unit} onChange={(event) => update("unit", event.target.value)}>
+              <select value={draft.unit} onChange={(event) => updateUnit(event.target.value)}>
                 <option>Pieces (PCS)</option>
                 <option>Kilograms (KG)</option>
                 <option>Litres (L)</option>
@@ -1067,7 +1153,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                   <tr>
                     <th>#</th>
                     <th>Tax type</th>
-                    <th>Rate (%) / unit</th>
+                    <th>Rate (%) / fixed amount</th>
                     <th>Basis</th>
                     <th>Amount ({currency})</th>
                     <th>Apply</th>
@@ -1087,7 +1173,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                         <td>
                           <div className="tax-name">
                             <span className="drag-handle">⋮⋮</span>
-                            <strong>{displayTaxName(line.name)}</strong>
+                            <strong>{displayTaxName(line.name, line.calculationBasis)}</strong>
                           </div>
                         </td>
                         <td>
@@ -1096,16 +1182,27 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             type="number"
                             min="0"
                             step="0.01"
-                            placeholder={line.calculationType === "PerUnit" ? "ETB / unit" : line.name === "Excise Tax" ? "Variable" : undefined}
-                            value={line.status === "Pending" || line.status === "ReviewRequired" ? "" : line.value}
+                            placeholder={line.calculationType === "PerUnit" ? "Amount" : undefined}
+                            value={line.status === "Pending" || (line.status === "ReviewRequired" && line.value <= 0) ? "" : line.value}
                             onChange={(event) => updateLine(index, { value: Number(event.target.value), status: "OfficerAdjusted" })}
                             disabled={line.isApplicable === false}
-                            aria-label={`${displayTaxName(line.name)} ${line.calculationType === "PerUnit" ? "rate per unit" : "rate"}`}
+                            aria-label={`${displayTaxName(line.name, line.calculationBasis)} ${line.calculationType === "PerUnit" ? `specific amount per ${exciseUnitAbbreviation(draft.unit)} in ETB` : "rate in percent"}`}
                           />
+                          {line.calculationType === "PerUnit" && (
+                            <small className="phase2-specific-tax-help">
+                              {isExciseComparisonLine(line)
+                                ? "Compared with percentage excise; not added twice."
+                                : `Added: ETB ${Number(line.value).toLocaleString()} per ${exciseUnitAbbreviation(draft.unit)} × quantity.`}
+                            </small>
+                          )}
                         </td>
                         <td>{displayBasis(line.calculationBasis)}</td>
                         <td className="amount-cell">
-                          {line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false ? "—" : money(line.calculatedAmount, currency)}
+                          {line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false
+                            ? "—"
+                            : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
+                              ? "Refresh calculation"
+                              : money(line.calculatedAmount, currency)}
                         </td>
                         <td>
                           <button
@@ -1114,7 +1211,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             role="switch"
                             aria-checked={line.isApplicable !== false}
                             onClick={() => toggleLine(index)}
-                            aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name)}`}
+                            aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name, line.calculationBasis)}`}
                           >
                             <span />
                           </button>
@@ -1153,6 +1250,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                 <h3>Rules &amp; References</h3>
                 <ul>
                   <li>HS duty comes from the selected national tariff item. Excise unit rates use Directive 1007/2024 where the exact tariff item is covered.</li>
+                  <li>Specific ETB amounts are entered on their own per-unit line. For “whichever is higher” rules, that line is a comparison amount and is not added a second time.</li>
                   <li>Configured sequence: Duty → Excise → Surtax → VAT. The official customs simulator example applies VAT before Surtax; officers must verify which statutory basis governs before confirmation.</li>
                   <li>You can modify rates, disable a required tax, or add other applicable taxes.</li>
                   <li>Final assessment is subject to the officer&apos;s decision and supporting documents.</li>
@@ -1175,16 +1273,18 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
               </div>
               {rows.map((line, index) => (
                 <div className="calculation-summary-line" key={`${line.name}-summary-${index}`}>
-                  <span>{displayTaxName(line.name)}</span>
+                  <span>{displayTaxName(line.name, line.calculationBasis)}</span>
                   <strong>
                     {line.status === "Pending" || line.isApplicable === false
                       ? "—"
+                      : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
+                        ? "Refresh calculation"
                       : money(line.calculatedAmount, currency)}
                   </strong>
                   <button
                     type="button"
                     onClick={() => removeLine(index)}
-                    aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name)}`}
+                    aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name, line.calculationBasis)}`}
                   >
                     <FiMinus />
                   </button>
@@ -1192,11 +1292,11 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
               ))}
               <div className="calculation-summary-line calculation-summary-line--total">
                 <span>Total Duties &amp; Taxes</span>
-                <strong>{money(phase?.totalTax ?? totalTaxPreview, currency)}</strong>
+                  <strong>{specificExciseNeedsRefresh ? "Refresh calculation" : money(totalTaxPreview, currency)}</strong>
               </div>
               <div className="calculation-summary-line calculation-summary-line--payable">
                 <span>Total Amount Payable</span>
-                <strong>{money(phase?.finalPayableAmount ?? phase?.finalAmount ?? finalPreview, currency)}</strong>
+                  <strong>{specificExciseNeedsRefresh ? "Refresh calculation" : money(finalPreview, currency)}</strong>
               </div>
             </div>
           </section>

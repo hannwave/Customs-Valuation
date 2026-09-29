@@ -1,4 +1,5 @@
 using System.Text;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -18,7 +19,8 @@ public sealed record ScopeChange(Guid LocationId, bool IncludeChildren, string R
 public sealed record EmployeeCreate(string Username, string FullName, string Email, string Password, string Role, Guid LocationId, string EmployeeNumber, string Phone, string Responsibilities, string Reason, bool IncludeChildren = false);
 public sealed record EmployeeChange(string Status, Guid LocationId, string Responsibilities, string? Reason, bool IncludeChildren = false);
 public sealed record EmployeeArchive(string Reason);
-public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string? Justification, string? Evidence, Guid? Version);
+public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string? Justification, string? Evidence, Guid? Version,
+    string? ProductName = null, string? PurchaseCountryCode = null, string? PurchaseCountryName = null, string? SelectedPriceSource = null, string? ValuationMethod = null, string? ProductPhotoUrl = null);
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public sealed record DecisionTransition(Guid Version, string? Justification, string Outcome = "Approved");
@@ -31,6 +33,11 @@ public sealed class DecisionReceiptForm
     public string Decision { get; set; } = "";
     public string? Justification { get; set; }
     public string? Evidence { get; set; }
+    public string ProductName { get; set; } = "";
+    public string PurchaseCountryCode { get; set; } = "";
+    public string SelectedPriceSource { get; set; } = "";
+    public string ValuationMethod { get; set; } = "";
+    public string? ProductPhotoUrl { get; set; }
     public decimal DeclaredPriceAmount { get; set; }
     public string DeclaredPriceCurrency { get; set; } = "";
     public IFormFile? Receipt { get; set; }
@@ -468,7 +475,11 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var bytes = stream.ToArray();
         Validate(IsValidReceiptSignature(bytes, form.Receipt.ContentType), "The receipt content does not match its declared PDF or image format.");
         var conversion = await ConvertDeclaredPrice(form.DeclaredPriceAmount, sourceCurrency!, targetCurrency!, ct);
-        var input = new DecisionInput(form.HsCodeId, form.LocationId, form.SelectedReferenceValue, targetCurrency!, form.Decision, form.Justification, form.Evidence, null);
+        var purchaseCountryCode = form.PurchaseCountryCode.Trim().ToUpperInvariant();
+        var purchaseCountryName = CountryName(purchaseCountryCode);
+        Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
+        var input = new DecisionInput(form.HsCodeId, form.LocationId, form.SelectedReferenceValue, targetCurrency!, form.Decision, form.Justification, form.Evidence, null,
+            form.ProductName, purchaseCountryCode, purchaseCountryName, form.SelectedPriceSource, form.ValuationMethod, form.ProductPhotoUrl);
         var receipt = new ReceiptEvidence(
             form.DeclaredPriceAmount, sourceCurrency!, conversion.Amount, targetCurrency!, conversion.Rate,
             conversion.Source, conversion.Date, Path.GetFileName(form.Receipt.FileName), form.Receipt.ContentType,
@@ -482,6 +493,19 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var decision = await VisibleDecisions().AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         if (decision.ReceiptData is not { Length: > 0 }) return NotFound(new { message = "No receipt was captured for this legacy valuation record." });
         return File(decision.ReceiptData, decision.ReceiptContentType, decision.ReceiptFileName);
+    }
+    [HttpGet("audit/{auditId:guid}/receipt")]
+    public async Task<IActionResult> AuditReceipt(Guid auditId, CancellationToken ct)
+    {
+        var audit = await db.AuditLogs.AsNoTracking().SingleOrDefaultAsync(item => item.Id == auditId, ct) ?? throw new WorkspaceException(404, "Audit record not found.");
+        var snapshot = await db.ValuationAuditSnapshots.AsNoTracking().SingleOrDefaultAsync(item => item.AuditLogId == auditId, ct) ?? throw new WorkspaceException(404, "This audit record has no receipt reference.");
+        var allowed = access.IsSystem ||
+            access.Role == AccessRules.Officer && audit.UserId == access.UserId.ToString() ||
+            access.Role == AccessRules.CustomsAdmin && await db.AuthAccounts.AsNoTracking().AnyAsync(user => user.Id == access.UserId && user.PrimaryLocationId == snapshot.OfficerLocationId, ct);
+        if (!allowed) return Forbid();
+        var decision = await db.ValuationDecisions.AsNoTracking().SingleOrDefaultAsync(item => item.Id == snapshot.ValuationDecisionId, ct) ?? throw new WorkspaceException(404, "Valuation record not found.");
+        if (decision.ReceiptData is not { Length: > 0 }) return NotFound(new { message = "The receipt file is no longer available." });
+        return File(decision.ReceiptData, decision.ReceiptContentType);
     }
     [HttpPut("decisions/{id:guid}")]
     public Task<IActionResult> UpdateDecision(Guid id, DecisionInput input, CancellationToken ct) => SaveDecision(id, input, ct);
@@ -499,6 +523,14 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         }
         Validate(input.SelectedReferenceValue > 0 && Regex.IsMatch(input.Currency ?? "", "^[A-Z]{3}$"), "Enter a positive reference value and a three-letter currency.");
         Validate(!string.IsNullOrWhiteSpace(input.Decision), "Record the valuation decision.");
+        Validate(!string.IsNullOrWhiteSpace(input.ProductName) && input.ProductName.Trim().Length <= 300, "Record a product name of 300 characters or fewer.");
+        var purchaseCountryCode = input.PurchaseCountryCode?.Trim().ToUpperInvariant() ?? "";
+        var purchaseCountryName = CountryName(purchaseCountryCode);
+        Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
+        Validate((input.SelectedPriceSource?.Trim().Length ?? 0) is > 0 and <= 80, "Record the selected price source.");
+        Validate((input.ValuationMethod?.Trim().Length ?? 0) is > 0 and <= 120, "Record the valuation method.");
+        var productPhotoUrl = input.ProductPhotoUrl?.Trim() ?? "";
+        Validate(productPhotoUrl.Length <= 2048 && (productPhotoUrl.Length == 0 || Uri.TryCreate(productPhotoUrl, UriKind.Absolute, out var photoUri) && photoUri.Scheme is "http" or "https"), "The product photo reference must be a valid HTTPS or HTTP URL.");
         var officerNoteIssue = OfficerNoteQuality.Check(input.Justification);
         Validate(officerNoteIssue is null, officerNoteIssue ?? "");
         if (input.HsCodeId.HasValue)
@@ -511,6 +543,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         while (current != null && seen.Add(current.Id)) { hierarchy.Add(new { current.Id, current.OfficialCode, current.Name, current.ParentLocationId }); current = all.Find(l => l.Id == current.ParentLocationId); }
         object locationSnapshot = hierarchy.Count == 0 ? new { scope = "UnassignedOfficerWorkspace" } : hierarchy;
         entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(locationSnapshot);
+        entity.ProductName = input.ProductName!.Trim(); entity.PurchaseCountryCode = purchaseCountryCode; entity.PurchaseCountryName = purchaseCountryName!;
+        entity.SelectedPriceSource = input.SelectedPriceSource!.Trim(); entity.ValuationMethod = input.ValuationMethod!.Trim(); entity.ProductPhotoUrl = productPhotoUrl;
         entity.HsCodeId = input.HsCodeId; entity.SelectedReferenceValue = input.SelectedReferenceValue; entity.Currency = input.Currency!;
         entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
@@ -525,7 +559,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             entity.ReceiptUploadedAt = receipt.UploadedAt; entity.ReceiptUploadedBy = receipt.UploadedBy; entity.ReceiptData = receipt.Data;
         }
         if (id == null) db.ValuationDecisions.Add(entity);
-        access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, entity.Justification, input.LocationId);
+        var audit = access.Audit(id == null ? "VALUATION_CREATED" : "VALUATION_UPDATED", "Valuations", entity.Id, before, entity, entity.Justification, input.LocationId);
+        var officer = await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(user => user.Id == access.UserId, ct);
+        var hs = entity.HsCodeId.HasValue ? await db.HsCodes.AsNoTracking().Where(item => item.Id == entity.HsCodeId.Value).Select(item => new { item.Code, item.DescriptionEn }).SingleOrDefaultAsync(ct) : null;
+        db.ValuationAuditSnapshots.Add(ValuationAuditSnapshotFactory.Create(audit, entity, null, hs?.Code, hs?.DescriptionEn, officer, office));
         await db.SaveChangesAsync(ct); return Ok(entity);
     }
     [HttpPost("decisions/{id:guid}/submit")]
@@ -540,7 +577,11 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var office = await db.CustomsLocations.FindAsync([decision.LocationId.Value], ct);
         Validate(office is not null && office.LocationType == "BRANCH" && (office.SupportsValuation || office.SupportsInspection), "The valuation office must support valuation or inspection work.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = "Submitted"; decision.SubmittedAt = DateTimeOffset.UtcNow; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        var audit = access.Audit("VALUATION_SUBMITTED", "Valuations", id, before, decision, decision.Justification, decision.LocationId);
+        var officer = Guid.TryParse(decision.OfficerSubjectId, out var officerId) ? await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(user => user.Id == officerId, ct) : null;
+        var hs = decision.HsCodeId.HasValue ? await db.HsCodes.AsNoTracking().Where(item => item.Id == decision.HsCodeId.Value).Select(item => new { item.Code, item.DescriptionEn }).SingleOrDefaultAsync(ct) : null;
+        db.ValuationAuditSnapshots.Add(ValuationAuditSnapshotFactory.Create(audit, decision, null, hs?.Code, hs?.DescriptionEn, officer, office));
+        await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpPost("decisions/{id:guid}/review")]
     public async Task<IActionResult> Review(Guid id, DecisionTransition input, CancellationToken ct)
@@ -551,7 +592,12 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var reviewNote = input.Justification?.Trim() ?? "";
         Validate(reviewNote.Length >= 10, "A review justification is required.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = reviewNote; decision.Version = Guid.NewGuid();
-        access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, reviewNote, decision.LocationId); await db.SaveChangesAsync(ct); return Ok(decision);
+        var audit = access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, reviewNote, decision.LocationId);
+        var officer = Guid.TryParse(decision.OfficerSubjectId, out var officerId) ? await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(user => user.Id == officerId, ct) : null;
+        var office = decision.LocationId.HasValue ? await db.CustomsLocations.AsNoTracking().SingleOrDefaultAsync(location => location.Id == decision.LocationId.Value, ct) : null;
+        var hs = decision.HsCodeId.HasValue ? await db.HsCodes.AsNoTracking().Where(item => item.Id == decision.HsCodeId.Value).Select(item => new { item.Code, item.DescriptionEn }).SingleOrDefaultAsync(ct) : null;
+        db.ValuationAuditSnapshots.Add(ValuationAuditSnapshotFactory.Create(audit, decision, null, hs?.Code, hs?.DescriptionEn, officer, office));
+        await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpGet("audit")]
     public async Task<IActionResult> Audit(CancellationToken ct)
@@ -572,6 +618,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             var actors = await db.AuthAccounts.AsNoTracking().Where(u => actorIds.Contains(u.Id.ToString())).ToDictionaryAsync(u => u.Id.ToString(), ct);
             records = records.Where(r => actors.TryGetValue(r.UserId, out var actor) && AccessRules.NormalizeRole(actor.Role) == AccessRules.Officer).ToList();
         }
+        var auditIds = records.Select(record => record.Id).ToArray();
+        var valuationSnapshots = await db.ValuationAuditSnapshots.AsNoTracking()
+            .Where(snapshot => auditIds.Contains(snapshot.AuditLogId))
+            .ToDictionaryAsync(snapshot => snapshot.AuditLogId, ct);
         var locations = await db.CustomsLocations.AsNoTracking().ToListAsync(ct);
         var supervisors = await db.AuthAccounts.AsNoTracking().Where(u => u.Role == AccessRules.CustomsAdmin && u.Active).ToListAsync(ct);
         var phase2Ids = records.Where(r => r.Module == "EthiopianImportTaxAssessment").Select(r => r.RecordId).ToArray();
@@ -588,6 +638,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             var location = resolvedLocationId is Guid locationId ? locations.FirstOrDefault(l => l.Id == locationId) : null;
             var region = location?.LocationType == "REGION" ? location : location?.ParentLocationId is Guid parent ? locations.FirstOrDefault(l => l.Id == parent) : null;
             var supervisor = location is null ? null : supervisors.FirstOrDefault(u => u.PrimaryLocationId == location.Id || u.PrimaryLocationId == region?.Id);
+            valuationSnapshots.TryGetValue(record.Id, out var valuationSnapshot);
             var newValueJson = record.NewValueJson;
             if (record.Module == "EthiopianImportTaxAssessment" && phase2Details.FirstOrDefault(p => p.Id == record.RecordId) is { } phase2 && phase2Decisions.TryGetValue(phase2.ValuationDecisionId, out var decision))
             {
@@ -627,7 +678,49 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                     phase2.Notes
                 });
             }
-            return new { record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId, record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification, regionName = region?.DisplayName ?? region?.Name, branchName = location?.LocationType == "BRANCH" ? location.DisplayName ?? location.Name : null, supervisorName = supervisor?.FullName ?? supervisor?.Username };
+            return new
+            {
+                record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId,
+                record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification,
+                regionName = region?.DisplayName ?? region?.Name,
+                branchName = location?.LocationType == "BRANCH" ? location.DisplayName ?? location.Name : null,
+                supervisorName = supervisor?.FullName ?? supervisor?.Username,
+                valuation = valuationSnapshot is null ? null : new
+                {
+                    valuationSnapshot.ValuationDecisionId,
+                    valuationSnapshot.ValuationPhase2Id,
+                    valuationSnapshot.ProductId,
+                    valuationSnapshot.ProductName,
+                    valuationSnapshot.HsCode,
+                    valuationSnapshot.HsDescription,
+                    valuationSnapshot.PurchaseCountryCode,
+                    valuationSnapshot.PurchaseCountryName,
+                    valuationSnapshot.OriginCountry,
+                    valuationSnapshot.SelectedPriceAmount,
+                    valuationSnapshot.SelectedPriceCurrency,
+                    valuationSnapshot.SelectedPriceSource,
+                    valuationSnapshot.ValuationMethod,
+                    valuationSnapshot.TotalTaxDue,
+                    valuationSnapshot.CustomsDutyAmount,
+                    valuationSnapshot.ExciseAdValoremAmount,
+                    valuationSnapshot.ExciseSpecificAmount,
+                    valuationSnapshot.ExciseTotalAmount,
+                    valuationSnapshot.VatAmount,
+                    valuationSnapshot.SurtaxAmount,
+                    valuationSnapshot.OtherTaxAmount,
+                    valuationSnapshot.TaxCurrency,
+                    taxBreakdown = JsonSerializer.Deserialize<JsonElement>(valuationSnapshot.TaxBreakdownJson),
+                    valuationSnapshot.OfficerAccountId,
+                    valuationSnapshot.OfficerName,
+                    valuationSnapshot.OfficerLocationId,
+                    valuationSnapshot.OfficerLocationName,
+                    valuationSnapshot.ProductPhotoUrl,
+                    receiptAvailable = valuationSnapshot.ReceiptValuationDecisionId.HasValue,
+                    valuationSnapshot.ReceiptFileName,
+                    valuationSnapshot.ReceiptContentType,
+                    decisionDetails = JsonSerializer.Deserialize<JsonElement>(valuationSnapshot.DecisionDetailsJson)
+                }
+            };
         }));
     }
 
@@ -676,6 +769,15 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     {
         var currency = value?.Trim().ToUpperInvariant() ?? "";
         return currency.Length == 3 && currency.All(char.IsLetter) ? currency : null;
+    }
+
+    private static string? CountryName(string? value)
+    {
+        var code = value?.Trim().ToUpperInvariant() ?? "";
+        if (!Regex.IsMatch(code, "^[A-Z]{2}$")) return null;
+        if (code == "XK") return "Kosovo";
+        try { return new RegionInfo(code).EnglishName; }
+        catch (ArgumentException) { return null; }
     }
 
     private static bool IsValidReceiptSignature(byte[] data, string contentType) => contentType.ToLowerInvariant() switch

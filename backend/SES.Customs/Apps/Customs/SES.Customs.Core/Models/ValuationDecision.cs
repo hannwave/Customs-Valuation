@@ -6,6 +6,16 @@ using System.Text.Json.Serialization;
 public sealed class ValuationDecision
 {
     public Guid Id { get; set; }
+    // Phase 1 snapshots. These fields are deliberately stored outside the
+    // narrative evidence JSON so audit/reporting code never has to infer the
+    // product or purchase market from an unversioned client payload.
+    public Guid? ProductId { get; set; }
+    public string ProductName { get; set; } = "";
+    public string PurchaseCountryCode { get; set; } = "";
+    public string PurchaseCountryName { get; set; } = "";
+    public string SelectedPriceSource { get; set; } = "";
+    public string ValuationMethod { get; set; } = "";
+    public string ProductPhotoUrl { get; set; } = "";
     // Classification is intentionally deferred to Phase 2. Phase 1 evaluates
     // the product and supporting price evidence without requiring an HS code.
     public Guid? HsCodeId { get; set; }

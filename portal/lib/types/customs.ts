@@ -115,6 +115,13 @@ export interface Phase2Response {
   decisionId: string;
   phase1: {
     hsCodeId: string | null;
+    productId: string | null;
+    productName: string;
+    purchaseCountryCode: string;
+    purchaseCountryName: string;
+    selectedPriceSource: string;
+    valuationMethod: string;
+    productPhotoUrl: string;
     initialDuty: number;
     initialDutyCurrency: string;
     source: string;

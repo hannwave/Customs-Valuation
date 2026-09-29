@@ -154,7 +154,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     setRecentSearches(readRecentSearches());
     const active = readValuationSession();
     if (!active) return;
-    setQuery(active.query); setMarket(active.market); setInternational(active.international); setHistorical(active.historical ?? null);
+    setQuery(active.query); setMarket(active.market); setPurchaseCountry(active.purchaseCountryCode ?? ""); setInternational(active.international); setHistorical(active.historical ?? null);
     setCustomsBenchmark(active.customsBenchmark ?? null);
     if (active.international || active.historical || active.customsBenchmark) setSearchedTerm(active.query);
     if (active.hsCode) setHsInput(active.hsCode);
@@ -228,6 +228,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     event.preventDefault();
     const term = query.trim();
     if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
+    if (!purchaseCountry) { setError("Select the country where the item was bought."); document.getElementById("valuation-purchase-country")?.focus(); return; }
     if (!Number.isFinite(Number(declaredPrice)) || Number(declaredPrice) <= 0) { setError("Enter the customer’s original price before searching."); document.getElementById("customer-price-input")?.focus(); return; }
     if (!receiptFile) { setError("Attach the customer’s receipt before searching."); document.getElementById("customer-receipt-input")?.focus(); return; }
     const serial = ++searchSerial.current;
@@ -243,6 +244,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       id: `valuation-${Date.now()}`,
       query: term,
       market,
+      purchaseCountryCode: purchaseCountry,
+      purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
       international: null,
       customsBenchmark: null,
       historical: null,
@@ -278,6 +281,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
         id: current?.id ?? `valuation-${Date.now()}`,
         query: term,
         market,
+        purchaseCountryCode: purchaseCountry,
+        purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
         international: internationalValue ?? current?.international ?? null,
         historical: historicalValue ?? current?.historical ?? null,
         createdAt: current?.createdAt ?? new Date().toISOString(),
@@ -297,7 +302,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   const declaredAmount = Number(declaredPrice);
   const hasDeclaredAmount = Number.isFinite(declaredAmount) && declaredAmount > 0;
   const hasRequiredCustomerEvidence = hasDeclaredAmount && Boolean(receiptFile);
-  const canSearch = query.trim().length >= 2 && hasRequiredCustomerEvidence && !busy;
+  const canSearch = query.trim().length >= 2 && Boolean(purchaseCountry) && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
   const historicalInternationalValue = historical?.summary?.currentInternationalPrice ?? null;
   const benchmarkCodeDigits = (hsCode?.code ?? "").replace(/\D/g, "");
@@ -391,6 +396,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
   useEffect(() => {
     updateValuationSession({
       preferredCurrency: currency,
+      purchaseCountryCode: purchaseCountry,
+      purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
       selectedSource: selected,
       customerTransaction: {
         amount: Number.isFinite(Number(declaredPrice)) && Number(declaredPrice) > 0 ? Number(declaredPrice) : null,
@@ -405,7 +412,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
         receiptFileSize: receiptFile?.size ?? null,
       },
     });
-  }, [currency, selected, declaredPrice, declaredCurrency, declaredConversion, receiptFile]);
+  }, [currency, selected, purchaseCountry, countryOptions, declaredPrice, declaredCurrency, declaredConversion, receiptFile]);
 
   async function recordDecision() {
     const parsedSelectedValue = Number(selectedValue);
@@ -413,6 +420,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     if (justificationIssue) { setError(justificationIssue); return; }
     if (!Number.isFinite(parsedSelectedValue) || parsedSelectedValue <= 0) { setError("Select a valid customs value before submitting the valuation."); return; }
     if (!Number.isFinite(Number(declaredPrice)) || Number(declaredPrice) <= 0) { setError("Enter the original price paid by the customer."); return; }
+    if (!purchaseCountry) { setError("Select the country where the item was bought."); return; }
     if (!declaredConversion || declaredConversion.to !== currency) { setError(`The customer's original price has not been converted to ${currency} yet.`); return; }
     if (!receiptFile) { setError("Attach the customer's PDF, JPG, or PNG receipt before continuing."); return; }
     setRecording(true); setError(""); setRecordNotice("");
@@ -429,9 +437,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        )?.id ?? null;
        if (!assignedLocationId) throw new Error("Your assigned office is not enabled for valuation or inspection. Ask your Customs Administrator to assign an active valuation office.");
 
+       const purchaseCountryName = countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry;
+       const productPhotoUrl = international?.items.find(item => item.thumbnailUrl)?.thumbnailUrl ?? null;
+       const valuationMethod = ({ internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark", declaredPrice: "Transaction value", custom: "Officer-selected customs value" } as Record<EvidenceSource, string>)[selected];
        const evidenceSnapshot = {
-         product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
-         selectedCurrency, supportingSource: selected, officer: { id: profile.user.id, name: profile.user.fullName },
+          product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+          selectedCurrency, supportingSource: selected, valuationMethod, purchaseCountryCode: purchaseCountry, purchaseCountryName, productPhoto: productPhotoUrl, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
          customsTradeBenchmark: customsBenchmark,
          statistics: { international: international?.statistics ?? null },
@@ -463,6 +474,9 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        form.append("locationId", assignedLocationId); form.append("selectedReferenceValue", String(parsedSelectedValue));
        form.append("currency", selectedCurrency); form.append("decision", `Customs value selected for ${query.trim()}`);
        form.append("justification", justification.trim()); form.append("evidence", JSON.stringify(evidenceSnapshot));
+       form.append("productName", query.trim()); form.append("purchaseCountryCode", purchaseCountry);
+       form.append("selectedPriceSource", selected); form.append("valuationMethod", valuationMethod);
+       if (productPhotoUrl) form.append("productPhotoUrl", productPhotoUrl);
        form.append("declaredPriceAmount", declaredPrice); form.append("declaredPriceCurrency", declaredCurrency); form.append("receipt", receiptFile);
        const token = getSessionAccessToken();
        const response = await fetch(`${base}/api/workspace/decisions/with-receipt`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
@@ -508,7 +522,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
           <label className="valuation-field-label" htmlFor="valuation-purchase-country">Country where bought</label>
           <Select
             id="valuation-purchase-country"
-            title="Display only; does not change market prices or customs origin."
+            title="Saved with the Phase One search and valuation audit record."
             placeholder="Select country"
             searchable
             clearable
@@ -516,10 +530,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
             nothingFoundMessage="No country found"
             data={countryOptions.map(country => ({ value: country.code, label: country.name }))}
             value={purchaseCountry || null}
-            onChange={value => setPurchaseCountry(value ?? "")}
+            onChange={value => { setPurchaseCountry(value ?? ""); setError(""); }}
             leftSection={purchaseCountry ? <span className={`flag:${purchaseCountry}`} aria-hidden="true" /> : <FiGlobe aria-hidden="true" />}
             renderOption={({ option }) => <span className="valuation-country-option"><span className={`flag:${option.value}`} aria-hidden="true" />{option.label}</span>}
             classNames={{ input: "valuation-country-input" }}
+            required
           />
         </div>
         <div className="valuation-price-group">
