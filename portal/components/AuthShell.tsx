@@ -49,7 +49,7 @@ export function LoginForm() {
       const role = normalizeWorkspaceRole(body.user?.role);
       const isCustomsAdministrator = role === "CustomsAdministrator";
       const safeRequestedPath = requestedPath === "/" ? "/dashboard" : requestedPath?.startsWith("/") && !requestedPath.startsWith("//") ? requestedPath : null;
-      router.replace(isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/dashboard");
+      router.replace(role === "Importer" ? "/importer" : isCustomsAdministrator ? "/administration" : safeRequestedPath ?? "/dashboard");
     } catch (ex) { setError(ex instanceof TypeError ? t("auth.unavailable", "We couldn’t connect to the service. Please try again or contact your system administrator.") : ex instanceof Error ? ex.message : t("auth.invalid", "Unable to sign in. Please try again.")); }
     finally { setBusy(false); }
   }
@@ -60,7 +60,7 @@ export function LoginForm() {
     <PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.passwordPlaceholder", "Enter your password")} autoComplete="current-password"/>
     <button className="auth-primary" type="submit" disabled={busy}>{busy ? t("auth.signingIn", "Signing in…") : t("auth.signInAction", "Sign in to workspace")}<FiArrowRight aria-hidden="true"/></button>
     <details className="access-help"><summary>{t("auth.help", "Need help signing in?")}</summary><p>{t("auth.helpBody", "Contact your system administrator for account approval or password assistance.")}</p></details>
-    <div className="auth-register"><span>{t("auth.noAccount", "New to the workspace?")}</span><Link href="/signup">Apply as Customs Officer<FiArrowRight aria-hidden="true"/></Link><Link href="/employee-registration">Apply as Customs Administrator<FiArrowRight aria-hidden="true"/></Link></div>
+    <div className="auth-register"><span>{t("auth.noAccount", "New to the workspace?")}</span><Link href="/importer/register">Register as Importer<FiArrowRight aria-hidden="true"/></Link><Link href="/signup">Apply as Customs Officer<FiArrowRight aria-hidden="true"/></Link><Link href="/employee-registration">Apply as Customs Administrator<FiArrowRight aria-hidden="true"/></Link></div>
     <div className="auth-assurance"><FiShield aria-hidden="true"/><p>{t("auth.assurance", "Access is assigned by role. Valuation evidence supports the judgment of an authorized customs officer.")}</p></div>
   </form>;
 }

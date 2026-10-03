@@ -1,12 +1,13 @@
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 
-export type WorkspaceRole = "SystemAdministrator" | "CustomsAdministrator" | "CustomsOfficer";
+export type WorkspaceRole = "SystemAdministrator" | "CustomsAdministrator" | "CustomsOfficer" | "Importer";
 export type LocationStatus = "ACTIVE" | "INACTIVE" | "TEMPORARILY_CLOSED" | "PLANNED" | "ARCHIVED";
 export function normalizeWorkspaceRole(value: unknown): WorkspaceRole | null {
   const role = String(value ?? "").replace(/[\s_-]/g, "").toUpperCase();
   if (role === "SYSTEMADMIN" || role === "SYSTEMADMINISTRATOR") return "SystemAdministrator";
   if (role === "CUSTOMSADMIN" || role === "CUSTOMSADMINISTRATOR") return "CustomsAdministrator";
   if (role === "CUSTOMSOFFICER") return "CustomsOfficer";
+  if (role === "IMPORTER") return "Importer";
   return null;
 }
 export interface WorkspaceUser { id: string; username?: string; email: string; fullName: string; role: WorkspaceRole; roleCode: string; active: boolean; status: string; primaryLocationId: string | null; employeeNumber: string; phone: string; responsibilities: string; archivedAt?: string | null; archiveReason?: string | null; createdAt?: string; updatedAt?: string | null; lastLoginAt?: string | null }
@@ -18,7 +19,7 @@ export interface ValuationDecision { id: string; productId: string | null; produ
 export interface SelfProfile { user: Pick<WorkspaceUser, "username" | "email" | "fullName" | "role" | "roleCode" | "employeeNumber" | "phone">; location: CustomsLocation | null }
 export interface ValuationAuditTaxLine { name: string; calculationType: string; value: number; currency: string; calculationBasis: string; baseAmount: number; calculatedAmount: number; status: string; sourceReference: string; isApplicable: boolean }
 export interface ValuationAuditDetails { valuationDecisionId: string; valuationPhase2Id: string | null; productId: string | null; productName: string; hsCode: string; hsDescription: string; purchaseCountryCode: string; purchaseCountryName: string; originCountry: string; selectedPriceAmount: number; selectedPriceCurrency: string; selectedPriceSource: string; valuationMethod: string; totalTaxDue: number | null; customsDutyAmount: number | null; exciseAdValoremAmount: number | null; exciseSpecificAmount: number | null; exciseTotalAmount: number | null; vatAmount: number | null; surtaxAmount: number | null; otherTaxAmount: number | null; taxCurrency: string; taxBreakdown: ValuationAuditTaxLine[]; officerAccountId: string | null; officerName: string; officerLocationId: string | null; officerLocationName: string; productPhotoUrl: string; receiptAvailable: boolean; receiptFileName: string; receiptContentType: string; decisionDetails: Record<string, unknown> }
-export interface AuditRecord { id: string; userId: string; username: string; occurredAt: string; action: string; module: string; recordId: string; locationId: string | null; previousValueJson: string | null; newValueJson: string | null; decision: string | null; justification: string | null; regionName?: string | null; branchName?: string | null; supervisorName?: string | null; valuation?: ValuationAuditDetails | null }
+export interface AuditRecord { caseReference?: string | null; id: string; userId: string; username: string; occurredAt: string; action: string; module: string; recordId: string; locationId: string | null; previousValueJson: string | null; newValueJson: string | null; decision: string | null; justification: string | null; regionName?: string | null; branchName?: string | null; supervisorName?: string | null; valuation?: ValuationAuditDetails | null }
 export interface DashboardKpi { key: string; label: string; value: string; detail: string; tone: "blue" | "teal" | "gold" | "red" | "green" }
 export interface DashboardLocation { id: string; officialCode: string; name: string; displayName: string; locationType: string; parentLocationId: string | null; status: string; supportsImport: boolean; supportsExport: boolean; supportsTransit: boolean; supportsValuation: boolean; supportsInspection: boolean }
 export interface DashboardEmployee { user: WorkspaceUser; locationId?: string | null; assignments?: { customsLocationId: string; includeChildLocations: boolean; responsibilities: string }[] }

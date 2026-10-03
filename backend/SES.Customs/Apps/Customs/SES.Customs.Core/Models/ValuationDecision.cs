@@ -10,6 +10,7 @@ public sealed class ValuationDecision
     // narrative evidence JSON so audit/reporting code never has to infer the
     // product or purchase market from an unversioned client payload.
     public Guid? ProductId { get; set; }
+    public Guid? ImporterDeclarationId { get; set; }
     public string ProductName { get; set; } = "";
     public string PurchaseCountryCode { get; set; } = "";
     public string PurchaseCountryName { get; set; } = "";

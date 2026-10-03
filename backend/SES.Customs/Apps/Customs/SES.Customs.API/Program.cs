@@ -1,11 +1,13 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
 using SES.Customs.API.Security;
+using SES.Customs.API.Services;
 using SES.Customs.API.Integrations.SerpApi;
 using SES.Customs.API.Integrations.Apify;
 using SES.Customs.API.Integrations.PriceWatcha;
@@ -94,8 +96,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
                 ?? context.Principal?.FindFirst("sub")?.Value;
             if (!Guid.TryParse(rawId, out var id)) { context.Fail("Invalid account."); return; }
             var accounts = context.HttpContext.RequestServices.GetRequiredService<SES.Customs.Infrastructure.Context.CustomsDbContext>();
-            var account = await accounts.AuthAccounts.AsNoTracking().Where(u => u.Id == id)
-                .Select(u => new { u.Active, u.Status, u.ArchivedAt, u.Role }).SingleOrDefaultAsync();
+            var account = await DatabaseConnectionRetry.ExecuteReadAsync(() => accounts.AuthAccounts.AsNoTracking().Where(u => u.Id == id)
+                .Select(u => new { u.Active, u.Status, u.ArchivedAt, u.Role }).SingleOrDefaultAsync(), context.HttpContext.RequestAborted);
             if (account is null || !account.Active || account.Status != "ACTIVE" || account.ArchivedAt != null)
             {
                 context.Fail("Account is inactive.");
@@ -127,9 +129,35 @@ if (!demo)
     var db = migrationScope.ServiceProvider.GetRequiredService<CustomsDbContext>();
     db.Database.Migrate();
 }
-app.UseExceptionHandler();
+app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
+{
+    var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+    context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ApiErrors")
+        .LogError(exception, "Unhandled API exception.");
+    context.Response.StatusCode = DatabaseConnectionRetry.IsTransientConnectionFailure(exception)
+        ? StatusCodes.Status503ServiceUnavailable
+        : StatusCodes.Status500InternalServerError;
+    var message = context.Response.StatusCode == StatusCodes.Status503ServiceUnavailable
+        ? "The Customs database connection is temporarily unavailable. Please try again. If you submitted a declaration, check your Submissions before retrying."
+        : "The Customs service could not complete this request. Please try again.";
+    await context.Response.WriteAsJsonAsync(new { message });
+}));
 app.UseCors();
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    // Importers may submit and view their own declarations, but must never
+    // inherit access to existing staff APIs that only require authentication.
+    if (context.User.IsInRole(AccessRules.Importer) &&
+        !context.Request.Path.StartsWithSegments("/api/importer-declarations") &&
+        !context.Request.Path.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new { message = "Importer accounts cannot access customs staff services." });
+        return;
+    }
+    await next();
+});
 app.UseAuthorization();
 app.MapGet("/health/live", () => Results.Ok(new { status = "ok", mode = demo ? "demo" : "development-database", capabilities = new { regionalEmployeeManagement = true } })).AllowAnonymous();
 app.MapControllers();

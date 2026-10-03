@@ -49,7 +49,7 @@ export default function LandingPage() {
         <p className="landing-kicker">Customs Valuation Portal <span /></p>
         <h1>Better evidence.<br /><em>Smarter valuation.</em></h1>
         <p className="landing-tagline">Secure borders. Prosperous nation.</p>
-        <div className="landing-hero-actions"><Link href="/login" className="landing-primary"><FiUser /> Sign in to workspace <FiArrowRight /></Link><a className="landing-secondary" href="#platform"><FiPlayCircle /> Learn about the system</a></div>
+        <div className="landing-hero-actions"><Link href="/importer" className="landing-primary"><FiFileText /> Register Imported Goods <FiArrowRight /></Link><Link href="/login" className="landing-secondary"><FiUser /> Customs staff sign in</Link></div>
       </div>
     </section>
 
@@ -71,7 +71,7 @@ export default function LandingPage() {
       <div className="landing-wrap evidence-inner"><div><p className="evidence-kicker">Built for accountable customs operations</p><h2>Reliable evidence for<br />customs professionals.</h2></div><div className="evidence-points">{["Centralized information", "Consistent reference data", "Evidence-based decisions", "Role-based access", "Traceable valuation activities"].map(point => <span key={point}><FiCheck />{point}</span>)}</div></div>
     </section>
 
-    <section className="landing-access" id="contact"><div className="landing-wrap access-inner"><div className="access-avatar"><FiUser /></div><div><h3>Ready to access the workspace?</h3><p>Sign in to access customs valuation evidence.</p></div><Link href="/login" className="landing-primary"><FiUser /> Sign in to workspace <FiArrowRight /></Link></div></section>
+    <section className="landing-access" id="contact"><div className="landing-wrap access-inner"><div className="access-avatar"><FiUser /></div><div><h3>Ready to register imported goods?</h3><p>Submit item details and documents for Customs Officer review.</p></div><Link href="/importer" className="landing-primary"><FiFileText /> Importer Portal <FiArrowRight /></Link></div></section>
 
     <footer className="landing-footer"><div className="landing-wrap footer-main"><div><Brand variant="light" /><p className="footer-portal">Customs Valuation Portal</p></div><div><h4>Navigation</h4><a href="#home">Home</a><a href="#about">About</a><a href="#contact">Contact</a></div><div><h4>Support</h4><a href="#contact">Help</a><a href="#contact">User Guide</a><a href="#contact">FAQs</a></div><div><h4>Legal</h4><a href="#contact">Privacy Policy</a><a href="#contact">Terms of Service</a></div></div><div className="landing-wrap footer-bottom"><span>© 2026 Ethiopia Customs Commission</span><span>Secure borders. Prosperous nation.</span></div></footer>
   </main>;

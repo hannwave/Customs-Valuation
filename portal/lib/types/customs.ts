@@ -113,6 +113,7 @@ export interface Phase2TaxLine {
 
 export interface Phase2Response {
   decisionId: string;
+  importerDeclaration?: { id: string; reference: string; importPurpose: string; purposeDetails: string; originCountryCode: string; isCommercialProduct: boolean; isMachineryOrEquipment: boolean; quantity: number; unit: string; requestedTreatments: string[] } | null;
   phase1: {
     hsCodeId: string | null;
     productId: string | null;

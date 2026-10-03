@@ -20,12 +20,13 @@ public sealed record EmployeeCreate(string Username, string FullName, string Ema
 public sealed record EmployeeChange(string Status, Guid LocationId, string Responsibilities, string? Reason, bool IncludeChildren = false);
 public sealed record EmployeeArchive(string Reason);
 public sealed record DecisionInput(Guid? HsCodeId, Guid? LocationId, decimal SelectedReferenceValue, string Currency, string Decision, string? Justification, string? Evidence, Guid? Version,
-    string? ProductName = null, string? PurchaseCountryCode = null, string? PurchaseCountryName = null, string? SelectedPriceSource = null, string? ValuationMethod = null, string? ProductPhotoUrl = null);
+    string? ProductName = null, string? PurchaseCountryCode = null, string? PurchaseCountryName = null, string? SelectedPriceSource = null, string? ValuationMethod = null, string? ProductPhotoUrl = null, Guid? ImporterDeclarationId = null);
 public sealed record ProfileChange(string Username, string Email, string FullName, string Phone);
 public sealed record PasswordChange(string CurrentPassword, string NewPassword, string ConfirmPassword);
 public sealed record DecisionTransition(Guid Version, string? Justification, string Outcome = "Approved");
 public sealed class DecisionReceiptForm
 {
+    public Guid? ImporterDeclarationId { get; set; }
     public Guid? HsCodeId { get; set; }
     public Guid? LocationId { get; set; }
     public decimal SelectedReferenceValue { get; set; }
@@ -483,7 +484,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var purchaseCountryName = CountryName(purchaseCountryCode);
         Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
         var input = new DecisionInput(form.HsCodeId, form.LocationId, form.SelectedReferenceValue, targetCurrency!, form.Decision, form.Justification, form.Evidence, null,
-            form.ProductName, purchaseCountryCode, purchaseCountryName, form.SelectedPriceSource, form.ValuationMethod, form.ProductPhotoUrl);
+            form.ProductName, purchaseCountryCode, purchaseCountryName, form.SelectedPriceSource, form.ValuationMethod, form.ProductPhotoUrl, form.ImporterDeclarationId);
         var receipt = new ReceiptEvidence(
             form.DeclaredPriceAmount, sourceCurrency!, conversion.Amount, targetCurrency!, conversion.Rate,
             conversion.Source, conversion.Date, Path.GetFileName(form.Receipt.FileName), form.Receipt.ContentType,
@@ -539,6 +540,15 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(officerNoteIssue is null, officerNoteIssue ?? "");
         if (input.HsCodeId.HasValue)
             Validate(await db.HsCodes.AnyAsync(h => h.Id == input.HsCodeId.Value, ct), "The selected HS code was not found.");
+        ImporterDeclaration? importerDeclaration = null;
+        if (input.ImporterDeclarationId.HasValue)
+        {
+            importerDeclaration = await db.ImporterDeclarations.SingleOrDefaultAsync(x => x.Id == input.ImporterDeclarationId.Value, ct);
+            Validate(importerDeclaration is not null && importerDeclaration.Status == "ASSESSMENT_READY" && importerDeclaration.LocationId == input.LocationId,
+                "This importer declaration is not ready for valuation in the selected office.");
+            Validate(input.HsCodeId == importerDeclaration!.ConfirmedHsCodeId, "Use the HS code verified by the officer for this importer declaration.");
+            Validate(!await db.ValuationDecisions.AnyAsync(x => x.ImporterDeclarationId == importerDeclaration.Id, ct), "This importer declaration already has a valuation case.");
+        }
         var entity = id == null ? new ValuationDecision { Id = Guid.NewGuid(), OfficerSubjectId = access.UserId.ToString(), RecordedAt = DateTimeOffset.UtcNow } : await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         Validate(entity.OfficerSubjectId == access.UserId.ToString() && entity.Status is "Draft" or "Returned", "Only your own draft or returned decisions may be edited.");
         if (id != null) Validate(entity.Version == input.Version, "Decision changed. Refresh before editing.");
@@ -548,6 +558,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         object locationSnapshot = hierarchy.Count == 0 ? new { scope = "UnassignedOfficerWorkspace" } : hierarchy;
         entity.LocationId = input.LocationId; entity.LocationSnapshotJson = JsonSerializer.Serialize(locationSnapshot);
         entity.ProductName = input.ProductName!.Trim(); entity.PurchaseCountryCode = purchaseCountryCode; entity.PurchaseCountryName = purchaseCountryName!;
+        if (importerDeclaration is not null) { entity.ImporterDeclarationId = importerDeclaration.Id; importerDeclaration.Status = "IN_ASSESSMENT"; importerDeclaration.UpdatedAt = DateTimeOffset.UtcNow; importerDeclaration.Version = Guid.NewGuid(); }
         entity.SelectedPriceSource = input.SelectedPriceSource!.Trim(); entity.ValuationMethod = input.ValuationMethod!.Trim(); entity.ProductPhotoUrl = productPhotoUrl;
         entity.HsCodeId = input.HsCodeId; entity.SelectedReferenceValue = input.SelectedReferenceValue; entity.Currency = input.Currency!;
         entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
@@ -604,7 +615,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await db.SaveChangesAsync(ct); return Ok(decision);
     }
     [HttpGet("audit")]
-    public async Task<IActionResult> Audit(CancellationToken ct)
+    public async Task<IActionResult> Audit(CancellationToken ct, int page = 1, int pageSize = 20,
+        string? search = null, string? category = null, string? eventType = null,
+        Guid? caseId = null, DateTimeOffset? from = null, DateTimeOffset? to = null,
+        string? officer = null, string? region = null, string? branch = null, Guid? eventId = null)
     {
         var subject = access.UserId.ToString();
         var administratorBranchId = access.Role == AccessRules.CustomsAdmin
@@ -615,16 +629,39 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             : new List<Guid>();
         var scopedPhase2Ids = access.Role == AccessRules.CustomsAdmin ? await db.ValuationPhase2s.AsNoTracking().Where(p => scopedDecisionIds.Contains(p.ValuationDecisionId)).Select(p => p.Id).ToListAsync(ct) : new List<Guid>();
         var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && ((administratorBranchId.HasValue && a.LocationId == administratorBranchId.Value) || (a.Module == "EthiopianImportTaxAssessment" && scopedPhase2Ids.Contains(a.RecordId))) || access.Role == AccessRules.Officer && a.UserId == subject);
-        // The audit screen provides its own pagination after applying role-aware
-        // visibility rules. Do not truncate the history before the user can
-        // search it; older valuation decisions must remain discoverable.
-        var records = await query.OrderByDescending(a => a.OccurredAt).ToListAsync(ct);
         if (access.Role == AccessRules.CustomsAdmin)
         {
-            var actorIds = records.Select(r => r.UserId).Distinct().ToArray();
-            var actors = await db.AuthAccounts.AsNoTracking().Where(u => actorIds.Contains(u.Id.ToString())).ToDictionaryAsync(u => u.Id.ToString(), ct);
-            records = records.Where(r => actors.TryGetValue(r.UserId, out var actor) && AccessRules.NormalizeRole(actor.Role) == AccessRules.Officer).ToList();
+            var officers = db.AuthAccounts.Where(u => u.Role.Replace("_", "").Replace(" ", "").ToUpper() == "CUSTOMSOFFICER").Select(u => u.Id.ToString());
+            query = query.Where(a => officers.Contains(a.UserId));
         }
+        Validate(!from.HasValue || !to.HasValue || from.Value < to.Value, "The end date must follow the start date.");
+        Validate(string.IsNullOrEmpty(category) || category == "valuations" || category == "changes", "Choose a valid audit category.");
+        var availableTotal = await query.CountAsync(ct);
+        if (caseId.HasValue)
+        {
+            var assessments = db.ValuationPhase2s.Where(p => p.ValuationDecisionId == caseId.Value).Select(p => p.Id);
+            var snapshots = db.ValuationAuditSnapshots.Where(s => s.ValuationDecisionId == caseId.Value).Select(s => s.AuditLogId);
+            query = query.Where(a => a.RecordId == caseId.Value || assessments.Contains(a.RecordId) || snapshots.Contains(a.Id));
+        }
+        if (eventId.HasValue) query = query.Where(a => a.Id == eventId.Value);
+        query = SES.Customs.API.Queries.AuditHistoryQuery.Filter(query, category, eventType, from, to, officer);
+        if (!string.IsNullOrWhiteSpace(branch) || !string.IsNullOrWhiteSpace(region))
+        {
+            var regions = db.CustomsLocations.Where(l => region == null || l.Name.Contains(region) || (l.DisplayName != null && l.DisplayName.Contains(region))).Select(l => l.Id);
+            var locationIds = db.CustomsLocations.Where(l => (branch == null || l.Name.Contains(branch) || (l.DisplayName != null && l.DisplayName.Contains(branch))) && (region == null || regions.Contains(l.Id) || (l.ParentLocationId.HasValue && regions.Contains(l.ParentLocationId.Value)))).Select(l => l.Id);
+            var assessmentIds = db.ValuationPhase2s.Where(p => db.ValuationDecisions.Any(d => d.Id == p.ValuationDecisionId && d.LocationId.HasValue && locationIds.Contains(d.LocationId.Value))).Select(p => p.Id);
+            query = query.Where(a => (a.LocationId.HasValue && locationIds.Contains(a.LocationId.Value)) || (a.Module == "EthiopianImportTaxAssessment" && assessmentIds.Contains(a.RecordId)));
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            search = search.Trim();
+            var matchingSnapshots = db.ValuationAuditSnapshots.Where(s => s.ProductName.Contains(search) || s.HsCode.Contains(search) || s.PurchaseCountryName.Contains(search) || s.OfficerName.Contains(search)).Select(s => s.AuditLogId);
+            query = query.Where(a => a.Username.Contains(search) || a.Action.Contains(search) || a.Module.Contains(search) || (a.Justification != null && a.Justification.Contains(search)) || (a.NewValueJson != null && a.NewValueJson.Contains(search)) || matchingSnapshots.Contains(a.Id));
+        }
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var total = await query.CountAsync(ct);
+        page = Math.Clamp(page, 1, Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)));
+        var records = await SES.Customs.API.Queries.AuditHistoryQuery.Page(query, page, pageSize, caseId.HasValue).ToListAsync(ct);
         var auditIds = records.Select(record => record.Id).ToArray();
         var valuationSnapshots = await db.ValuationAuditSnapshots.AsNoTracking()
             .Where(snapshot => auditIds.Contains(snapshot.AuditLogId))
@@ -634,12 +671,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var phase2Ids = records.Where(r => r.Module == "EthiopianImportTaxAssessment").Select(r => r.RecordId).ToArray();
         var phase2Locations = await db.ValuationPhase2s.AsNoTracking().Where(p => phase2Ids.Contains(p.Id)).Join(db.ValuationDecisions.AsNoTracking(), p => p.ValuationDecisionId, d => d.Id, (p, d) => new { p.Id, d.LocationId }).ToDictionaryAsync(x => x.Id, x => x.LocationId, ct);
         var phase2Details = await db.ValuationPhase2s.AsNoTracking().Include(p => p.TaxLines).Where(p => phase2Ids.Contains(p.Id)).ToListAsync(ct);
-        var phase2DecisionIds = phase2Details.Select(p => p.ValuationDecisionId).Distinct().ToArray();
-        var phase2Decisions = await db.ValuationDecisions.AsNoTracking().Where(d => phase2DecisionIds.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
-        var phase2HsIds = phase2Details.SelectMany(p => new[] { p.OriginalHsCodeId, p.SelectedHsCodeId }).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
-        var phase2Hs = await db.HsCodes.AsNoTracking().Where(h => phase2HsIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
-        var phase2Tariffs = await db.NationalTariffLines.AsNoTracking().Where(t => phase2HsIds.Contains(t.HsCodeId)).OrderByDescending(t => t.EffectiveDate).ToListAsync(ct);
-        return Ok(records.Select(record =>
+        return Ok(new { total, availableTotal, page, pageSize, items = records.Select(record =>
         {
             var resolvedLocationId = record.LocationId ?? (phase2Locations.TryGetValue(record.RecordId, out var phase2LocationId) ? phase2LocationId : null);
             var location = resolvedLocationId is Guid locationId ? locations.FirstOrDefault(l => l.Id == locationId) : null;
@@ -647,47 +679,13 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             var supervisor = location is null ? null : supervisors.FirstOrDefault(u => u.PrimaryLocationId == location.Id || u.PrimaryLocationId == region?.Id);
             valuationSnapshots.TryGetValue(record.Id, out var valuationSnapshot);
             var newValueJson = record.NewValueJson;
-            if (record.Module == "EthiopianImportTaxAssessment" && phase2Details.FirstOrDefault(p => p.Id == record.RecordId) is { } phase2 && phase2Decisions.TryGetValue(phase2.ValuationDecisionId, out var decision))
-            {
-                var originalHs = phase2.OriginalHsCodeId.HasValue && phase2Hs.TryGetValue(phase2.OriginalHsCodeId.Value, out var original) ? original : null;
-                var selectedHs = phase2.SelectedHsCodeId.HasValue && phase2Hs.TryGetValue(phase2.SelectedHsCodeId.Value, out var selected) ? selected : null;
-                var tariff = phase2Tariffs.FirstOrDefault(t => t.HsCodeId == phase2.SelectedHsCodeId);
-                newValueJson = JsonSerializer.Serialize(new
-                {
-                    phase2.ValuationDecisionId,
-                    itemName = ProductName(decision.EvidenceNotes),
-                    productPhoto = EvidenceValue(decision.EvidenceNotes, "productPhoto"),
-                    receiptPhoto = EvidenceValue(decision.EvidenceNotes, "receiptPhoto"),
-                    originalPrice = EvidenceValue(decision.EvidenceNotes, "originalPrice"),
-                    originalPriceCurrency = EvidenceValue(decision.EvidenceNotes, "originalPriceCurrency"),
-                    itemDescription = !string.IsNullOrWhiteSpace(tariff?.DescriptionEn) ? tariff!.DescriptionEn : selectedHs?.DescriptionEn ?? originalHs?.DescriptionEn,
-                    phase1 = new { selectedCustomsValue = decision.SelectedReferenceValue, currency = decision.Currency, reason = decision.Justification, hsCode = originalHs?.Code, hsDescription = originalHs?.DescriptionEn },
-                    phase2 = new
-                    {
-                        originalHsCode = originalHs?.Code,
-                        originalHsDescription = originalHs?.DescriptionEn,
-                        selectedHsCode = selectedHs?.Code,
-                        selectedHsDescription = selectedHs?.DescriptionEn,
-                        hsCodeChanged = decision.HsCodeId != phase2.SelectedHsCodeId,
-                        customsValue = phase2.CustomsValueAmount,
-                        customsValueCurrency = phase2.CustomsValueCurrency,
-                        applicableDutiesTaxes = phase2.TaxLines,
-                        finalReason = string.IsNullOrWhiteSpace(phase2.AdjustmentReason) ? phase2.Notes : phase2.AdjustmentReason,
-                        finalMoney = phase2.FinalAmount
-                    },
-                    phase1SelectedReferenceValue = decision.SelectedReferenceValue,
-                    phase1Reason = decision.Justification,
-                    phase2.CustomsValueAmount,
-                    phase2.TotalTax,
-                    phase2.FinalAmount,
-                    phase2.TaxLines,
-                    phase2.AdjustmentReason,
-                    phase2.Notes
-                });
-            }
+            // Historical values must come from the event, never from today's assessment.
+            var caseReference = valuationSnapshot?.ValuationDecisionId
+                ?? phase2Details.FirstOrDefault(p => p.Id == record.RecordId)?.ValuationDecisionId
+                ?? ((record.Module == "Valuation" || record.Module == "Valuations") ? (Guid?)record.RecordId : null);
             return new
             {
-                record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId,
+                record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId, caseReference,
                 record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification,
                 regionName = region?.DisplayName ?? region?.Name,
                 branchName = location?.LocationType == "BRANCH" ? location.DisplayName ?? location.Name : null,
@@ -728,7 +726,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                     decisionDetails = JsonSerializer.Deserialize<JsonElement>(valuationSnapshot.DecisionDetailsJson)
                 }
             };
-        }));
+        }).ToArray() });
     }
 
     private static string? ProductName(string? evidenceNotes)

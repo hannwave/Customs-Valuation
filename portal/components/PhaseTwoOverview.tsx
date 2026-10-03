@@ -10,7 +10,6 @@ import {
   FiEdit2,
   FiFileText,
   FiInfo,
-  FiMinus,
   FiPlus,
   FiRefreshCw,
   FiSave,
@@ -90,6 +89,8 @@ const categories = [
 const exemptionOptions = [
   ["DIPLOMATIC", "Diplomatic goods"],
   ["TAX_EXEMPT", "General tax exemption"],
+  ["CUSTOMS_DUTY_EXEMPT", "Customs duty exemption (officer approved)"],
+  ["MACHINERY_EQUIPMENT_EXEMPT", "Machinery / manufacturing equipment duty exemption (officer approved)"],
   ["VAT_EXEMPT", "VAT exemption"],
   ["SURTAX_EXEMPT", "Surtax exemption"],
   ["SOCIAL_WELFARE_EXEMPT", "Social welfare levy exemption"],
@@ -232,7 +233,15 @@ function displayBasis(basis: string) {
 function draftFromResponse(data: Phase2Response): Phase2Request {
   const phase = data.phase2;
   const carriedValue = phase1Value(data);
-  if (!phase) return { ...emptyDraft(carriedValue), selectedHsCodeId: data.phase1.hsCodeId };
+  if (!phase) return {
+    ...emptyDraft(carriedValue), selectedHsCodeId: data.phase1.hsCodeId,
+    originCountry: data.importerDeclaration?.originCountryCode ?? "",
+    quantity: data.importerDeclaration?.quantity || 1,
+    unit: data.importerDeclaration?.unit || "Pieces (PCS)",
+    isCommercialImport: data.importerDeclaration?.isCommercialProduct ?? true,
+    productCategory: data.importerDeclaration?.importPurpose === "MANUFACTURING" ? "Manufacturing input" : "General goods",
+    // Importer claims are displayed to the officer; exemption codes stay empty until the officer chooses them.
+  };
 
   // A draft created by an older client may have been saved with CIF = 0.
   // Recover the authoritative Phase 1 selected value instead of displaying
@@ -355,8 +364,19 @@ function previewLines(lines: Phase2TaxLineRequest[], cif: number, quantity: numb
 
 export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   const [decisionId, setDecisionId] = useState("");
+  const [savedDraft, setSavedDraft] = useState("");
+  const [originalDraft, setOriginalDraft] = useState<Phase2Request | null>(null);
+  const [recordedOutcome, setRecordedOutcome] = useState("");
+
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Phase2Request>(emptyDraft());
+  const dirty = Boolean(decisionId) && JSON.stringify(draft) !== savedDraft;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const [data, setData] = useState<Phase2Response | null>(null);
   const [hsResults, setHsResults] = useState<HsCode[]>([]);
   const [error, setError] = useState("");
@@ -452,6 +472,8 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
 
   useEffect(() => {
     const session = readValuationSession();
+    const linkedCase = new URLSearchParams(window.location.search).get("case");
+    if (linkedCase) { setDecisionId(linkedCase); void loadCase(linkedCase, ""); return; }
     if (!session) return;
     setQuery(session.query);
     setKeywordQuery(session.query);
@@ -475,6 +497,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     try {
       const response = await loadPhase2(id.trim());
       const nextDraft = draftFromResponse(response);
+      setSavedDraft(response.phase2 ? JSON.stringify(nextDraft) : "");
+      setOriginalDraft(nextDraft);
+      setRecordedOutcome(response.phase2?.officerConfirmed ? "Confirmed assessment recorded" : "");
       if (!searchTerm.trim() && response.phase1.productName) {
         setQuery(response.phase1.productName);
         setKeywordQuery(response.phase1.productName);
@@ -529,7 +554,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
           : nextDraft;
         const calculated = await calculatePhase2(id.trim(), requestPayload(calculationDraft));
         setData(calculated);
-        setDraft(draftFromCalculationResponse(calculated, nextDraft.expectedVersion));
+        const initialCalculation = draftFromCalculationResponse(calculated, nextDraft.expectedVersion);
+        setDraft(initialCalculation);
+        if (!response.phase2?.taxLines?.length) setOriginalDraft(initialCalculation);
       }
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "The assessment could not be loaded.");
@@ -675,15 +702,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     updateLine(index, { isApplicable: line.isApplicable === false, status: "OfficerAdjusted" });
   }
 
-  function removeLine(index: number) {
-    const line = draft.taxLines[index];
-    if (line && standardTaxNames.some((name) => name.toLowerCase() === line.name.toLowerCase())) {
-      toggleLine(index);
-      return;
-    }
-    update("taxLines", draft.taxLines.filter((_, itemIndex) => itemIndex !== index));
-  }
-
   function toggleExemption(code: string) {
     update(
       "exemptionCodes",
@@ -784,6 +802,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     }
     if (noteIssue) { setError(noteIssue); return; }
     if (complete) {
+      if (calculationNotReady) { setError("Resolve pending calculation inputs before confirming."); return; }
       if (!draft.officerConfirmation) {
         setError("Officer confirmation is required before completing the assessment.");
         return;
@@ -798,6 +817,8 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
       const response = await savePhase2(decisionId, requestPayload(saveDraft), complete);
       setData(response);
       setDraft(draftFromResponse(response));
+      setSavedDraft(JSON.stringify(draftFromResponse(response)));
+      setRecordedOutcome(complete ? `Confirmed: duties and taxes ${money(response.phase2?.totalTax, currency)}` : "Draft recorded");
       setNotice(complete ? "Assessment confirmed and recorded in the official audit history." : "Assessment draft saved.");
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "The assessment could not be saved.");
@@ -807,11 +828,17 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   }
 
   function reset() {
-    setDraft(data ? draftFromResponse(data) : emptyDraft());
+    setDraft(savedDraft ? JSON.parse(savedDraft) as Phase2Request : originalDraft ?? emptyDraft());
     setNotice("Assessment changes reset.");
   }
 
-  const confirmDisabled = busy || !draft.officerConfirmation || Boolean(noteIssue);
+  const calculationNotReady = unresolvedTax || specificExciseNeedsRefresh || needsHsReview || !(draft.customsValueAmount > 0);
+  const confirmDisabled = busy || calculationNotReady || !draft.officerConfirmation || Boolean(noteIssue);
+  const originalRows = originalDraft ? previewLines(originalDraft.taxLines, originalDraft.customsValueAmount, originalDraft.quantity, originalDraft.targetCurrency) : [];
+  const originalTotal = originalRows.filter(line => line.isApplicable !== false && !isExciseComparisonLine(line)).reduce((sum, line) => sum + line.calculatedAmount, 0);
+  const comparable = originalDraft && originalDraft.targetCurrency === currency && !calculationNotReady && !originalRows.some(line => line.status === "Pending" || line.status === "ReviewRequired");
+  const adjustment = draft.manualAdjustmentType === "Percentage" ? draft.customsValueAmount * draft.manualAdjustmentAmount / 100 : draft.manualAdjustmentAmount;
+  const netTaxes = totalTaxPreview - draft.exemptionAmount - draft.waiverAmount + adjustment;
 
   return (
     <div className="phase-two-workspace phase2-reference-workspace">
@@ -831,11 +858,20 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
           <p>Calculate duties and taxes based on the approved value. You can adjust rates and make the final assessment.</p>
         </div>
         <div className="phase2-case-meta">
-          <span>Case ID: {decisionId ? decisionId.slice(0, 14) : "—"}</span>
+          <span>Case: {decisionId || "—"}</span>
+          <span role="status">{busy ? "Working…" : dirty ? "Unsaved changes" : "Saved"}</span>
+          {decisionId && <><a href={`/dashboard?phase=two&case=${decisionId}`}>Case URL</a><a href={`/audit/cases/${decisionId}`}>Audit history</a></>}
           <span>Date: {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
         </div>
       </header>
 
+      {recordedOutcome && <p className="assessment-recorded" role="status">{recordedOutcome}. {dirty && "Further edits are not saved."} <a href={`/audit/cases/${decisionId}`}>View recorded outcome and audit history</a></p>}
+      {calculationNotReady && <p className="assessment-readiness" role="status">Calculation requires review. Resolve the HS code, customs value, and pending tax rows before confirmation. Totals are provisional.</p>}
+      {originalDraft && <section className="assessment-change-summary"><h2>Changes since opening this assessment</h2>
+        <p>HS code: {hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.tariffItemNo || hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.code || originalDraft.selectedHsCodeId || "Not selected"} → {hsCodeInput || "Not selected"}</p>
+        <p>Original tax: {originalRows.some(line => line.status === "Pending" || line.status === "ReviewRequired") ? "Not calculated" : money(originalTotal, originalDraft.targetCurrency)} · Revised tax: {calculationNotReady ? "Provisional — review required" : money(totalTaxPreview, currency)} · Difference: {comparable ? money(totalTaxPreview - originalTotal, currency) : "Awaiting comparable calculations"}</p>
+        <p>Includes the effect on dependent taxes. Reason: {draft.adjustmentReason || "No adjustment reason entered"}</p>
+      </section>}
       <nav className="phase-bar phase-bar--two" aria-label="Valuation phases">
         <button type="button" aria-pressed={false} className="is-collapsed" onClick={onBackToReview} disabled={!onBackToReview}>
           <span><FiCheckCircle /></span>
@@ -1041,6 +1077,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
           </div>
         </div>
 
+        {data?.importerDeclaration && <div className="importer-provisional"><strong>Importer submission {data.importerDeclaration.reference}</strong><p>Purpose: {data.importerDeclaration.importPurpose.replaceAll("_", " ")} · Origin: {data.importerDeclaration.originCountryCode} · Machinery/equipment claimed: {data.importerDeclaration.isMachineryOrEquipment ? "yes" : "no"}</p><p>Requested treatment for review: {data.importerDeclaration.requestedTreatments.length ? data.importerDeclaration.requestedTreatments.join(", ").replaceAll("_", " ") : "none"}. No exemption is applied from this claim; verify the rule and evidence before selecting treatment below.</p></div>}
         {data?.phase1.declaredPriceAmount != null && <div className="phase2-receipt-evidence"><div><span>Customer invoice declaration</span><strong>{money(data.phase1.declaredPriceAmount, data.phase1.declaredPriceCurrency)}</strong><small>Original amount paid</small></div><div><span>Converted into Phase 1 currency</span><strong>{money(data.phase1.declaredPriceConvertedAmount, data.phase1.declaredPriceConvertedCurrency)}</strong><small>Rate {data.phase1.declaredPriceExchangeRate?.toLocaleString() ?? "—"} · {data.phase1.declaredPriceExchangeRateSource}</small></div><button className="secondary-button" type="button" onClick={() => void openCustomerReceipt()} disabled={!data.phase1.receiptFileName || receiptBusy}><FiFileText />{receiptBusy ? "Opening receipt…" : data.phase1.receiptFileName || "Receipt unavailable"}</button></div>}
 
         <div className="phase2-inputs-toggle">
@@ -1105,6 +1142,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
             </label>
             <div className="phase2-exemptions">
               <span>Applicable exemptions</span>
+              <small>Duty and machinery exemptions require an officer-approved authority and supporting evidence in the assessment notes.</small>
               <div>
                 {exemptionOptions.map(([code, label]) => (
                   <label key={code}>
@@ -1172,9 +1210,21 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                         <td>{index + 1}</td>
                         <td>
                           <div className="tax-name">
-                            <span className="drag-handle">⋮⋮</span>
                             <strong>{displayTaxName(line.name, line.calculationBasis)}</strong>
                           </div>
+                          <details className="tax-calculation-details"><summary>Calculation and changes</summary>
+                            <p>Rate: {line.value}{line.calculationType === "Percentage" ? "%" : line.calculationType === "PerUnit" ? ` ETB / ${exciseUnitAbbreviation(draft.unit)}` : ` ${currency}`}</p>
+                            <p>Basis: {line.calculationType === "PerUnit" ? `${line.baseAmount} ${draft.unit}` : money(line.baseAmount, currency)} ({displayBasis(line.calculationBasis)})</p>
+                            <p>Formula: {line.isApplicable === false ? "Not applied = 0" : line.calculationType === "Fixed" ? `${line.value} (fixed)` : `${line.baseAmount} × ${line.value}${line.calculationType === "Percentage" ? " / 100" : ""}`}{line.name === "Excise Tax" && specificExciseInput && isExciseComparisonLine(specificExciseInput) && specificExciseInput.isApplicable !== false ? `; max(${money(line.baseAmount * line.value / 100, currency)}, ${money(rows.find(item => item.name === "Excise Tax (specific)")?.calculatedAmount, currency)})` : ""}</p>
+                            {line.calculationType === "PerUnit" && currency !== "ETB" && <p>ETB unit calculation converted by the server to {currency}; refresh after changing quantity or rate.</p>}
+                            <p>Source: {line.sourceReference || "Not recorded — officer verification required"}</p>
+                            <p>Result: {line.status === "Pending" || line.status === "ReviewRequired" || specificExciseNeedsRefresh ? "Awaiting calculation" : money(line.calculatedAmount, currency)}{isExciseComparisonLine(line) ? " (comparison only; not added to total)" : ""}</p>
+                            {(() => { const original = originalRows.find(item => item.name === line.name); return <>
+                              <p>Original: {original ? `${original.value}${original.calculationType === "Percentage" ? "%" : ""} · ${original.isApplicable === false ? "Not applied" : "Applied"}` : "No original line"} → Revised: {line.value}{line.calculationType === "Percentage" ? "%" : ""} · {line.isApplicable === false ? "Not applied" : "Applied"}</p>
+                              <p>Tax difference: {comparable ? money(line.calculatedAmount - (original?.calculatedAmount ?? 0), currency) : "Awaiting comparable calculations"}{isExciseComparisonLine(line) ? " (comparison only)" : ""}</p>
+                            </>; })()}
+                            <p>Reason: {draft.adjustmentReason || "No adjustment reason entered"}</p>
+                          </details>
                         </td>
                         <td>
                           <input
@@ -1273,30 +1323,28 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
               </div>
               {rows.map((line, index) => (
                 <div className="calculation-summary-line" key={`${line.name}-summary-${index}`}>
-                  <span>{displayTaxName(line.name, line.calculationBasis)}</span>
+                  <span>{displayTaxName(line.name, line.calculationBasis)}{isExciseComparisonLine(line) ? " (comparison only)" : ""}</span>
                   <strong>
-                    {line.status === "Pending" || line.isApplicable === false
+                    {line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false
                       ? "—"
                       : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
                         ? "Refresh calculation"
                       : money(line.calculatedAmount, currency)}
                   </strong>
-                  <button
-                    type="button"
-                    onClick={() => removeLine(index)}
-                    aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name, line.calculationBasis)}`}
-                  >
-                    <FiMinus />
-                  </button>
+
                 </div>
               ))}
               <div className="calculation-summary-line calculation-summary-line--total">
-                <span>Total Duties &amp; Taxes</span>
-                  <strong>{specificExciseNeedsRefresh ? "Refresh calculation" : money(totalTaxPreview, currency)}</strong>
+                <span>Duties and taxes (before adjustments)</span>
+                  <strong>{calculationNotReady ? "Provisional — review required" : money(totalTaxPreview, currency)}</strong>
               </div>
+              <div className="calculation-summary-line"><span>Exemptions</span><strong>−{money(draft.exemptionAmount, currency)}</strong></div>
+              <div className="calculation-summary-line"><span>Waivers</span><strong>−{money(draft.waiverAmount, currency)}</strong></div>
+              <div className="calculation-summary-line"><span>Adjustment</span><strong>{money(adjustment, currency)}</strong></div>
+              <div className="calculation-summary-line"><span>Duties and taxes balance after adjustments (excluding CIF; negative is credit)</span><strong>{calculationNotReady ? "Provisional — review required" : money(netTaxes, currency)}</strong></div>
               <div className="calculation-summary-line calculation-summary-line--payable">
-                <span>Total Amount Payable</span>
-                  <strong>{specificExciseNeedsRefresh ? "Refresh calculation" : money(finalPreview, currency)}</strong>
+                <span>CIF + duties and taxes − exemptions − waivers + adjustment (minimum zero)</span>
+                  <strong>{calculationNotReady ? "Provisional — review required" : money(finalPreview, currency)}</strong>
               </div>
             </div>
           </section>

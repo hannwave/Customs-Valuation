@@ -12,10 +12,11 @@ import { DataState } from "@/components/DataState";
 import { FeedbackToast } from "@/components/FeedbackToast";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
 import { BenchmarkFetchChecks } from "@/components/BenchmarkFetchChecks";
-import { getPhase2HsCode, searchPhase2HsCodes } from "@/lib/phase2Api";
+import { getPhase2HsCode, loadPhase2, searchPhase2HsCodes } from "@/lib/phase2Api";
+import { importerApi, importerApiBase, type ImporterDeclaration } from "@/lib/importer";
 import { displayHsCode, recommendedHsCode } from "@/lib/hs-recommendation";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import type { CustomsTradeBenchmark, HsCode, InternationalPriceSearch, PriceStatistics } from "@/lib/types/customs";
+import type { Phase2Response, CustomsTradeBenchmark, HsCode, InternationalPriceSearch, PriceStatistics } from "@/lib/types/customs";
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession, updateValuationSession, writeValuationSession, addRecentSearch, readRecentSearches, removeRecentSearch, type HistoricalSessionEvidence } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
@@ -99,7 +100,7 @@ function HistoricalPriceCard({ historical, internationalPrice, currency }: { his
   </section>;
 }
 
-function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: WorkspaceProfile; onSubmitted: () => void }) {
+function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: { profile: WorkspaceProfile; onSubmitted: () => void; importDeclaration: ImporterDeclaration | null }) {
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("us");
   const [purchaseCountry, setPurchaseCountry] = useState("");
@@ -168,6 +169,18 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     if (["internationalMedian", "internationalMean", "customsBenchmark", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
       setSelected(active.selectedSource as EvidenceSource);
   }, []);
+
+  useEffect(() => {
+    if (!importDeclaration) return;
+    setQuery(importDeclaration.productName); setPurchaseCountry(importDeclaration.originCountryCode);
+    if (importDeclaration.confirmedHsCodeId) void getPhase2HsCode(importDeclaration.confirmedHsCodeId)
+      .then(item => { setHsCode(item); setHsInput(displayHsCode(item)); }).catch(() => setError("The verified tariff item could not be loaded."));
+    const invoice = importDeclaration.documents.find(document => document.kind === "COMMERCIAL_INVOICE");
+    const token = getSessionAccessToken();
+    if (invoice && token) void fetch(`${importerApiBase}/importer-declarations/${importDeclaration.id}/documents/COMMERCIAL_INVOICE`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async response => { if (!response.ok) throw new Error("Invoice unavailable."); return new File([await response.blob()], invoice.fileName, { type: invoice.contentType }); })
+      .then(setReceiptFile).catch(() => setError("The importer invoice could not be loaded. Open the submission and try again."));
+  }, [importDeclaration]);
 
   async function lookupHs(searchTerm: string, serial: number, automatic: boolean) {
     setHsBusy(true);
@@ -289,7 +302,10 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
       });
     };
     let historicalValue: HistoricalSessionEvidence | null = null;
-    void lookupHs(term, hsSerial, true);
+    if (importDeclaration?.confirmedHsCodeId) void getPhase2HsCode(importDeclaration.confirmedHsCodeId)
+      .then(item => { setHsCode(item); setHsInput(displayHsCode(item)); setHsBusy(false); })
+      .catch(() => void lookupHs(term, hsSerial, true));
+    else void lookupHs(term, hsSerial, true);
     void request<InternationalPriceSearch>(`${base}/api/international-prices/search?${new URLSearchParams({ q: term, market })}`)
       .then(result => { internationalValue = result; setInternational(result); persist(); if (result.statistics) setSelected("internationalMedian"); })
       .catch(reason => { if (redirectingForExpiredSession) return; setError(current => current || (reason instanceof Error ? `International prices could not load: ${reason.message}` : "International evidence is unavailable.")); })
@@ -442,6 +458,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        const valuationMethod = ({ internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark", declaredPrice: "Transaction value", custom: "Officer-selected customs value" } as Record<EvidenceSource, string>)[selected];
        const evidenceSnapshot = {
           product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+          importerDeclaration: importDeclaration ? { id: importDeclaration.id, reference: importDeclaration.reference, purpose: importDeclaration.importPurpose, requestedTreatments: importDeclaration.requestedTreatments } : null,
           selectedCurrency, supportingSource: selected, valuationMethod, purchaseCountryCode: purchaseCountry, purchaseCountryName, productPhoto: productPhotoUrl, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
          customsTradeBenchmark: customsBenchmark,
@@ -470,6 +487,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
        };
 
        const form = new FormData();
+       if (importDeclaration) form.append("importerDeclarationId", importDeclaration.id);
        if (hsCode) form.append("hsCodeId", hsCode.id);
        form.append("locationId", assignedLocationId); form.append("selectedReferenceValue", String(parsedSelectedValue));
        form.append("currency", selectedCurrency); form.append("decision", `Customs value selected for ${query.trim()}`);
@@ -499,6 +517,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted }: { profile: Workspace
     <nav className="valuation-breadcrumb" aria-label="Breadcrumb"><span>Home</span><FiChevronRight aria-hidden="true" /><strong>Valuation</strong></nav>
     <div className="valuation-page-heading"><h1>Search a product to begin valuation</h1><p>Find a product, add the required transaction evidence and get a valuation estimate.</p></div>
 
+    <p role="status">{recording ? "Saving price review…" : "Not submitted — current edits and receipt selection are unsaved"}</p>
     {/* ── Unified Search Card ── */}
     <div className="valuation-search-card">
       <form id="valuation-search-form" className="valuation-search-row" onSubmit={search} noValidate>
@@ -672,8 +691,45 @@ function AdminDashboard({ data, profile }: { data: WorkspaceDashboard; profile: 
   </>;
 }
 
+function RecordedPriceReview({ caseId }: { caseId: string }) {
+  const [record, setRecord] = useState<Phase2Response | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void loadPhase2(caseId).then(value => { if (active) setRecord(value); }).catch(reason => { if (active) setError(String(reason)); });
+    return () => { active = false; };
+  }, [caseId]);
+  if (error) return <DataState kind="error" title="Case unavailable" description={error} />;
+  if (!record) return <DataState kind="loading" title="Loading recorded price review" />;
+  return <section className="assessment-change-summary"><h1>Recorded price review</h1><p>Case: {caseId} · Saved</p><h2>{record.phase1.productName}</h2><p>Selected customs value: {money(record.phase1.initialDuty, record.phase1.initialDutyCurrency)}</p><p>Source: {record.phase1.source}</p><p><a href={`/audit/cases/${caseId}`}>Review the decision, reasons, and evidence in case history</a></p></section>;
+}
+
 function OfficerDashboard({ profile }: { profile: WorkspaceProfile }) {
-  const [phase, setPhase] = useState<Phase>("one");
+  const [importDeclaration, setImportDeclaration] = useState<ImporterDeclaration | null>(null);
+  const [importError, setImportError] = useState("");
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("importDeclarationId");
+    if (!id) return;
+    void importerApi<ImporterDeclaration>(`/importer-declarations/${encodeURIComponent(id)}`)
+      .then(item => { if (item.status !== "ASSESSMENT_READY") throw new Error("The importer submission is not ready for assessment."); setImportDeclaration(item); })
+      .catch(reason => setImportError(reason instanceof Error ? reason.message : "Importer submission unavailable."));
+  }, []);
+  const [linkedCase, setLinkedCase] = useState("");
+  const [phase, setCurrentPhase] = useState<Phase>("one");
+  const setPhase = (next: Phase) => {
+    setCurrentPhase(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("phase", next);
+    const session = readValuationSession();
+    if (!url.searchParams.has("case") && session?.decisionId) url.searchParams.set("case", session.decisionId);
+    setLinkedCase(url.searchParams.get("case") || "");
+    window.history.replaceState(null, "", url);
+  };
+  useEffect(() => {
+    const syncPhase = () => { const params = new URLSearchParams(window.location.search); setCurrentPhase(params.get("phase") === "two" ? "two" : "one"); setLinkedCase(params.get("case") || ""); };
+    syncPhase(); window.addEventListener("popstate", syncPhase);
+    return () => window.removeEventListener("popstate", syncPhase);
+  }, []);
   const [activeSession, setActiveSession] = useState<ReturnType<typeof readValuationSession>>(null);
   useEffect(() => {
     const sync = () => setActiveSession(readValuationSession());
@@ -681,9 +737,11 @@ function OfficerDashboard({ profile }: { profile: WorkspaceProfile }) {
     return () => { window.removeEventListener("storage", sync); window.removeEventListener("focus", sync); };
   }, []);
   return <>
+    {importError && <div className="importer-error" role="alert">{importError}</div>}
+    {importDeclaration && <section className="importer-handoff importer-card"><strong>Importer submission {importDeclaration.reference}</strong><p>{importDeclaration.productName} · {importDeclaration.originCountryName} · {importDeclaration.quantity} {importDeclaration.unit}</p><p>Purpose: {importDeclaration.importPurpose.replaceAll("_", " ")}. Requested treatment: {importDeclaration.requestedTreatments.length ? importDeclaration.requestedTreatments.join(", ").replaceAll("_", " ") : "none"}. Officer approval remains required for any exemption.</p><Link href="/importer-review">Review submitted details and documents</Link></section>}
     {phase === "one" ? <>
-      <PhaseBar phase={phase} onChange={setPhase} phase2Ready={Boolean(activeSession?.phase1Submitted && activeSession.decisionId)} />
-      <OfficerEvidenceWorkspace profile={profile} onSubmitted={() => { setActiveSession(readValuationSession()); setPhase("two"); }} />
+      <PhaseBar phase={phase} onChange={setPhase} phase2Ready={Boolean(linkedCase || (activeSession?.phase1Submitted && activeSession.decisionId))} />
+      {linkedCase ? <RecordedPriceReview key={linkedCase} caseId={linkedCase} /> : <OfficerEvidenceWorkspace profile={profile} importDeclaration={importDeclaration} onSubmitted={() => { setActiveSession(readValuationSession()); setPhase("two"); }} />}
     </> : <PhaseTwoOverview onBackToReview={() => setPhase("one")} />}
     {activeSession && <section className="dashboard-session-strip"><span><FiCheckCircle />Active valuation session</span><strong>{activeSession.query}</strong><small>Started {new Date(activeSession.createdAt).toLocaleString()} · {activeSession.phase1Submitted ? "Price Review submitted" : "Price Review in progress"}</small></section>}
   </>;

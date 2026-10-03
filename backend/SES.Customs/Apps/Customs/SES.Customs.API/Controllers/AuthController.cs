@@ -15,6 +15,7 @@ public sealed record AdministratorRegistrationRequestDto(string Username, string
 public sealed record RegistrationReviewDto(string? Reason);
 public sealed record OfficerRegistrationApprovalDto(Guid LocationId, string Responsibilities);
 public sealed record CreateUserRequest(string Username, string FullName, string Email, string Role, string Password);
+public sealed record ImporterRegistrationRequest(string FullName, string Email, string Password, string ConfirmPassword);
 
 [ApiController, Route("api/auth")]
 public sealed class AuthController(AuthService auth, IConfiguration configuration, SES.Customs.Infrastructure.Context.CustomsDbContext db, WorkspaceAccess access) : ControllerBase
@@ -29,6 +30,21 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
             return StatusCode(StatusCodes.Status403Forbidden, new { code = "ACCOUNT_PENDING_VALIDATION", message = $"This account is {LoginStatus(user.Status)}. A System Administrator must validate the officer account before sign-in." });
         await auth.RecordLoginAsync(user.Id, ct);
         return Ok(new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Username, user.Email, user.FullName, user.Role } });
+    }
+
+    [AllowAnonymous, HttpPost("register-importer")]
+    public async Task<IActionResult> RegisterImporter(ImporterRegistrationRequest request, CancellationToken ct)
+    {
+        var name = request.FullName?.Trim() ?? "";
+        var email = request.Email?.Trim().ToLowerInvariant() ?? "";
+        if (name.Length is < 2 or > 200 || email.Length > 240 || !System.Net.Mail.MailAddress.TryCreate(email, out var address) || !string.Equals(address.Address, email, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Enter your full name and a valid email address." });
+        if (request.Password != request.ConfirmPassword || !System.Text.RegularExpressions.Regex.IsMatch(request.Password ?? "", "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$"))
+            return BadRequest(new { message = "Passwords must match and contain at least eight characters, including uppercase, lowercase, a number and a symbol." });
+        if (await db.AuthAccounts.AnyAsync(x => x.Email.ToLower() == email || x.Username.ToLower() == email, ct))
+            return Conflict(new { message = "An account already uses this email address. Sign in instead." });
+        var user = await auth.CreateAsync(email, email, name, SES.Customs.Core.Models.AccessRules.Importer, request.Password ?? "", ct: ct);
+        return Created("/api/auth/me", new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Email, user.FullName, user.Role } });
     }
 
     [AllowAnonymous, HttpPost("register")]

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "@mantine/core/styles.css";
 import "country-flag-icons/3x2/flags.css";
 import "./globals.css";
+import "./importer.css";
 import Providers from "./providers";
 import { AppLayout } from "@/components/AppLayout";
 export const metadata: Metadata = { title: "Ethiopia Customs | Customs Valuation Portal", description: "Evidence-led customs valuation, tariff classification, and price intelligence for Ethiopia.", icons: { icon: [{ url: "/images/customs-logo-dark.png", type: "image/png", media: "(prefers-color-scheme: light)" }, { url: "/images/customs-logo-light.png", type: "image/png", media: "(prefers-color-scheme: dark)" }] } };

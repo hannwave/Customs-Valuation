@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SES.Customs.Infrastructure.Context;
@@ -11,9 +12,11 @@ using SES.Customs.Infrastructure.Context;
 namespace SES.Customs.Infrastructure.Context.Migrations
 {
     [DbContext(typeof(CustomsDbContext))]
-    partial class CustomsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003121340_AddImporterDeclarations")]
+    partial class AddImporterDeclarations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1169,9 +1172,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<Guid?>("HsCodeId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ImporterDeclarationId")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal?>("InitialDuty")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
@@ -1286,9 +1286,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("HsCodeId");
-
-                    b.HasIndex("ImporterDeclarationId")
-                        .IsUnique();
 
                     b.HasIndex("LocationId", "Status");
 
@@ -2145,11 +2142,6 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasOne("SES.Customs.Core.Models.HsCode", null)
                         .WithMany()
                         .HasForeignKey("HsCodeId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SES.Customs.Core.Models.ImporterDeclaration", null)
-                        .WithMany()
-                        .HasForeignKey("ImporterDeclarationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)

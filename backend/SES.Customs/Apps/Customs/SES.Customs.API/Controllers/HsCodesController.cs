@@ -217,7 +217,7 @@ public sealed class HsCodesController(IMediator mediator, IConfiguration configu
         var digits = Normalize(value);
         return digits.Length >= 8 ? digits[..8] : "";
     }
-    private static (string Code, string Name) SectionForChapter(string chapter) => int.TryParse(chapter, out var number) switch
+    internal static (string Code, string Name) SectionForChapter(string chapter) => int.TryParse(chapter, out var number) switch
     {
         true when number <= 5 => ("I", "Live animals; animal products"),
         true when number <= 14 => ("II", "Vegetable products"),

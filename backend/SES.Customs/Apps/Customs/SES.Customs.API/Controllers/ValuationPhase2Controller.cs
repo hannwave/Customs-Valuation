@@ -42,7 +42,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         if (decision is null) return NotFound(new { message = "Phase 1 valuation case was not found." });
         if (!CanAccess(decision)) return Forbid();
         var phase2 = await db.ValuationPhase2s.AsNoTracking().Include(x => x.TaxLines).FirstOrDefaultAsync(x => x.ValuationDecisionId == decisionId, ct);
-        return Ok(MapResponse(decision, phase2));
+        return Ok(await MapResponse(decision, phase2, ct));
     }
 
     [HttpPost("calculate")]
@@ -53,10 +53,10 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         request = CarryForwardPhase1Value(loaded.Decision!, request);
         var validation = await ValidateRequestAsync(loaded.Decision!, request, false, ct);
         if (validation is not null) return validation;
-        var tariff = await LoadTariffAsync(request.SelectedHsCodeId!.Value, ct);
+        var tariff = await LoadTariffAsync(loaded.Decision!, request.SelectedHsCodeId!.Value, ct);
         if (tariff is null) return BadRequest(new { message = "No effective tariff line is available for the selected HS code. Select a code with an official tariff source before calculating." });
         var specificRate = await GetEtbToTargetRateAsync(tariff, request.TargetCurrency, ct);
-        return Ok(MapResponse(loaded.Decision!, BuildPhase2(loaded.Decision!, request, loaded.Existing, tariff, specificRate)));
+        return Ok(await MapResponse(loaded.Decision!, BuildPhase2(loaded.Decision!, request, loaded.Existing, tariff, specificRate), ct));
     }
 
     [HttpPut]
@@ -75,9 +75,12 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         if (validation is not null) return validation;
         if (loaded.Existing is not null && request.ExpectedVersion.HasValue && loaded.Existing.Version != request.ExpectedVersion.Value)
             return Conflict(new { message = "This assessment changed in another session. Reload it before saving.", version = loaded.Existing.Version });
-        var tariff = await LoadTariffAsync(request.SelectedHsCodeId!.Value, ct);
+        var tariff = await LoadTariffAsync(decision, request.SelectedHsCodeId!.Value, ct);
         if (tariff is null) return BadRequest(new { message = "No effective tariff line is available for the selected HS code." });
-        if (status == "Completed" && !ParseRate(tariff.Duty).HasValue)
+        var dutyExemptionSelected = (request.ExemptionCodes ?? []).Any(code =>
+            string.Equals(code?.Trim(), "CUSTOMS_DUTY_EXEMPT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(code?.Trim(), "MACHINERY_EQUIPMENT_EXEMPT", StringComparison.OrdinalIgnoreCase));
+        if (status == "Completed" && !dutyExemptionSelected && !ParseRate(tariff.Duty).HasValue)
         {
             var manualDuty = request.TaxLines?.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
             if (manualDuty is null || manualDuty.Value < 0)
@@ -178,7 +181,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         var saved = await db.ValuationPhase2s.AsNoTracking().Include(x => x.TaxLines).FirstAsync(x => x.Id == phase2.Id, ct);
-        return Ok(MapResponse(decision, saved));
+        return Ok(await MapResponse(decision, saved, ct));
     }
 
     private async Task<(ValuationDecision? Decision, ValuationPhase2? Existing, IActionResult? Error)> LoadDecisionAsync(Guid decisionId, CancellationToken ct)
@@ -192,6 +195,14 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
     private async Task<IActionResult?> ValidateRequestAsync(ValuationDecision decision, Phase2Request request, bool completing, CancellationToken ct)
     {
         if (!request.SelectedHsCodeId.HasValue || !await db.HsCodes.AnyAsync(x => x.Id == request.SelectedHsCodeId.Value, ct)) return BadRequest(new { message = "Select a valid HS code before calculating import taxes." });
+        if (decision.ImporterDeclarationId.HasValue)
+        {
+            var confirmedHsCodeId = await db.ImporterDeclarations.AsNoTracking()
+                .Where(x => x.Id == decision.ImporterDeclarationId.Value)
+                .Select(x => x.ConfirmedHsCodeId).SingleOrDefaultAsync(ct);
+            if (!confirmedHsCodeId.HasValue || request.SelectedHsCodeId != confirmedHsCodeId)
+                return BadRequest(new { message = "Use the HS code confirmed during importer submission review. Return to officer review to correct the mapping." });
+        }
         if (request.CustomsValueAmount <= 0) return BadRequest(new { message = "Enter a positive customs value/CIF amount." });
         if (string.IsNullOrWhiteSpace(request.CustomsValueCurrency) || request.CustomsValueCurrency.Trim().Length != 3) return BadRequest(new { message = "Customs value currency must be a three-letter ISO code." });
         if (!string.Equals(request.CustomsValueCurrency, request.TargetCurrency, StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "Customs value/CIF currency must match the working currency. Convert the CIF amount first and record the source rate in the notes." });
@@ -207,6 +218,11 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         if (!string.Equals(GetInitialDutyCurrency(decision), request.TargetCurrency.Trim(), StringComparison.OrdinalIgnoreCase) && request.ExchangeRate <= 0) return BadRequest(new { message = "Provide a positive exchange rate when converting the Phase 1 reference currency." });
         if (!string.Equals(request.ManualAdjustmentType, "Fixed", StringComparison.OrdinalIgnoreCase) && !string.Equals(request.ManualAdjustmentType, "Percentage", StringComparison.OrdinalIgnoreCase)) return BadRequest(new { message = "Manual adjustment type must be Fixed or Percentage." });
         if (request.ExemptionAmount < 0 || request.WaiverAmount < 0 || request.ManualAdjustmentAmount < 0) return BadRequest(new { message = "Exemptions, waivers, and adjustments cannot be negative." });
+        var dutyExemption = (request.ExemptionCodes ?? []).Any(code =>
+            string.Equals(code?.Trim(), "CUSTOMS_DUTY_EXEMPT", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(code?.Trim(), "MACHINERY_EQUIPMENT_EXEMPT", StringComparison.OrdinalIgnoreCase));
+        if (completing && dutyExemption && (request.Notes?.Trim().Length ?? 0) < 10)
+            return BadRequest(new { message = "Record the officer-approved authority and evidence for a customs duty or machinery exemption in the assessment notes." });
         if ((request.TaxLines?.Length ?? 0) > 30) return BadRequest(new { message = "An assessment cannot contain more than 30 tax lines." });
         var submittedExcise = request.TaxLines?.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Excise Tax", StringComparison.OrdinalIgnoreCase));
         var submittedSpecificExcise = request.TaxLines?.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Excise Tax (specific)", StringComparison.OrdinalIgnoreCase));
@@ -218,9 +234,18 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         return null;
     }
 
-    private async Task<NationalTariffLine?> LoadTariffAsync(Guid hsCodeId, CancellationToken ct)
+    private async Task<NationalTariffLine?> LoadTariffAsync(ValuationDecision decision, Guid hsCodeId, CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        if (decision.ImporterDeclarationId.HasValue)
+        {
+            var confirmedLineId = await db.ImporterDeclarations.AsNoTracking()
+                .Where(x => x.Id == decision.ImporterDeclarationId.Value)
+                .Select(x => x.ConfirmedTariffLineId).SingleOrDefaultAsync(ct);
+            return confirmedLineId.HasValue
+                ? await db.NationalTariffLines.AsNoTracking().FirstOrDefaultAsync(x => x.Id == confirmedLineId.Value && x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today), ct)
+                : null;
+        }
         return await db.NationalTariffLines.AsNoTracking().Where(x => x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today)).OrderByDescending(x => x.EffectiveDate).ThenBy(x => x.Code).FirstOrDefaultAsync(ct);
     }
 
@@ -267,16 +292,17 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         var submitted = request.TaxLines ?? [];
         var exciseRule = ExciseRuleFor(tariff);
         var codes = new HashSet<string>((request.ExemptionCodes ?? []).Select(x => x.Trim().ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
+        var dutyExempt = codes.Contains("CUSTOMS_DUTY_EXEMPT") || codes.Contains("MACHINERY_EQUIPMENT_EXEMPT");
         var recommendedDutyRate = ParseRate(tariff.Duty);
         var suppliedDuty = submitted.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
         var dutyNeedsReview = !recommendedDutyRate.HasValue;
         var dutyRate = recommendedDutyRate ?? suppliedDuty?.Value ?? 0m;
         var originCountry = request.OriginCountry?.Trim() ?? "";
         if (request.OriginPreferenceClaimed && ComesaFtaCountries.Contains(originCountry)) dutyRate = 0m;
-        var dutyRateKnown = recommendedDutyRate.HasValue || suppliedDuty is not null;
+        var dutyRateKnown = dutyExempt || recommendedDutyRate.HasValue || suppliedDuty is not null;
         var surtaxExcluded = codes.Contains("SURTAX_EXEMPT") || SurtaxExcludedCategories.Contains(request.ProductCategory!.Trim());
         var surtaxThresholdUnknown = !dutyRateKnown;
-        var surtaxApplies = !surtaxExcluded && !surtaxThresholdUnknown && dutyRate > SurtaxDutyThreshold;
+        var surtaxApplies = !surtaxExcluded && !surtaxThresholdUnknown && !dutyExempt && dutyRate > SurtaxDutyThreshold;
         var vatExempt = codes.Contains("VAT_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
         var socialExempt = codes.Contains("SOCIAL_WELFARE_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
         var withholdingApplicable = request.IsCommercialImport && request.WithholdingApplicable && !codes.Contains("WITHHOLDING_NOT_APPLICABLE");
@@ -302,7 +328,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
                     : "Customs duty is 15% or less; import surtax is generally not recommended under the configured threshold.";
         var lines = new List<ValuationPhase2TaxLine>
         {
-            Line("Customs Duty", dutyRate, 1, "CIF", tariff.SourceReference, true, dutyNeedsReview ? "ReviewRequired" : "Recommended", dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", request.TargetCurrency),
+            Line("Customs Duty", dutyRate, 1, "CIF", tariff.SourceReference, !dutyExempt, dutyExempt ? "NotApplicable" : dutyNeedsReview ? "ReviewRequired" : "Recommended", dutyExempt ? "Officer-selected exemption. Verify the governing authority and evidence before confirming." : dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", request.TargetCurrency),
             Line("Excise Tax", exciseRate, 2, "CIFPlusDuty", exciseRule?.SourceReference ?? ExciseSource, exciseApplies, exciseNeedsReview || specificNeedsReview ? "ReviewRequired" : exciseApplies ? "Recommended" : "NotApplicable", exciseNote, request.TargetCurrency),
             Line("Surtax", SurtaxRate, 4, "CIFPlusDutyPlusExcise", SurtaxSource, surtaxApplies, surtaxThresholdUnknown ? "ReviewRequired" : surtaxApplies ? "Recommended" : "NotApplicable", surtaxNote, request.TargetCurrency),
             Line("VAT", VatRate, 5, "CIFPlusDutyPlusExcisePlusSurtax", VatSource, !vatExempt, vatExempt ? "NotApplicable" : "Recommended", vatExempt ? "Exemption selected; verify supporting authority." : "15% VAT is calculated after Customs Duty, Excise Tax, and Surtax in the configured assessment order.", request.TargetCurrency),
@@ -332,6 +358,13 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
             var applicabilityChanged = overrideLine.IsApplicable.HasValue && overrideLine.IsApplicable.Value != recommendedApplicable;
             if (Math.Abs(line.Value - line.RecommendedValue) > 0.0001m || !string.Equals(line.CalculationType, line.Name == "Excise Tax (specific)" ? "PerUnit" : "Percentage", StringComparison.OrdinalIgnoreCase) || applicabilityChanged || string.Equals(overrideLine.Status, "OfficerAdjusted", StringComparison.OrdinalIgnoreCase)) line.Status = "OfficerAdjusted";
             if (line.Name == "Excise Tax" && request.ExciseTaxApplicable) { line.IsApplicable = true; line.Status = "OfficerAdjusted"; }
+        }
+        if (dutyExempt)
+        {
+            var exemptDuty = lines.First(x => x.Name == "Customs Duty");
+            exemptDuty.IsApplicable = false;
+            exemptDuty.Status = "OfficerAdjusted";
+            exemptDuty.Notes = "Officer-selected exemption. Verify the governing authority and evidence before confirming.";
         }
         foreach (var custom in submitted.Where(x => !string.IsNullOrWhiteSpace(x.Name) && !lines.Any(line => string.Equals(line.Name, x.Name.Trim(), StringComparison.OrdinalIgnoreCase))))
             lines.Add(Line(custom.Name!.Trim(), custom.Value, 90 + (custom.Order ?? 0), custom.CalculationBasis ?? "CIF", "Officer-entered charge. An optional note may record the legal source.", true, "OfficerAdjusted", custom.Notes ?? "", request.TargetCurrency, custom.CalculationType));
@@ -470,9 +503,19 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         };
     }
 
-    private static object MapResponse(ValuationDecision decision, ValuationPhase2? phase2) => new
+    private async Task<object> MapResponse(ValuationDecision decision, ValuationPhase2? phase2, CancellationToken ct)
+    {
+        var importer = decision.ImporterDeclarationId.HasValue
+            ? await db.ImporterDeclarations.AsNoTracking().FirstOrDefaultAsync(x => x.Id == decision.ImporterDeclarationId.Value, ct)
+            : null;
+        return new
     {
         decisionId = decision.Id,
+        importerDeclaration = importer is null ? null : new {
+            importer.Id, importer.Reference, importer.ImportPurpose, importer.PurposeDetails, importer.OriginCountryCode,
+            importer.IsCommercialProduct, importer.IsMachineryOrEquipment, importer.Quantity, importer.Unit,
+            requestedTreatments = JsonSerializer.Deserialize<string[]>(importer.RequestedTreatmentsJson) ?? []
+        },
         phase1 = new { hsCodeId = decision.HsCodeId, decision.ProductId, decision.ProductName, decision.PurchaseCountryCode, decision.PurchaseCountryName, decision.SelectedPriceSource, decision.ValuationMethod, decision.ProductPhotoUrl, initialDuty = GetInitialDuty(decision), initialDutyCurrency = GetInitialDutyCurrency(decision), source = decision.InitialDuty.HasValue ? "Phase 1 initial duty" : "Phase 1 reference value fallback", decision.DeclaredPriceAmount, decision.DeclaredPriceCurrency, decision.DeclaredPriceConvertedAmount, decision.DeclaredPriceConvertedCurrency, decision.DeclaredPriceExchangeRate, decision.DeclaredPriceExchangeRateSource, decision.DeclaredPriceExchangeRateDate, decision.ReceiptFileName, decision.ReceiptContentType, decision.ReceiptFileSize, decision.ReceiptSha256, decision.ReceiptUploadedAt },
         phase2 = phase2 is null ? null : new
         {
@@ -482,6 +525,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
             taxLines = phase2.TaxLines.OrderBy(x => x.Order).Select(tax => new { tax.Id, tax.Name, tax.CalculationType, tax.Value, tax.RecommendedValue, tax.Currency, tax.Order, tax.CalculationBasis, tax.BaseAmount, tax.CalculatedAmount, tax.Notes, tax.Status, tax.SourceReference, tax.IsApplicable })
         }
     };
+    }
 
     private bool CanAccess(ValuationDecision decision) { if (string.IsNullOrWhiteSpace(decision.OfficerSubjectId)) return true; var subject = CurrentSubject(); return string.Equals(decision.OfficerSubjectId, subject, StringComparison.OrdinalIgnoreCase) || string.Equals(decision.OfficerSubjectId, User.Identity?.Name, StringComparison.OrdinalIgnoreCase); }
     private string CurrentSubject() => User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";

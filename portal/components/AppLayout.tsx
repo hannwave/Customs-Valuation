@@ -29,6 +29,7 @@ const officerSessionPaths = [...officerOnlyPaths];
 const customsAdminRemovedPaths = ["/valuation-decisions", "/reports"];
 const officerRestrictedPaths = ["/analytics", "/reports", "/valuation-decisions"];
 function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[] {
+  if (role === "Importer") return [{ label: "IMPORTER", links: [{ href: "/importer", key: "importer", label: "My declarations", icon: FiFileText }] }];
   if (role === "SystemAdministrator") return [
     { label: "SYSTEM ADMINISTRATION", links: [{ href: "/dashboard", key: "dashboard", label: "System overview", icon: FiGrid },
       { href: "/administration", key: "administration", label: "Users and access", icon: FiUsers },
@@ -53,7 +54,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     { label: "ACTIVITY", links: [{ href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
   ] : [];
   return [
-    { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
+    { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/importer-review", key: "importerReview", label: "Importer submissions", icon: FiFileText }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     ...sessionGroups,
     accountGroup,
   ];
@@ -70,7 +71,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [hasValuationSession, setHasValuationSession] = useState(false);
   const [notifications, setNotifications] = useState<WorkspaceNotifications | null>(null);
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
-  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact";
+  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact" || pathname === "/importer" || pathname === "/importer/register";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
@@ -131,6 +132,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       window.removeEventListener("valuation-session-updated", syncSession);
     };
   }, []);
+
+  useEffect(() => {
+    if (profile?.user.role === "Importer" && !pathname.startsWith("/importer")) window.location.replace("/importer");
+  }, [pathname, profile]);
 
   useEffect(() => {
     if (profile?.user.role === "CustomsOfficer" && officerRestrictedPaths.some(path => pathname === path || pathname.startsWith(`${path}/`))) {

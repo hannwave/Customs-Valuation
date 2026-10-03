@@ -5,19 +5,22 @@ public static class AccessRules
     public const string SystemAdmin = "SystemAdministrator";
     public const string CustomsAdmin = "CustomsAdministrator";
     public const string Officer = "CustomsOfficer";
+    public const string Importer = "Importer";
     public static string? NormalizeRole(string? role) => role?.Replace("_", "").Replace(" ", "").ToUpperInvariant() switch
     {
         "SYSTEMADMIN" or "SYSTEMADMINISTRATOR" => SystemAdmin,
         "CUSTOMSADMIN" or "CUSTOMSADMINISTRATOR" => CustomsAdmin,
         "CUSTOMSOFFICER" => Officer,
+        "IMPORTER" => Importer,
         _ => null
     };
-    public static string Code(string role) => NormalizeRole(role) switch { SystemAdmin => "SYSTEM_ADMIN", CustomsAdmin => "CUSTOMS_ADMIN", Officer => "CUSTOMS_OFFICER", _ => "" };
+    public static string Code(string role) => NormalizeRole(role) switch { SystemAdmin => "SYSTEM_ADMIN", CustomsAdmin => "CUSTOMS_ADMIN", Officer => "CUSTOMS_OFFICER", Importer => "IMPORTER", _ => "" };
     public static string[] Permissions(string role) => NormalizeRole(role) switch
     {
         SystemAdmin => [.. Shared, "users.manage_all", "roles.manage", "permissions.manage", "customs_admin.manage", "locations.manage", "hs_codes.manage", "hs_revisions.manage", "price_sources.manage", "exchange_rates.configure", "integrations.manage", "system_settings.manage", "audit.view_global", "valuations.review_global"],
         CustomsAdmin => [.. Shared, "locations.view_assigned", "operations.view_assigned", "workload.view_assigned", "valuations.review_assigned", "audit.view_assigned"],
         Officer => [.. Shared, "reference_prices.view", "historical_prices.view", "outliers.view", "outliers.review", "locations.view_assigned", "valuation.create", "valuation.update_own", "valuation.submit", "audit.view_own"],
+        Importer => ["import_declarations.create", "import_declarations.view_own"],
         _ => []
     };
     private static readonly string[] Shared = ["hs_codes.view", "hs_revisions.view"];
