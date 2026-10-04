@@ -146,6 +146,7 @@ public sealed class DecisionConfiguration : IEntityTypeConfiguration<ValuationDe
         b.Property(x => x.ReceiptContentType).HasMaxLength(100);
         b.Property(x => x.ReceiptSha256).HasMaxLength(64);
         b.Property(x => x.LocationSnapshotJson).HasColumnType("jsonb");
+        b.Property(x => x.FobCifCalculationJson).HasColumnType("jsonb").IsRequired();
         b.Property(x => x.InitialDuty).HasPrecision(24, 8);
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(x => x.Evidence).WithOne().HasForeignKey(x => x.DecisionId).OnDelete(DeleteBehavior.Restrict);

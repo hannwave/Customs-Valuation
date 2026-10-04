@@ -34,6 +34,9 @@ public sealed class ValuationDecision
     public Guid? LocationId { get; set; }
     public string LocationSnapshotJson { get; set; } = "{}";
     public string EvidenceNotes { get; set; } = "";
+    // Server-calculated origin-country FOB plus freight and insurance. The
+    // JSON snapshot keeps the source document, inputs, FX rate and CIF result.
+    public string FobCifCalculationJson { get; set; } = "{}";
     // Customer-declared transaction price and receipt evidence captured in
     // Phase 1. Legacy records remain nullable and are shown as not captured.
     public decimal? DeclaredPriceAmount { get; set; }

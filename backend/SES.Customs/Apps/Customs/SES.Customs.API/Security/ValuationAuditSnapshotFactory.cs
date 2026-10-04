@@ -88,7 +88,8 @@ internal static class ValuationAuditSnapshotFactory
                 assessment?.AdjustmentReason,
                 assessment?.Notes,
                 assessment?.FinalAmount,
-                assessment?.CalculationRuleVersion
+                assessment?.CalculationRuleVersion,
+                fobCifCalculation = ReadFobCifCalculation(decision.FobCifCalculationJson)
             })
         };
     }
@@ -115,6 +116,19 @@ internal static class ValuationAuditSnapshotFactory
         {
             return null;
         }
+    }
+
+    private static JsonElement? ReadFobCifCalculation(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.EnumerateObject().Any()
+                ? document.RootElement.Clone()
+                : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     private static string? FirstInternationalPhoto(string? json)

@@ -34,6 +34,13 @@ export interface CustomerTransactionEvidence {
   receiptFileSize: number | null;
 }
 
+export interface OriginFobEvidence {
+  amount: number | null;
+  currency: string;
+  freightAmount: number | null;
+  insuranceAmount: number | null;
+}
+
 export interface ValuationSession {
   id: string;
   query: string;
@@ -44,6 +51,7 @@ export interface ValuationSession {
   customsBenchmark?: CustomsTradeBenchmark | null;
   historical?: HistoricalSessionEvidence | null;
   customerTransaction?: CustomerTransactionEvidence | null;
+  originFob?: OriginFobEvidence | null;
   preferredCurrency?: string;
   selectedSource?: string;
   createdAt: string;

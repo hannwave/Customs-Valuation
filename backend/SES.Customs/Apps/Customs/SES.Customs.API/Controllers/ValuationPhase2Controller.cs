@@ -516,7 +516,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
             importer.IsCommercialProduct, importer.IsMachineryOrEquipment, importer.Quantity, importer.Unit,
             requestedTreatments = JsonSerializer.Deserialize<string[]>(importer.RequestedTreatmentsJson) ?? []
         },
-        phase1 = new { hsCodeId = decision.HsCodeId, decision.ProductId, decision.ProductName, decision.PurchaseCountryCode, decision.PurchaseCountryName, decision.SelectedPriceSource, decision.ValuationMethod, decision.ProductPhotoUrl, initialDuty = GetInitialDuty(decision), initialDutyCurrency = GetInitialDutyCurrency(decision), source = decision.InitialDuty.HasValue ? "Phase 1 initial duty" : "Phase 1 reference value fallback", decision.DeclaredPriceAmount, decision.DeclaredPriceCurrency, decision.DeclaredPriceConvertedAmount, decision.DeclaredPriceConvertedCurrency, decision.DeclaredPriceExchangeRate, decision.DeclaredPriceExchangeRateSource, decision.DeclaredPriceExchangeRateDate, decision.ReceiptFileName, decision.ReceiptContentType, decision.ReceiptFileSize, decision.ReceiptSha256, decision.ReceiptUploadedAt },
+        phase1 = new { hsCodeId = decision.HsCodeId, decision.ProductId, decision.ProductName, decision.PurchaseCountryCode, decision.PurchaseCountryName, decision.SelectedPriceSource, decision.ValuationMethod, decision.ProductPhotoUrl, initialDuty = GetInitialDuty(decision), initialDutyCurrency = GetInitialDutyCurrency(decision), source = decision.InitialDuty.HasValue ? "Phase 1 initial duty" : "Phase 1 reference value fallback", fobCifCalculation = ReadFobCifCalculation(decision.FobCifCalculationJson), decision.DeclaredPriceAmount, decision.DeclaredPriceCurrency, decision.DeclaredPriceConvertedAmount, decision.DeclaredPriceConvertedCurrency, decision.DeclaredPriceExchangeRate, decision.DeclaredPriceExchangeRateSource, decision.DeclaredPriceExchangeRateDate, decision.ReceiptFileName, decision.ReceiptContentType, decision.ReceiptFileSize, decision.ReceiptSha256, decision.ReceiptUploadedAt },
         phase2 = phase2 is null ? null : new
         {
             phase2.Id, phase2.Status, phase2.OriginalHsCodeId, phase2.SelectedHsCodeId, phase2.CustomsValueAmount, phase2.CustomsValueCurrency, phase2.Quantity, phase2.Unit, phase2.OriginCountry, phase2.ProductCategory,
@@ -531,6 +531,18 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
     private string CurrentSubject() => User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "unknown";
     private static decimal GetInitialDuty(ValuationDecision decision) => decision.InitialDuty ?? decision.SelectedReferenceValue;
     private static string GetInitialDutyCurrency(ValuationDecision decision) => string.IsNullOrWhiteSpace(decision.InitialDutyCurrency) ? (string.IsNullOrWhiteSpace(decision.Currency) ? "ETB" : decision.Currency) : decision.InitialDutyCurrency;
+    private static JsonElement? ReadFobCifCalculation(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.EnumerateObject().Any()
+                ? document.RootElement.Clone()
+                : null;
+        }
+        catch (JsonException) { return null; }
+    }
     private static string? ProductName(string? evidenceNotes)
     {
         if (string.IsNullOrWhiteSpace(evidenceNotes)) return null;
