@@ -23,6 +23,7 @@ import { clearValuationSession, readValuationSession, updateValuationSession, wr
 import { officerNoteIssue } from "@/lib/officer-note-quality";
 
 type Phase = "one" | "two";
+type ProductType = "COMMODITY" | "MANUFACTURING";
 
 function PhaseBar({ phase, onChange, phase2Ready }: { phase: Phase; onChange: (next: Phase) => void; phase2Ready: boolean }) {
   return <nav className={`phase-bar phase-bar--${phase}`} aria-label="Officer valuation phases">
@@ -104,6 +105,9 @@ function HistoricalPriceCard({ historical, internationalPrice, currency }: { his
 
 function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: { profile: WorkspaceProfile; onSubmitted: () => void; importDeclaration: ImporterDeclaration | null }) {
   const [query, setQuery] = useState("");
+  const [productType, setProductType] = useState<ProductType>("COMMODITY");
+  const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
   const [market, setMarket] = useState("us");
   const [purchaseCountry, setPurchaseCountry] = useState("");
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
@@ -163,6 +167,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     const active = readValuationSession();
     if (!active) return;
     setQuery(active.query); setMarket(active.market); setPurchaseCountry(active.purchaseCountryCode ?? ""); setInternational(active.international); setHistorical(active.historical ?? null);
+    if (active.productType) setProductType(active.productType);
+    setBrand(active.brand ?? ""); setModel(active.model ?? "");
     setCustomsBenchmark(active.customsBenchmark ?? null);
     if (active.international || active.historical || active.customsBenchmark) setSearchedTerm(active.query);
     if (active.hsCode) setHsInput(active.hsCode);
@@ -186,6 +192,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   useEffect(() => {
     if (!importDeclaration) return;
     setQuery(importDeclaration.productName); setPurchaseCountry(""); setSelected("internationalMedian");
+    setProductType(importDeclaration.importPurpose === "MANUFACTURING" ? "MANUFACTURING" : "COMMODITY");
+    setBrand(importDeclaration.brand ?? ""); setModel(importDeclaration.model ?? "");
     setFobPrice(""); setFobCurrency("USD"); setFreightAmount(""); setInsuranceAmount(""); setFobCifConversion(null);
     if (importDeclaration.confirmedHsCodeId) void getPhase2HsCode(importDeclaration.confirmedHsCodeId)
       .then(item => { setHsCode(item); setHsInput(displayHsCode(item)); }).catch(() => setError("The verified tariff item could not be loaded."));
@@ -211,7 +219,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
       if (chosen) {
         setHsCode(chosen);
         setHsInput(displayHsCode(chosen));
-        updateValuationSession({ hsCodeId: chosen.id, hsCode: displayHsCode(chosen) });
+        if (!automatic) setQuery(chosen.descriptionEn);
+        updateValuationSession({
+          ...(automatic ? {} : { query: chosen.descriptionEn }),
+          hsCodeId: chosen.id,
+          hsCode: displayHsCode(chosen),
+        });
       } else {
         setHsMessage(result.items.length ? "Choose the correct tariff line below." : "No confident HS match. Search by code or product description, then choose a tariff line.");
       }
@@ -238,8 +251,10 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   }
 
   function chooseHs(item: HsCode) {
+    const descriptionFromCode = hsInput.trim().replace(/\D/g, "").length >= 4 ? item.descriptionEn : null;
     setHsCode(item);
     setHsInput(displayHsCode(item));
+    if (descriptionFromCode) setQuery(descriptionFromCode);
     setHsCandidates([]);
     setHsMessage("");
     setCustomsBenchmark(null);
@@ -248,12 +263,12 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     if (selected === "customsBenchmark") setSelected("internationalMedian");
     ++hsLookupSerial.current;
     setHsBusy(false);
-    updateValuationSession({ hsCodeId: item.id, hsCode: displayHsCode(item), customsBenchmark: null, selectedValue: null });
+    updateValuationSession({ query: descriptionFromCode ?? query, hsCodeId: item.id, hsCode: displayHsCode(item), customsBenchmark: null, selectedValue: null });
   }
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const term = query.trim();
+    const term = query.trim() || hsCode?.descriptionEn.trim() || "";
     if (term.length < 2) { setError("Enter a product description with at least two characters."); return; }
     if (!purchaseCountry) { setError("Select the country where the item was bought."); document.getElementById("valuation-purchase-country")?.focus(); return; }
     if (!Number.isFinite(Number(declaredPrice)) || Number(declaredPrice) <= 0) { setError("Enter the customer’s original price before searching."); document.getElementById("customer-price-input")?.focus(); return; }
@@ -270,6 +285,9 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     writeValuationSession({
       id: `valuation-${Date.now()}`,
       query: term,
+      productType,
+      brand: productType === "COMMODITY" ? brand.trim() : "",
+      model: productType === "COMMODITY" ? model.trim() : "",
       market,
       purchaseCountryCode: purchaseCountry,
       purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
@@ -332,7 +350,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   const declaredAmount = Number(declaredPrice);
   const hasDeclaredAmount = Number.isFinite(declaredAmount) && declaredAmount > 0;
   const hasRequiredCustomerEvidence = hasDeclaredAmount && Boolean(receiptFile);
-  const canSearch = query.trim().length >= 2 && Boolean(purchaseCountry) && hasRequiredCustomerEvidence && !busy;
+  const canSearch = query.trim().length >= 2 && (productType === "MANUFACTURING" || Boolean(brand.trim() && model.trim())) && Boolean(purchaseCountry) && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
   const originCertificate = importDeclaration?.documents.find(document => document.kind === "CERTIFICATE_OF_ORIGIN");
   const fobAmount = Number(fobPrice);
@@ -454,6 +472,9 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
       purchaseCountryCode: purchaseCountry,
       purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
       selectedSource: selected,
+      productType,
+      brand: productType === "COMMODITY" ? brand.trim() : "",
+      model: productType === "COMMODITY" ? model.trim() : "",
       customerTransaction: {
         amount: Number.isFinite(Number(declaredPrice)) && Number(declaredPrice) > 0 ? Number(declaredPrice) : null,
         currency: declaredCurrency,
@@ -473,13 +494,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
         insuranceAmount: insuranceAmount.trim() && Number.isFinite(Number(insuranceAmount)) ? Number(insuranceAmount) : null,
       },
     });
-  }, [currency, selected, purchaseCountry, countryOptions, declaredPrice, declaredCurrency, declaredConversion, receiptFile, fobPrice, fobCurrency, freightAmount, insuranceAmount]);
+  }, [currency, selected, purchaseCountry, countryOptions, declaredPrice, declaredCurrency, declaredConversion, receiptFile, fobPrice, fobCurrency, freightAmount, insuranceAmount, productType, brand, model]);
 
   async function recordDecision() {
     const parsedSelectedValue = Number(selectedValue);
 
     if (justificationIssue) { setError(justificationIssue); return; }
     if (!Number.isFinite(parsedSelectedValue) || parsedSelectedValue <= 0) { setError("Select a valid customs value before submitting the valuation."); return; }
+    if (productType === "COMMODITY" && (!brand.trim() || !model.trim())) { setError("Enter the commodity brand and model."); document.getElementById(!brand.trim() ? "valuation-product-brand" : "valuation-product-model")?.focus(); return; }
     if (!Number.isFinite(Number(declaredPrice)) || Number(declaredPrice) <= 0) { setError("Enter the original price paid by the customer."); return; }
     if (!purchaseCountry) { setError("Select the country where the item was bought."); return; }
     if (!declaredConversion || declaredConversion.to !== currency) { setError(`The customer's original price has not been converted to ${currency} yet.`); return; }
@@ -507,7 +529,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
        const productPhotoUrl = international?.items.find(item => item.thumbnailUrl)?.thumbnailUrl ?? null;
        const valuationMethod = ({ internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark", declaredPrice: "Transaction value", originFobCif: "Origin-country FOB plus freight and insurance (CIF)", custom: "Officer-selected customs value" } as Record<EvidenceSource, string>)[selected];
        const evidenceSnapshot = {
-          product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
+          product: query.trim(), productType, brand: productType === "COMMODITY" ? brand.trim() : null, model: productType === "COMMODITY" ? model.trim() : null,
+          hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
           importerDeclaration: importDeclaration ? { id: importDeclaration.id, reference: importDeclaration.reference, purpose: importDeclaration.importPurpose, originCountryCode: importDeclaration.originCountryCode, originCountryName: importDeclaration.originCountryName, certificateOfOrigin: originCertificate?.fileName ?? null, requestedTreatments: importDeclaration.requestedTreatments } : null,
           selectedCurrency, supportingSource: selected, valuationMethod, purchaseCountryCode: purchaseCountry, purchaseCountryName, productPhoto: productPhotoUrl, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
@@ -572,7 +595,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setFobPrice(""); setFobCurrency("USD"); setFreightAmount(""); setInsuranceAmount(""); setFobCifConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setProductType(importDeclaration?.importPurpose === "MANUFACTURING" ? "MANUFACTURING" : "COMMODITY"); setBrand(importDeclaration?.brand ?? ""); setModel(importDeclaration?.model ?? ""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setFobPrice(""); setFobCurrency("USD"); setFreightAmount(""); setInsuranceAmount(""); setFobCifConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
@@ -584,61 +607,80 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     <p role="status">{recording ? "Saving price review…" : "Not submitted — current edits and receipt selection are unsaved"}</p>
     {/* ── Unified Search Card ── */}
     <div className="valuation-search-card">
-      <form id="valuation-search-form" className="valuation-search-row" onSubmit={search} noValidate>
-        <div className="valuation-search-product">
-          <label className="valuation-field-label" htmlFor="valuation-product-query">Product to search</label>
-          <div className="valuation-search-input-wrap">
-            <FiSearch aria-hidden="true" />
-          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
+      <form id="valuation-search-form" className="valuation-search-form" onSubmit={search} noValidate>
+        <div className="valuation-search-row valuation-product-hs-row">
+          <div className="valuation-search-product">
+            <label className="valuation-field-label" htmlFor="valuation-product-query">Product to search</label>
+            <div className="valuation-search-input-wrap">
+              <FiSearch aria-hidden="true" />
+              <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or description..." value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
+            </div>
+          </div>
+          <div className="valuation-hs-lookup">
+            <label className="valuation-field-label" htmlFor="valuation-hs-code">HS code</label>
+            <div className="valuation-hs-control">
+              <input id="valuation-hs-code" value={hsInput} onChange={event => editHs(event.currentTarget.value)} placeholder="Search or enter HS code manually..." autoComplete="off" aria-autocomplete="list" aria-expanded={hsCandidates.length > 0} />
+              {hsCode && <span className="valuation-hs-confirmed"><FiCheckCircle /> Matched</span>}
+            </div>
+            {hsCode && <p className="valuation-hs-description">{hsCode.descriptionEn}{hsCode.duty ? ` · Duty ${hsCode.duty}` : ""}</p>}
+            {hsMessage && <p className="valuation-hs-message" role="status">{hsMessage}</p>}
+            {hsCandidates.length > 0 && !hsCode && <div className="valuation-hs-candidates" role="listbox" aria-label="Matching HS codes">{hsCandidates.map(item => <button type="button" role="option" aria-selected={false} key={item.id} onClick={() => chooseHs(item)}><strong>{displayHsCode(item)}</strong><span>{item.descriptionEn}</span></button>)}</div>}
           </div>
         </div>
-        <div className="valuation-market-select">
-          <label className="valuation-field-label" htmlFor="valuation-market">International market</label>
-          <div className="valuation-market-control">
-            <FiGlobe aria-hidden="true" />
-            <select id="valuation-market" aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}>
-              <option value="us">US - USD</option><option value="gb">UK - GBP</option><option value="de">DE - EUR</option><option value="ae">UAE - AED</option><option value="za">ZA - ZAR</option>
+        <div className="valuation-search-row valuation-product-type-row">
+          <label className="valuation-product-detail-field" htmlFor="valuation-product-type">
+            <span className="valuation-field-label">Product type</span>
+            <select id="valuation-product-type" value={productType} onChange={event => setProductType(event.currentTarget.value as ProductType)}>
+              <option value="COMMODITY">Commodity</option>
+              <option value="MANUFACTURING">Manufacturing</option>
             </select>
+          </label>
+          {productType === "COMMODITY" ? <>
+            <label className="valuation-product-detail-field" htmlFor="valuation-product-brand"><span className="valuation-field-label">Brand</span><input id="valuation-product-brand" value={brand} onChange={event => setBrand(event.currentTarget.value)} placeholder="Enter brand" required /></label>
+            <label className="valuation-product-detail-field" htmlFor="valuation-product-model"><span className="valuation-field-label">Model</span><input id="valuation-product-model" value={model} onChange={event => setModel(event.currentTarget.value)} placeholder="Enter model" required /></label>
+          </> : <p className="valuation-manufacturing-tax-note" role="status">All taxes and fees will be marked not applicable for Manufacturing.</p>}
+        </div>
+        <div className="valuation-search-row valuation-transaction-row">
+          <div className="valuation-market-select">
+            <label className="valuation-field-label" htmlFor="valuation-market">International market</label>
+            <div className="valuation-market-control">
+              <FiGlobe aria-hidden="true" />
+              <select id="valuation-market" aria-label="International market" value={market} onChange={event => setMarket(event.currentTarget.value)}>
+                <option value="us">US - USD</option><option value="gb">UK - GBP</option><option value="de">DE - EUR</option><option value="ae">UAE - AED</option><option value="za">ZA - ZAR</option>
+              </select>
+            </div>
           </div>
-        </div>
-        <div className="valuation-country-select">
-          <label className="valuation-field-label" htmlFor="valuation-purchase-country">Country where bought</label>
-          <Select
-            id="valuation-purchase-country"
-            title="Saved with the Phase One search and valuation audit record."
-            placeholder="Select country"
-            searchable
-            clearable
-            limit={20}
-            nothingFoundMessage="No country found"
-            data={countryOptions.map(country => ({ value: country.code, label: country.name }))}
-            value={purchaseCountry || null}
-            onChange={value => { setPurchaseCountry(value ?? ""); setError(""); }}
-            leftSection={purchaseCountry ? <span className={`flag:${purchaseCountry}`} aria-hidden="true" /> : <FiGlobe aria-hidden="true" />}
-            renderOption={({ option }) => <span className="valuation-country-option"><span className={`flag:${option.value}`} aria-hidden="true" />{option.label}</span>}
-            classNames={{ input: "valuation-country-input" }}
-            required
-          />
-        </div>
-        <div className="valuation-price-group">
-          <label className="valuation-price-label" htmlFor="customer-price-input">Price paid by customer</label>
-          <div className="valuation-price-input-wrap">
-            <span className="valuation-price-icon"><FiFileText aria-hidden="true" /></span>
-            <input id="customer-price-input" type="number" min="0.01" step="0.01" placeholder="e.g. 250.00" value={declaredPrice} aria-required="true" onChange={event => { setDeclaredPrice(event.currentTarget.value); setError(""); }} />
-            <select aria-label="Invoice currency" value={declaredCurrency} onChange={event => setDeclaredCurrency(event.currentTarget.value)}>{["USD","EUR","GBP","AED","ZAR","ETB"].map(code => <option key={code}>{code}</option>)}</select>
+          <div className="valuation-country-select">
+            <label className="valuation-field-label" htmlFor="valuation-purchase-country">Country where bought</label>
+            <Select
+              id="valuation-purchase-country"
+              title="Saved with the Phase One search and valuation audit record."
+              placeholder="Select country"
+              searchable
+              clearable
+              limit={20}
+              nothingFoundMessage="No country found"
+              data={countryOptions.map(country => ({ value: country.code, label: country.name }))}
+              value={purchaseCountry || null}
+              onChange={value => { setPurchaseCountry(value ?? ""); setError(""); }}
+              leftSection={purchaseCountry ? <span className={`flag:${purchaseCountry}`} aria-hidden="true" /> : <FiGlobe aria-hidden="true" />}
+              renderOption={({ option }) => <span className="valuation-country-option"><span className={`flag:${option.value}`} aria-hidden="true" />{option.label}</span>}
+              classNames={{ input: "valuation-country-input" }}
+              required
+            />
           </div>
+          <div className="valuation-price-group">
+            <label className="valuation-price-label" htmlFor="customer-price-input">Price paid by customer</label>
+            <div className="valuation-price-input-wrap">
+              <span className="valuation-price-icon"><FiFileText aria-hidden="true" /></span>
+              <input id="customer-price-input" type="number" min="0.01" step="0.01" placeholder="e.g. 250.00" value={declaredPrice} aria-required="true" onChange={event => { setDeclaredPrice(event.currentTarget.value); setError(""); }} />
+              <select aria-label="Invoice currency" value={declaredCurrency} onChange={event => setDeclaredCurrency(event.currentTarget.value)}>{["USD","EUR","GBP","AED","ZAR","ETB"].map(code => <option key={code}>{code}</option>)}</select>
+            </div>
+          </div>
+          <button className="valuation-search-btn" type="submit" aria-describedby="valuation-search-requirement" aria-busy={busy || undefined} disabled={!canSearch}><FiSearch />{busy ? "Searching…" : "Search"}</button>
+          <button className="valuation-clear-btn" type="button" onClick={clearAll}><FiX />Clear</button>
         </div>
-        <button className="valuation-search-btn" type="submit" aria-describedby="valuation-search-requirement" aria-busy={busy || undefined} disabled={!canSearch}><FiSearch />{busy ? "Searching…" : "Search"}</button>
-        <button className="valuation-clear-btn" type="button" onClick={clearAll}><FiX />Clear</button>
       </form>
-
-      <div className="valuation-hs-lookup">
-        <div><label htmlFor="valuation-hs-code">HS code</label><small>{hsCode ? "Matched to the active Ethiopian tariff. You can change it." : hsBusy ? "Matching the product to the tariff…" : "Search the product first, or enter an HS code manually."}</small></div>
-        <div className="valuation-hs-control"><input id="valuation-hs-code" value={hsInput} onChange={event => editHs(event.currentTarget.value)} placeholder="Search or enter HS code" autoComplete="off" aria-autocomplete="list" aria-expanded={hsCandidates.length > 0} />{hsCode && <span className="valuation-hs-confirmed"><FiCheckCircle /> Matched</span>}</div>
-        {hsCode && <p className="valuation-hs-description">{hsCode.descriptionEn}{hsCode.duty ? ` · Duty ${hsCode.duty}` : ""}</p>}
-        {hsMessage && <p className="valuation-hs-message" role="status">{hsMessage}</p>}
-        {hsCandidates.length > 0 && !hsCode && <div className="valuation-hs-candidates" role="listbox" aria-label="Matching HS codes">{hsCandidates.map(item => <button type="button" role="option" aria-selected={false} key={item.id} onClick={() => chooseHs(item)}><strong>{displayHsCode(item)}</strong><span>{item.descriptionEn}</span></button>)}</div>}
-      </div>
 
       {/* ── Upload Area ── */}
       <div className="valuation-upload-row">
