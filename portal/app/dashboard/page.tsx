@@ -10,6 +10,7 @@ import {
 } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { FeedbackToast } from "@/components/FeedbackToast";
+import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
 import { PhaseTwoOverview } from "@/components/PhaseTwoOverview";
 import { BenchmarkFetchChecks } from "@/components/BenchmarkFetchChecks";
 import { getPhase2HsCode, loadPhase2, searchPhase2HsCodes } from "@/lib/phase2Api";
@@ -55,9 +56,10 @@ function DashboardHeader({ profile, eyebrow, title, description, actions }: { pr
   return <div className="dashboard-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lead">{description}</p></div><div className="dashboard-heading-side"><span className="workspace-tag"><FiShield />{roleLabel(profile.user.role)}</span>{actions}</div></div>;
 }
 
-type EvidenceSource = "internationalMedian" | "internationalMean" | "customsBenchmark" | "declaredPrice" | "custom";
+type EvidenceSource = "internationalMedian" | "internationalMean" | "customsBenchmark" | "declaredPrice" | "originFobCif" | "custom";
 type ConvertedPrice = { convertedAmount: number; to: string; rate: number; source: string; date?: string };
 type CountryOption = { code: string; name: string };
+const FOB_CURRENCIES = ["USD", "EUR", "GBP", "AED", "ZAR", "ETB", "CNY", "INR", "TRY", "SAR", "JPY", "KRW", "CAD", "AUD", "CHF", "SGD", "HKD", "EGP", "KWD", "QAR", "BHD", "JOD", "KES"];
 
 const COUNTRY_CODES = "AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW".split(" ");
 
@@ -166,6 +168,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   const [recordNotice, setRecordNotice] = useState("");
   const [declaredPrice, setDeclaredPrice] = useState("");
   const [declaredCurrency, setDeclaredCurrency] = useState("USD");
+  const [fobPrice, setFobPrice] = useState("");
+  const [fobCurrency, setFobCurrency] = useState("USD");
+  const [freightAmount, setFreightAmount] = useState("");
+  const [insuranceAmount, setInsuranceAmount] = useState("");
+  const [fobCifConversion, setFobCifConversion] = useState<ConvertedPrice | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -202,13 +209,20 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
       setDeclaredPrice(active.customerTransaction.amount?.toString() ?? "");
       setDeclaredCurrency(active.customerTransaction.currency || "USD");
     }
-    if (["internationalMedian", "internationalMean", "customsBenchmark", "declaredPrice", "custom"].includes(active.selectedSource ?? ""))
+    if (["internationalMedian", "internationalMean", "customsBenchmark", "declaredPrice", "originFobCif", "custom"].includes(active.selectedSource ?? ""))
       setSelected(active.selectedSource as EvidenceSource);
+    if (active.originFob) {
+      setFobPrice(active.originFob.amount?.toString() ?? "");
+      setFobCurrency(active.originFob.currency || "USD");
+      setFreightAmount(active.originFob.freightAmount?.toString() ?? "");
+      setInsuranceAmount(active.originFob.insuranceAmount?.toString() ?? "");
+    }
   }, []);
 
   useEffect(() => {
     if (!importDeclaration) return;
-    setQuery(importDeclaration.productName); setPurchaseCountry(importDeclaration.originCountryCode);
+    setQuery(importDeclaration.productName); setPurchaseCountry(""); setSelected("internationalMedian");
+    setFobPrice(""); setFobCurrency("USD"); setFreightAmount(""); setInsuranceAmount(""); setFobCifConversion(null);
     if (importDeclaration.confirmedHsCodeId) void getPhase2HsCode(importDeclaration.confirmedHsCodeId)
       .then(item => { setHsCode(item); setHsInput(displayHsCode(item)); }).catch(() => setError("The verified tariff item could not be loaded."));
     const invoice = importDeclaration.documents.find(document => document.kind === "COMMERCIAL_INVOICE");
@@ -359,6 +373,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   const hasRequiredCustomerEvidence = hasDeclaredAmount && Boolean(receiptFile);
   const canSearch = query.trim().length >= 2 && Boolean(purchaseCountry) && hasRequiredCustomerEvidence && !busy;
   const declaredPreferredValue = declaredConversion?.to === currency ? declaredConversion.convertedAmount : null;
+  const originCertificate = importDeclaration?.documents.find(document => document.kind === "CERTIFICATE_OF_ORIGIN");
+  const fobAmount = Number(fobPrice);
+  const freightCost = Number(freightAmount);
+  const insuranceCost = Number(insuranceAmount);
+  const hasFobCifAmounts = Number.isFinite(fobAmount) && fobAmount > 0 && freightAmount.trim().length > 0 && Number.isFinite(freightCost) && freightCost >= 0 && insuranceAmount.trim().length > 0 && Number.isFinite(insuranceCost) && insuranceCost >= 0;
   const historicalInternationalValue = historical?.summary?.currentInternationalPrice ?? null;
   const benchmarkCodeDigits = (hsCode?.code ?? "").replace(/\D/g, "");
   const benchmarkHsCode = (benchmarkCodeDigits.length >= 6 ? benchmarkCodeDigits : (hsCode?.tariffItemNo ?? "").replace(/\D/g, "")).slice(0, 6);
@@ -374,9 +393,29 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     : selected === "internationalMean" ? international?.statistics?.mean
       : selected === "customsBenchmark" ? benchmarkPreferredValue
       : selected === "declaredPrice" ? declaredConversion?.convertedAmount
-        : Number(customValue);
+        : selected === "originFobCif" ? fobCifConversion?.convertedAmount
+          : Number(customValue);
   const selectedCurrency = currency;
   const hasResults = Boolean(searchedTerm || international || historical || customsBenchmark);
+
+  useEffect(() => {
+    if (!hasFobCifAmounts) { setFobCifConversion(null); return; }
+    const abort = new AbortController();
+    setFobCifConversion(null);
+    const timer = window.setTimeout(() => {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+      const token = getSessionAccessToken();
+      const total = fobAmount + freightCost + insuranceCost;
+      void fetch(`${base}/api/exchange-rates/convert?${new URLSearchParams({ amount: String(total), from: fobCurrency, to: currency })}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: abort.signal })
+        .then(async response => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.message ?? "FOB value conversion is unavailable."); return body; })
+        .then(result => {
+          if (!Number.isFinite(result.convertedAmount) || result.to !== currency) throw new Error("The currency service returned an invalid FOB conversion.");
+          setFobCifConversion(result as ConvertedPrice);
+        })
+        .catch(reason => { if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : "FOB value conversion is unavailable."); });
+    }, 300);
+    return () => { window.clearTimeout(timer); abort.abort(); };
+  }, [fobPrice, fobCurrency, freightAmount, insuranceAmount, currency, hasFobCifAmounts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -494,8 +533,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
         receiptContentType: receiptFile?.type || null,
         receiptFileSize: receiptFile?.size ?? null,
       },
+      originFob: {
+        amount: Number.isFinite(Number(fobPrice)) && Number(fobPrice) > 0 ? Number(fobPrice) : null,
+        currency: fobCurrency,
+        freightAmount: freightAmount.trim() && Number.isFinite(Number(freightAmount)) ? Number(freightAmount) : null,
+        insuranceAmount: insuranceAmount.trim() && Number.isFinite(Number(insuranceAmount)) ? Number(insuranceAmount) : null,
+      },
     });
-  }, [currency, selected, purchaseCountry, countryOptions, declaredPrice, declaredCurrency, declaredConversion, receiptFile]);
+  }, [currency, selected, purchaseCountry, countryOptions, declaredPrice, declaredCurrency, declaredConversion, receiptFile, fobPrice, fobCurrency, freightAmount, insuranceAmount]);
 
   async function recordDecision() {
     const parsedSelectedValue = Number(selectedValue);
@@ -506,6 +551,11 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     if (!purchaseCountry) { setError("Select the country where the item was bought."); return; }
     if (!declaredConversion || declaredConversion.to !== currency) { setError(`The customer's original price has not been converted to ${currency} yet.`); return; }
     if (!receiptFile) { setError("Attach the customer's PDF, JPG, or PNG receipt before continuing."); return; }
+    if (selected === "originFobCif") {
+      if (!importDeclaration || !originCertificate) { setError("An approved importer declaration with a Certificate of Origin is required for FOB valuation."); return; }
+      if (!hasFobCifAmounts) { setError("Enter a positive FOB value and explicit non-negative freight and insurance amounts. Enter 0 when there is no charge."); return; }
+      if (!fobCifConversion || fobCifConversion.to !== currency) { setError(`The FOB, freight and insurance total has not been converted to ${currency} yet.`); return; }
+    }
     setRecording(true); setError(""); setRecordNotice("");
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
@@ -522,10 +572,10 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
 
        const purchaseCountryName = countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry;
        const productPhotoUrl = international?.items.find(item => item.thumbnailUrl)?.thumbnailUrl ?? null;
-       const valuationMethod = ({ internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark", declaredPrice: "Transaction value", custom: "Officer-selected customs value" } as Record<EvidenceSource, string>)[selected];
+       const valuationMethod = ({ internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark", declaredPrice: "Transaction value", originFobCif: "Origin-country FOB plus freight and insurance (CIF)", custom: "Officer-selected customs value" } as Record<EvidenceSource, string>)[selected];
        const evidenceSnapshot = {
           product: query.trim(), hsCode: hsCode ? displayHsCode(hsCode) : null, searchQuery: query.trim(), selectedCustomsValue: parsedSelectedValue,
-          importerDeclaration: importDeclaration ? { id: importDeclaration.id, reference: importDeclaration.reference, purpose: importDeclaration.importPurpose, requestedTreatments: importDeclaration.requestedTreatments } : null,
+          importerDeclaration: importDeclaration ? { id: importDeclaration.id, reference: importDeclaration.reference, purpose: importDeclaration.importPurpose, originCountryCode: importDeclaration.originCountryCode, originCountryName: importDeclaration.originCountryName, certificateOfOrigin: originCertificate?.fileName ?? null, requestedTreatments: importDeclaration.requestedTreatments } : null,
           selectedCurrency, supportingSource: selected, valuationMethod, purchaseCountryCode: purchaseCountry, purchaseCountryName, productPhoto: productPhotoUrl, officer: { id: profile.user.id, name: profile.user.fullName },
          decidedAt: new Date().toISOString(), internationalEvidence: international?.items ?? [],
          customsTradeBenchmark: customsBenchmark,
@@ -548,6 +598,15 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
              exchangeRate: declaredConversion?.rate ?? null, exchangeRateSource: declaredConversion?.source ?? null,
              receiptFileName: receiptFile?.name ?? null, receiptContentType: receiptFile?.type ?? null, receiptFileSize: receiptFile?.size ?? null,
            },
+           originFobCif: selected === "originFobCif" && fobCifConversion ? {
+             originCountryCode: importDeclaration?.originCountryCode ?? null,
+             originCountryName: importDeclaration?.originCountryName ?? null,
+             certificateOfOrigin: originCertificate?.fileName ?? null,
+             fobAmount, freightAmount: freightCost, insuranceAmount: insuranceCost,
+             originalCurrency: fobCurrency, convertedAmount: fobCifConversion.convertedAmount,
+             convertedCurrency: currency, exchangeRate: fobCifConversion.rate,
+             exchangeRateSource: fobCifConversion.source, exchangeRateDate: fobCifConversion.date ?? null,
+           } : null,
          },
          outliers: { international: international?.statistics?.potentialOutliers ?? [] },
          tariff: { hsCodeId: hsCode?.id ?? null, hsCode: hsCode?.code ?? null, rate: hsCode?.duty ?? null, amount: null, source: hsCode ? "Matched against the active Ethiopian tariff; duty and tax assessment remains in Phase 2." : "HS classification will be reviewed in Phase 2." },
@@ -561,28 +620,65 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
        form.append("justification", justification.trim()); form.append("evidence", JSON.stringify(evidenceSnapshot));
        form.append("productName", query.trim()); form.append("purchaseCountryCode", purchaseCountry);
        form.append("selectedPriceSource", selected); form.append("valuationMethod", valuationMethod);
+       if (selected === "originFobCif") {
+         form.append("fobPriceAmount", String(fobAmount)); form.append("fobPriceCurrency", fobCurrency);
+         form.append("freightAmount", String(freightCost)); form.append("insuranceAmount", String(insuranceCost));
+       }
        if (productPhotoUrl) form.append("productPhotoUrl", productPhotoUrl);
        form.append("declaredPriceAmount", declaredPrice); form.append("declaredPriceCurrency", declaredCurrency); form.append("receipt", receiptFile);
        const token = getSessionAccessToken();
        const response = await fetch(`${base}/api/workspace/decisions/with-receipt`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
        const payload = await response.json().catch(() => ({}));
        if (!response.ok) throw new Error(payload.message ?? "The valuation and receipt could not be saved.");
-       const created = payload as { id: string; version: string };
+       const created = payload as { id: string; version: string; selectedReferenceValue?: number; currency?: string };
        const submitted = await workspaceApi<{ status: string }>(`/decisions/${created.id}/submit`, { method: "POST", body: JSON.stringify({ version: created.version, justification: justification.trim() }) });
-       updateValuationSession({ hsCodeId: hsCode?.id ?? null, hsCode: hsCode ? displayHsCode(hsCode) : "", selectedValue: parsedSelectedValue, selectedCurrency, selectedSource: selected, decisionId: created.id, phase1Submitted: submitted.status === "Submitted" });
+       updateValuationSession({ hsCodeId: hsCode?.id ?? null, hsCode: hsCode ? displayHsCode(hsCode) : "", selectedValue: created.selectedReferenceValue ?? parsedSelectedValue, selectedCurrency: created.currency ?? selectedCurrency, selectedSource: selected, decisionId: created.id, phase1Submitted: submitted.status === "Submitted" });
        setRecordNotice("Price Review submitted. Continuing to Final Assessment…");
        onSubmitted();
     } catch (exception) { setError(exception instanceof Error ? exception.message : "The valuation decision could not be saved."); }
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setCountryOriginFob(null); setBenchmarkConversion(null); setBenchmarkError(""); setCountryOriginFobError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => {
+    searchSerial.current++;
+    hsLookupSerial.current++;
+    clearValuationSession();
+    setQuery("");
+    setPurchaseCountry("");
+    setSearchedTerm("");
+    setInternational(null);
+    setHistorical(null);
+    setCustomsBenchmark(null);
+    setCountryOriginFob(null);
+    setBenchmarkConversion(null);
+    setBenchmarkError("");
+    setCountryOriginFobError("");
+    setHsCode(null);
+    setHsInput("");
+    setHsCandidates([]);
+    setHsMessage("");
+    setHsBusy(false);
+    setDeclaredPrice("");
+    setReceiptFile(null);
+    setDeclaredConversion(null);
+    setFobPrice("");
+    setFobCurrency("USD");
+    setFreightAmount("");
+    setInsuranceAmount("");
+    setFobCifConversion(null);
+    setSelected("internationalMedian");
+    setCustomValue("");
+    setJustification("");
+    setError("");
+    setRecordNotice("");
+  };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
     {/* ── Breadcrumb + Page Heading ── */}
     <nav className="valuation-breadcrumb" aria-label="Breadcrumb"><span>Home</span><FiChevronRight aria-hidden="true" /><strong>Valuation</strong></nav>
     <div className="valuation-page-heading"><h1>Search a product to begin valuation</h1><p>Find a product, add the required transaction evidence and get a valuation estimate.</p></div>
+    {importDeclaration && <section className="origin-fob-evidence"><div><span>Declared country of origin</span><strong>{importDeclaration.originCountryName} ({importDeclaration.originCountryCode})</strong><small>Check the Certificate of Origin before using the FOB valuation option.</small></div>{originCertificate ? <ImporterDocumentPreview declarationId={importDeclaration.id} kind="CERTIFICATE_OF_ORIGIN" label="Certificate of Origin" contentType={originCertificate.contentType} /> : <p role="alert">Certificate of Origin is missing; FOB valuation is unavailable.</p>}</section>}
 
     <p role="status">{recording ? "Saving price review…" : "Not submitted — current edits and receipt selection are unsaved"}</p>
     {/* ── Unified Search Card ── */}
@@ -710,12 +806,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
           </section>
         </div>
         <aside className="valuation-decision-panel">
-          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose market evidence, an HS-category customs trade benchmark, or the customer’s converted invoice price. Your selection is passed to Final Assessment.</p></div></div>
+          <div className="valuation-decision-title"><FiCheckCircle /><div><h3>Selected customs value</h3><p>Choose market evidence, an HS-category customs trade benchmark, the customer’s invoice price, or an origin FOB value with freight and insurance. The selected value goes to Final Assessment.</p></div></div>
           <div className="reference-options">
             <label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.median == null} checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International market median</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.median, currency)}</b></label>
             <label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.mean == null} checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.mean, currency)}</b></label>
             {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} title={!benchmarkIsPerItem ? `Reference only: reported per ${customsBenchmark.unit}; invoice quantity and units must be comparable.` : undefined} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {tradePeriod(customsBenchmark.period)} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} {!benchmarkIsPerItem && "(reference only)"} · {customsBenchmark.isMirror ? "export mirror" : "import"}{customsBenchmark.valuationBasis ? ` (${customsBenchmark.valuationBasis})` : ""} · category average</small></span><b>{benchmarkIsPerItem ? money(benchmarkPreferredValue, currency) : `${money(customsBenchmark.unitValue, "USD")} / ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}`}</b></label>}
             <label className={selected === "declaredPrice" ? "is-selected" : ""}><input type="radio" disabled={declaredConversion?.to !== currency || Number(declaredPrice) <= 0} checked={selected === "declaredPrice"} onChange={() => setSelected("declaredPrice")} /><span><strong>Customer’s original price paid</strong><small>{declaredPrice ? `Invoice ${declaredCurrency} ${Number(declaredPrice).toLocaleString()} · ${receiptFile ? "receipt attached" : "receipt required"}` : "Enter the invoice amount and attach its receipt above"}</small></span><b>{declaredConversion?.to === currency ? money(declaredConversion.convertedAmount, currency) : "—"}</b></label>
+            {importDeclaration && <label className={selected === "originFobCif" ? "is-selected" : ""}><input type="radio" disabled={!originCertificate} checked={selected === "originFobCif"} onChange={() => setSelected("originFobCif")} /><span><strong>Origin FOB + freight + insurance</strong><small>{originCertificate ? `${importDeclaration.originCountryName} · Certificate of Origin available` : "Requires a Certificate of Origin"}</small></span><b>{fobCifConversion?.to === currency ? money(fobCifConversion.convertedAmount, currency) : "—"}</b></label>}
+            {selected === "originFobCif" && <div className="origin-fob-entry"><p>Enter the FOB invoice value, freight, and insurance. The API converts their total to the assessment currency and carries it forward as CIF.</p><label>FOB amount<div className="origin-fob-amount"><input type="number" min="0.01" step="0.01" value={fobPrice} onChange={event => { setFobPrice(event.currentTarget.value); setError(""); }} aria-label="FOB amount" placeholder="Enter FOB amount" /><select aria-label="FOB and cost currency" value={fobCurrency} onChange={event => { setFobCurrency(event.currentTarget.value); setError(""); }}>{FOB_CURRENCIES.map(code => <option key={code}>{code}</option>)}</select></div></label><div className="origin-fob-costs"><label>Freight<input type="number" min="0" step="0.01" required value={freightAmount} onChange={event => { setFreightAmount(event.currentTarget.value); setError(""); }} placeholder="0.00" /></label><label>Insurance<input type="number" min="0" step="0.01" required value={insuranceAmount} onChange={event => { setInsuranceAmount(event.currentTarget.value); setError(""); }} placeholder="0.00" /></label></div><small>Enter 0 when there is no freight or insurance charge. Both amounts use {fobCurrency}.</small>{hasFobCifAmounts && <div className="origin-fob-total"><span>Estimated CIF in {currency}</span><strong>{fobCifConversion?.to === currency ? money(fobCifConversion.convertedAmount, currency) : "Converting…"}</strong></div>}</div>}
             <label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount · {currency}</small></span></label>
             {selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={"Enter amount in " + currency} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}
           </div>

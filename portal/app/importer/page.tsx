@@ -34,6 +34,14 @@ function errorMessage(reason: unknown, fallback: string) {
   return reason instanceof Error ? reason.message : fallback;
 }
 
+function ShipmentTimingNote() {
+  return <aside className="importer-shipment-timing" aria-label="Shipment timing">
+    <strong>Shipment timing</strong>
+    <p>Average shipment time is about 7 days; allow up to 10–15 days.</p>
+    <small>Use this as a planning estimate; actual timing may vary.</small>
+  </aside>;
+}
+
 function SelectedFilePreview({ file }: { file: File }) {
   const [url, setUrl] = useState("");
   useEffect(() => { const next = URL.createObjectURL(file); setUrl(next); return () => URL.revokeObjectURL(next); }, [file]);
@@ -177,14 +185,14 @@ export default function ImporterPage() {
     </button>)}</div>;
   }
 
-  if (!hasToken) return <main className="importer-shell"><header className="importer-top"><Link href="/"><Brand compact variant="dark" /></Link></header><div className="importer-card"><h1>Importer Portal</h1><p>Sign in or create an importer account to register imported goods.</p><div className="importer-actions"><Link className="importer-primary" href="/login?next=%2Fimporter">Sign in</Link><Link href="/importer/register">Create importer account</Link></div></div></main>;
+  if (!hasToken) return <main className="importer-shell"><header className="importer-top"><Link href="/"><Brand compact variant="dark" /></Link></header><div className="importer-card"><h1>Importer Portal</h1><p>Sign in or create an importer account to register imported goods.</p><ShipmentTimingNote /><div className="importer-actions"><Link className="importer-primary" href="/login?next=%2Fimporter">Sign in</Link><Link href="/importer/register">Create importer account</Link></div></div></main>;
   if (account && account.role !== "Importer") return <main className="importer-shell"><div className="importer-card"><h1>Importer account required</h1><p>This portal is for importer accounts. Your customs workspace uses a different role.</p><Link href="/dashboard">Return to workspace</Link></div></main>;
   return <main className="importer-shell"><FeedbackToast error={error || catalogError} success={notice} onDismissError={dismissError} onDismissSuccess={dismissNotice} onRetry={!error && catalogError ? retryCatalog : undefined} retryLabel="Retry catalogue" /><header className="importer-top"><Link href="/"><Brand compact variant="dark" /></Link><div><span>{account?.fullName ?? "Importer Portal"}</span><button type="button" onClick={() => { setSessionAccessToken(null); window.location.assign("/"); }}>Sign out</button></div></header>
     <div className="importer-wrap"><div className="importer-intro"><p className="importer-eyebrow">IMPORTER PORTAL</p><h1>Register imported goods</h1><p>Describe the item and attach your trade documents. A Customs Officer verifies the HS mapping and any tax treatment before assessment.</p></div>
       <div className="importer-grid"><section className="importer-card"><div className="importer-section-heading"><div><p className="importer-eyebrow">YOUR DECLARATIONS</p><h2>Submissions</h2></div><button type="button" onClick={() => chooseEdit(null)}>New declaration</button></div>
         {summaries.length ? <ul className="importer-list">{summaries.map(item => <li key={item.id}><strong>{item.productName}</strong><span>{item.reference} · {new Date(item.submittedAt).toLocaleDateString()}</span><small>{item.status.replaceAll("_", " ")}</small>{item.status === "INFORMATION_REQUESTED" && <button type="button" onClick={() => void loadForEdit(item.id)}>Add requested information</button>}</li>)}</ul> : <p>No declarations submitted yet.</p>}
       </section>
-      <section className="importer-card"><p className="importer-eyebrow">{editing ? `UPDATE ${editing.reference}` : "NEW SUBMISSION"}</p><h2>Item and shipment details</h2>
+      <section className="importer-card"><p className="importer-eyebrow">{editing ? `UPDATE ${editing.reference}` : "NEW SUBMISSION"}</p><h2>Item and shipment details</h2><ShipmentTimingNote />
         {editing?.reviewNote && <p className="importer-review-note"><strong>Officer request:</strong> {editing.reviewNote}</p>}
         <form key={editing?.id ?? "new"} className="importer-form" onSubmit={submit}>
           <fieldset><legend>1. Provisional tariff match</legend><p>Search the tariff book by item name, material, description or code. You can also browse its Section → Chapter → Heading structure. The Customs Officer confirms the final classification.</p>

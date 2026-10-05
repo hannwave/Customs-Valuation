@@ -130,6 +130,22 @@ export interface Phase2Response {
     initialDuty: number;
     initialDutyCurrency: string;
     source: string;
+    fobCifCalculation: {
+      basis: string;
+      originCountryCode: string;
+      originCountryName: string;
+      certificateOfOrigin: { fileName: string; contentType: string; sha256: string; uploadedAt: string };
+      fobAmount: number;
+      freightAmount: number;
+      insuranceAmount: number;
+      originalCifAmount: number;
+      originalCurrency: string;
+      customsValueCifAmount: number;
+      customsValueCurrency: string;
+      exchangeRate: number;
+      exchangeRateSource: string;
+      exchangeRateDate: string;
+    } | null;
     declaredPriceAmount: number | null;
     declaredPriceCurrency: string;
     declaredPriceConvertedAmount: number | null;

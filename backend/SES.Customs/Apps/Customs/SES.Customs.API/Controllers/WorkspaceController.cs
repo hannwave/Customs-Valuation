@@ -41,6 +41,10 @@ public sealed class DecisionReceiptForm
     public string? ProductPhotoUrl { get; set; }
     public decimal DeclaredPriceAmount { get; set; }
     public string DeclaredPriceCurrency { get; set; } = "";
+    public decimal? FobPriceAmount { get; set; }
+    public string? FobPriceCurrency { get; set; }
+    public decimal? FreightAmount { get; set; }
+    public decimal? InsuranceAmount { get; set; }
     public IFormFile? Receipt { get; set; }
 }
 
@@ -483,6 +487,55 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var purchaseCountryCode = form.PurchaseCountryCode.Trim().ToUpperInvariant();
         var purchaseCountryName = CountryName(purchaseCountryCode);
         Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
+        string? fobCifCalculationJson = null;
+        if (string.Equals(form.SelectedPriceSource?.Trim(), "originFobCif", StringComparison.OrdinalIgnoreCase))
+        {
+            Validate(form.ImporterDeclarationId.HasValue, "An approved importer declaration is required for origin-country FOB valuation.");
+            var declaration = await db.ImporterDeclarations.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == form.ImporterDeclarationId!.Value, ct);
+            Validate(declaration is not null && declaration.Status == "ASSESSMENT_READY" && declaration.LocationId == form.LocationId,
+                "The importer declaration must be approved for valuation in the selected office.");
+            var certificate = await db.ImporterDocuments.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.DeclarationId == declaration!.Id && x.Kind == "CERTIFICATE_OF_ORIGIN", ct);
+            Validate(certificate is not null, "A Certificate of Origin is required for origin-country FOB valuation.");
+            Validate(form.FobPriceAmount is > 0 and <= 1_000_000_000_000_000m,
+                "Enter a positive FOB amount within the supported range.");
+            Validate(form.FreightAmount.HasValue && form.InsuranceAmount.HasValue,
+                "Enter explicit freight and insurance amounts. Use zero when there is no charge.");
+            var freight = form.FreightAmount!.Value;
+            var insurance = form.InsuranceAmount!.Value;
+            Validate(freight is >= 0 and <= 1_000_000_000_000_000m && insurance is >= 0 and <= 1_000_000_000_000_000m,
+                "Freight and insurance must be zero or positive and within the supported range.");
+            var fobCurrency = NormalizeCurrency(form.FobPriceCurrency);
+            Validate(fobCurrency is not null, "Use a three-letter ISO currency for the FOB amount and transport costs.");
+            var originalCifAmount = form.FobPriceAmount!.Value + freight + insurance;
+            Validate(originalCifAmount > 0, "The FOB amount plus freight and insurance must be positive.");
+            var cifConversion = await ConvertDeclaredPrice(originalCifAmount, fobCurrency!, targetCurrency!, ct);
+            form.SelectedReferenceValue = cifConversion.Amount;
+            form.ValuationMethod = "Origin-country FOB plus freight and insurance (CIF)";
+            fobCifCalculationJson = JsonSerializer.Serialize(new
+            {
+                basis = "FOB + freight + insurance",
+                originCountryCode = declaration!.OriginCountryCode,
+                originCountryName = declaration.OriginCountryName,
+                certificateOfOrigin = new { certificate!.FileName, certificate.ContentType, certificate.Sha256, certificate.UploadedAt },
+                fobAmount = form.FobPriceAmount.Value,
+                freightAmount = freight,
+                insuranceAmount = insurance,
+                originalCifAmount,
+                originalCurrency = fobCurrency,
+                customsValueCifAmount = cifConversion.Amount,
+                customsValueCurrency = targetCurrency,
+                exchangeRate = cifConversion.Rate,
+                exchangeRateSource = cifConversion.Source,
+                exchangeRateDate = cifConversion.Date
+            });
+        }
+        else
+        {
+            Validate(form.FobPriceAmount is null && form.FreightAmount is null && form.InsuranceAmount is null,
+                "FOB and transport inputs require the origin-country FOB price source.");
+        }
         var input = new DecisionInput(form.HsCodeId, form.LocationId, form.SelectedReferenceValue, targetCurrency!, form.Decision, form.Justification, form.Evidence, null,
             form.ProductName, purchaseCountryCode, purchaseCountryName, form.SelectedPriceSource, form.ValuationMethod, form.ProductPhotoUrl, form.ImporterDeclarationId);
         var receipt = new ReceiptEvidence(
@@ -490,7 +543,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             conversion.Source, conversion.Date, Path.GetFileName(form.Receipt.FileName), form.Receipt.ContentType,
             bytes.LongLength, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), DateTimeOffset.UtcNow,
             access.UserId.ToString(), bytes);
-        return await SaveDecision(null, input, ct, receipt);
+        return await SaveDecision(null, input, ct, receipt, fobCifCalculationJson);
     }
     [HttpGet("decisions/{id:guid}/receipt")]
     public async Task<IActionResult> Receipt(Guid id, CancellationToken ct)
@@ -514,7 +567,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     }
     [HttpPut("decisions/{id:guid}")]
     public Task<IActionResult> UpdateDecision(Guid id, DecisionInput input, CancellationToken ct) => SaveDecision(id, input, ct);
-    private async Task<IActionResult> SaveDecision(Guid? id, DecisionInput input, CancellationToken ct, ReceiptEvidence? receipt = null)
+    private async Task<IActionResult> SaveDecision(Guid? id, DecisionInput input, CancellationToken ct, ReceiptEvidence? receipt = null, string? fobCifCalculationJson = null)
     {
         access.Require(AccessRules.Officer);
         Validate(id.HasValue || receipt is not null, "Attach the customer's PDF, JPG, or PNG receipt when creating a valuation record.");
@@ -533,6 +586,10 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var purchaseCountryName = CountryName(purchaseCountryCode);
         Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
         Validate((input.SelectedPriceSource?.Trim().Length ?? 0) is > 0 and <= 80, "Record the selected price source.");
+        if (string.Equals(input.SelectedPriceSource?.Trim(), "originFobCif", StringComparison.OrdinalIgnoreCase))
+            Validate(!string.IsNullOrWhiteSpace(fobCifCalculationJson) && fobCifCalculationJson != "{}", "Origin-country FOB values must be calculated from an approved declaration and Certificate of Origin.");
+        else
+            Validate(fobCifCalculationJson is null, "An FOB calculation may only be saved with the origin-country FOB price source.");
         Validate((input.ValuationMethod?.Trim().Length ?? 0) is > 0 and <= 120, "Record the valuation method.");
         var productPhotoUrl = input.ProductPhotoUrl?.Trim() ?? "";
         Validate(productPhotoUrl.Length <= 2048 && (productPhotoUrl.Length == 0 || Uri.TryCreate(productPhotoUrl, UriKind.Absolute, out var photoUri) && photoUri.Scheme is "http" or "https"), "The product photo reference must be a valid HTTPS or HTTP URL.");
@@ -564,6 +621,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         entity.Decision = input.Decision.Trim(); entity.Justification = input.Justification?.Trim() ?? ""; entity.Status = "Draft"; entity.Version = Guid.NewGuid();
         // Narrative evidence records source URLs/record IDs and context without altering underlying observations.
         entity.EvidenceNotes = input.Evidence?.Trim() ?? "";
+        entity.FobCifCalculationJson = fobCifCalculationJson ?? "{}";
         if (receipt is not null)
         {
             entity.DeclaredPriceAmount = receipt.OriginalAmount; entity.DeclaredPriceCurrency = receipt.OriginalCurrency;
