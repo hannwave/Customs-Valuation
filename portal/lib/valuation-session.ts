@@ -44,6 +44,9 @@ export interface OriginFobEvidence {
 export interface ValuationSession {
   id: string;
   query: string;
+  productType?: "COMMODITY" | "MANUFACTURING";
+  brand?: string;
+  model?: string;
   market: string;
   purchaseCountryCode?: string;
   purchaseCountryName?: string;

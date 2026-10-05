@@ -118,6 +118,7 @@ export interface Phase2Response {
     hsCodeId: string | null;
     productId: string | null;
     productName: string;
+    productType: "COMMODITY" | "MANUFACTURING" | null;
     purchaseCountryCode: string;
     purchaseCountryName: string;
     selectedPriceSource: string;
