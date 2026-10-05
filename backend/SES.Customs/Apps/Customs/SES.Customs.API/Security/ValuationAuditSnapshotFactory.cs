@@ -15,7 +15,7 @@ internal static class ValuationAuditSnapshotFactory
         AuthAccountEntity? officer,
         CustomsLocation? office)
     {
-        var lines = assessment?.TaxLines.Where(line => line.IsApplicable).OrderBy(line => line.Order).ToArray() ?? [];
+        var lines = assessment?.TaxLines.OrderBy(line => line.Order).ToArray() ?? [];
         var duty = Find(lines, "Customs Duty")?.CalculatedAmount;
         var excise = Find(lines, "Excise Tax");
         var specificExcise = Find(lines, "Excise Tax (specific)");
@@ -66,6 +66,7 @@ internal static class ValuationAuditSnapshotFactory
                 line.BaseAmount,
                 line.CalculatedAmount,
                 line.Status,
+                line.Notes,
                 line.SourceReference,
                 line.IsApplicable
             })),

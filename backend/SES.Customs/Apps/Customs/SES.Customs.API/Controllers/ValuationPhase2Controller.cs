@@ -18,22 +18,7 @@ namespace SES.Customs.API.Controllers;
 [Authorize(Policy = "CustomsOfficer")]
 public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxClient fx) : ControllerBase
 {
-    private const string RuleVersion = "officer-sequential-duty-excise-surtax-v2";
-    private const decimal VatRate = 15m;
-    private const decimal SurtaxRate = 10m;
-    private const decimal SocialWelfareLevyRate = 3m;
-    private const decimal WithholdingRate = 3m;
-    private const decimal SurtaxDutyThreshold = 15m;
-    private const string VatSource = "https://www.mofed.gov.et/media/filer_public/af/45/af45af2f-7959-4e8b-b736-9494dda9f017/vat_proclamation_no_1341-2016_with_annex.pdf";
-    private const string ExciseSource = "https://www.mofed.gov.et/media/filer_public/aa/05/aa05db27-ad07-40dc-9aac-fe74c3a38fa0/specific_excise_tax_rates_adjustment-_directive_no_1007_1.pdf";
-    private const string SurtaxSource = "https://www.mofed.gov.et/media/filer_public/86/fb/86fb37d6-8405-45ad-b439-560b3e818d45/tax_compliance_guide_for_foreign_investors_in_ethiopia.pdf";
-    private const string SocialWelfareSource = "https://www.mofed.gov.et/media/filer_public/9f/70/9f702522-6150-4a70-98fa-d80b1c0eb3b4/macro_fiscal_performance_2024_mof.pdf";
-    private const string WithholdingSource = "https://www.mofed.gov.et/mof-directive/tax-directive/";
-    private const string ExciseProclamationSource = "https://www.ecc.gov.et/proclamations";
-
-    private static readonly string[] StandardTaxNames = ["Customs Duty", "Excise Tax", "VAT", "Surtax", "Withholding Tax", "Social Welfare Levy"];
-    private static readonly HashSet<string> SurtaxExcludedCategories = new(StringComparer.OrdinalIgnoreCase) { "fertilizer", "petroleum", "lubricants", "freight vehicle", "passenger vehicle", "special purpose vehicle", "aircraft", "spacecraft", "capital goods" };
-    private static readonly HashSet<string> ComesaFtaCountries = new(StringComparer.OrdinalIgnoreCase) { "burundi", "comoros", "djibouti", "egypt", "kenya", "madagascar", "malawi", "mauritius", "rwanda", "sudan", "zambia", "zimbabwe" };
+    private const string RuleVersion = "officer-sequential-duty-excise-surtax-product-type-v4";
 
     [HttpGet]
     public async Task<IActionResult> Get(Guid decisionId, CancellationToken ct)
@@ -56,7 +41,8 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         var tariff = await LoadTariffAsync(loaded.Decision!, request.SelectedHsCodeId!.Value, ct);
         if (tariff is null) return BadRequest(new { message = "No effective tariff line is available for the selected HS code. Select a code with an official tariff source before calculating." });
         var specificRate = await GetEtbToTargetRateAsync(tariff, request.TargetCurrency, ct);
-        return Ok(await MapResponse(loaded.Decision!, BuildPhase2(loaded.Decision!, request, loaded.Existing, tariff, specificRate), ct));
+        var importerContext = await LoadImporterAssessmentContextAsync(loaded.Decision!, ct);
+        return Ok(await MapResponse(loaded.Decision!, BuildPhase2(loaded.Decision!, request, loaded.Existing, tariff, specificRate, importerContext), ct));
     }
 
     [HttpPut]
@@ -88,7 +74,8 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         }
         var oldTaxLines = loaded.Existing?.TaxLines.ToList() ?? [];
         var specificRate = await GetEtbToTargetRateAsync(tariff, request.TargetCurrency, ct);
-        var phase2 = BuildPhase2(decision, request, loaded.Existing, tariff, specificRate);
+        var importerContext = await LoadImporterAssessmentContextAsync(decision, ct);
+        var phase2 = BuildPhase2(decision, request, loaded.Existing, tariff, specificRate, importerContext);
         phase2.Status = status;
         phase2.OfficerConfirmed = status == "Completed";
         var previous = loaded.Existing is null ? null : JsonSerializer.Serialize(new { loaded.Existing.Status, loaded.Existing.FinalAmount, loaded.Existing.TotalTax, loaded.Existing.Version });
@@ -221,6 +208,13 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         var dutyExemption = (request.ExemptionCodes ?? []).Any(code =>
             string.Equals(code?.Trim(), "CUSTOMS_DUTY_EXEMPT", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(code?.Trim(), "MACHINERY_EQUIPMENT_EXEMPT", StringComparison.OrdinalIgnoreCase));
+        var machineryExemption = (request.ExemptionCodes ?? []).Any(code => string.Equals(code?.Trim(), "MACHINERY_EQUIPMENT_EXEMPT", StringComparison.OrdinalIgnoreCase));
+        if (machineryExemption)
+        {
+            var importerContext = await LoadImporterAssessmentContextAsync(decision, ct);
+            if (!importerContext.IsManufacturing || !importerContext.IsMachineryOrEquipment)
+                return BadRequest(new { message = "The machinery exemption can be selected only for a manufacturing declaration reviewed as machinery or equipment." });
+        }
         if (completing && dutyExemption && (request.Notes?.Trim().Length ?? 0) < 10)
             return BadRequest(new { message = "Record the officer-approved authority and evidence for a customs duty or machinery exemption in the assessment notes." });
         if ((request.TaxLines?.Length ?? 0) > 30) return BadRequest(new { message = "An assessment cannot contain more than 30 tax lines." });
@@ -251,7 +245,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
 
     private async Task<(decimal? Rate, string Source)> GetEtbToTargetRateAsync(NationalTariffLine tariff, string targetCurrency, CancellationToken ct)
     {
-        if (ExciseRuleFor(tariff) is not { SpecificRate: > 0 }) return (1m, "No specific excise conversion required");
+        if (!ImportTaxAssessmentCalculator.RequiresEtbConversion(tariff)) return (1m, "No specific excise conversion required");
         if (string.Equals(targetCurrency, "ETB", StringComparison.OrdinalIgnoreCase)) return (1m, "ETB statutory amount");
         try
         {
@@ -268,7 +262,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         }
     }
 
-    private static ValuationPhase2 BuildPhase2(ValuationDecision decision, Phase2Request request, ValuationPhase2? existing, NationalTariffLine tariff, (decimal? Rate, string Source) specificRate)
+    private static ValuationPhase2 BuildPhase2(ValuationDecision decision, Phase2Request request, ValuationPhase2? existing, NationalTariffLine tariff, (decimal? Rate, string Source) specificRate, (bool IsManufacturing, bool IsMachineryOrEquipment) importerContext)
     {
         var phase2 = existing ?? new ValuationPhase2 { Id = Guid.NewGuid(), ValuationDecisionId = decision.Id };
         phase2.OriginalHsCodeId = decision.HsCodeId; phase2.SelectedHsCodeId = request.SelectedHsCodeId;
@@ -276,201 +270,56 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         phase2.Quantity = request.Quantity; phase2.Unit = request.Unit.Trim();
         phase2.OriginCountry = request.OriginCountry?.Trim() ?? ""; phase2.ProductCategory = request.ProductCategory!.Trim();
         phase2.ExemptionCodes = string.Join(",", (request.ExemptionCodes ?? []).Select(x => x.Trim().ToUpperInvariant()).Where(x => x.Length > 0).Distinct());
-        phase2.OriginPreferenceClaimed = request.OriginPreferenceClaimed; phase2.ExciseTaxApplicable = ExciseRuleFor(tariff) is not null || request.ExciseTaxApplicable; phase2.IsCommercialImport = request.IsCommercialImport; phase2.WithholdingApplicable = request.WithholdingApplicable;
+        phase2.OriginPreferenceClaimed = request.OriginPreferenceClaimed; phase2.ExciseTaxApplicable = ImportTaxAssessmentCalculator.HasConfiguredExciseRule(tariff) || request.ExciseTaxApplicable; phase2.IsCommercialImport = request.IsCommercialImport; phase2.WithholdingApplicable = request.WithholdingApplicable;
         phase2.AdjustmentReason = request.AdjustmentReason?.Trim() ?? ""; phase2.InitialDutyAmount = GetInitialDuty(decision); phase2.InitialDutyCurrency = GetInitialDutyCurrency(decision);
         phase2.TargetCurrency = request.TargetCurrency.Trim().ToUpperInvariant(); phase2.ExchangeRate = request.ExchangeRate <= 0 ? 1m : request.ExchangeRate; phase2.ExchangeRateSource = string.IsNullOrWhiteSpace(request.ExchangeRateSource) ? "Same currency" : request.ExchangeRateSource.Trim(); phase2.ExchangeRateDate = request.ExchangeRateDate;
         phase2.ExemptionAmount = request.ExemptionAmount; phase2.WaiverAmount = request.WaiverAmount; phase2.ManualAdjustmentAmount = request.ManualAdjustmentAmount; phase2.ManualAdjustmentType = request.ManualAdjustmentType.Trim(); phase2.Notes = request.Notes?.Trim() ?? "";
-        phase2.CalculationRuleVersion = RuleVersion; phase2.Version = Guid.NewGuid(); phase2.TaxLines = CalculateTaxLines(request, tariff, specificRate);
+        phase2.CalculationRuleVersion = RuleVersion; phase2.Version = Guid.NewGuid();
+        phase2.TaxLines = ImportTaxAssessmentCalculator.Calculate(new(
+            tariff, request.CustomsValueAmount, request.Quantity, request.Unit, request.ProductCategory!, request.OriginCountry ?? "",
+            request.OriginPreferenceClaimed, request.IsCommercialImport, request.WithholdingApplicable,
+            importerContext.IsManufacturing, importerContext.IsMachineryOrEquipment, request.ExciseTaxApplicable,
+            (request.ExemptionCodes ?? []).Where(code => !string.IsNullOrWhiteSpace(code)).Select(code => code.Trim()).ToArray(),
+            (request.TaxLines ?? []).Where(line => !string.IsNullOrWhiteSpace(line.Name)).Select(line => new ImportTaxLineOverride(
+                line.Name!.Trim(), line.CalculationType, line.Value, line.Currency, line.Order, line.CalculationBasis,
+                line.Notes, line.IsApplicable, line.Status)).ToArray(),
+            specificRate.Rate, specificRate.Source, request.TargetCurrency));
         phase2.TotalTax = Money(phase2.TaxLines.Where(x => x.IsApplicable && !IsExciseComparisonLine(x)).Sum(x => x.CalculatedAmount)); phase2.TotalAdditionalTax = phase2.TotalTax;
         var adjustment = string.Equals(request.ManualAdjustmentType, "Percentage", StringComparison.OrdinalIgnoreCase) ? phase2.CustomsValueAmount * request.ManualAdjustmentAmount / 100m : request.ManualAdjustmentAmount;
         phase2.FinalAmount = Money(Math.Max(0m, phase2.CustomsValueAmount + phase2.TotalTax - request.ExemptionAmount - request.WaiverAmount + adjustment)); phase2.CalculatedAt = DateTimeOffset.UtcNow; phase2.OfficerConfirmed = request.OfficerConfirmation;
         return phase2;
     }
 
-    private static List<ValuationPhase2TaxLine> CalculateTaxLines(Phase2Request request, NationalTariffLine tariff, (decimal? Rate, string Source) specificRate)
-    {
-        var submitted = request.TaxLines ?? [];
-        var exciseRule = ExciseRuleFor(tariff);
-        var codes = new HashSet<string>((request.ExemptionCodes ?? []).Select(x => x.Trim().ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
-        var dutyExempt = codes.Contains("CUSTOMS_DUTY_EXEMPT") || codes.Contains("MACHINERY_EQUIPMENT_EXEMPT");
-        var recommendedDutyRate = ParseRate(tariff.Duty);
-        var suppliedDuty = submitted.FirstOrDefault(x => string.Equals(x.Name?.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
-        var dutyNeedsReview = !recommendedDutyRate.HasValue;
-        var dutyRate = recommendedDutyRate ?? suppliedDuty?.Value ?? 0m;
-        var originCountry = request.OriginCountry?.Trim() ?? "";
-        if (request.OriginPreferenceClaimed && ComesaFtaCountries.Contains(originCountry)) dutyRate = 0m;
-        var dutyRateKnown = dutyExempt || recommendedDutyRate.HasValue || suppliedDuty is not null;
-        var surtaxExcluded = codes.Contains("SURTAX_EXEMPT") || SurtaxExcludedCategories.Contains(request.ProductCategory!.Trim());
-        var surtaxThresholdUnknown = !dutyRateKnown;
-        var surtaxApplies = !surtaxExcluded && !surtaxThresholdUnknown && !dutyExempt && dutyRate > SurtaxDutyThreshold;
-        var vatExempt = codes.Contains("VAT_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
-        var socialExempt = codes.Contains("SOCIAL_WELFARE_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
-        var withholdingApplicable = request.IsCommercialImport && request.WithholdingApplicable && !codes.Contains("WITHHOLDING_NOT_APPLICABLE");
-        var socialApplicable = !socialExempt && !surtaxApplies && !surtaxThresholdUnknown;
-        var exciseRate = exciseRule?.AdValoremRate ?? 0m;
-        var exciseCategoryReview = exciseRule is null && ExciseMayApply(tariff, request.ProductCategory!);
-        var exciseApplies = exciseRule is not null || request.ExciseTaxApplicable || exciseCategoryReview;
-        var exciseNeedsReview = exciseRule is null && (request.ExciseTaxApplicable || exciseCategoryReview);
-        var exciseUnitMatches = exciseRule is not null && UnitMatches(request.Unit, exciseRule.Unit);
-        var hasSpecificRate = exciseRule is { SpecificRate: > 0 };
-        var specificNeedsReview = hasSpecificRate && (!exciseUnitMatches || !specificRate.Rate.HasValue);
-        var exciseNote = exciseRule?.Notes ?? (exciseNeedsReview
-            ? "This tariff/category may be excisable, but no current verified rate is configured. Enter the officer-approved rate and source, or disable excise if it does not apply. No amount is assumed."
-            : "No verified excise rate was found for this tariff item; review the current excise schedule before applying.");
-        if (exciseRule is not null && specificNeedsReview)
-            exciseNote += !exciseUnitMatches ? $" Shipment unit must be {exciseRule.Unit} for its specific-rate component." : $" {specificRate.Source}.";
-        var surtaxNote = surtaxThresholdUnknown
-            ? "Confirm the officer-approved Customs Duty rate before deciding whether the 10% import surtax applies."
-            : surtaxApplies
-                ? "10% import surtax is recommended under the configured duty threshold and applicable product-category checks."
-                : surtaxExcluded
-                    ? "Product category or recorded exemption excludes import surtax."
-                    : "Customs duty is 15% or less; import surtax is generally not recommended under the configured threshold.";
-        var lines = new List<ValuationPhase2TaxLine>
-        {
-            Line("Customs Duty", dutyRate, 1, "CIF", tariff.SourceReference, !dutyExempt, dutyExempt ? "NotApplicable" : dutyNeedsReview ? "ReviewRequired" : "Recommended", dutyExempt ? "Officer-selected exemption. Verify the governing authority and evidence before confirming." : dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", request.TargetCurrency),
-            Line("Excise Tax", exciseRate, 2, "CIFPlusDuty", exciseRule?.SourceReference ?? ExciseSource, exciseApplies, exciseNeedsReview || specificNeedsReview ? "ReviewRequired" : exciseApplies ? "Recommended" : "NotApplicable", exciseNote, request.TargetCurrency),
-            Line("Surtax", SurtaxRate, 4, "CIFPlusDutyPlusExcise", SurtaxSource, surtaxApplies, surtaxThresholdUnknown ? "ReviewRequired" : surtaxApplies ? "Recommended" : "NotApplicable", surtaxNote, request.TargetCurrency),
-            Line("VAT", VatRate, 5, "CIFPlusDutyPlusExcisePlusSurtax", VatSource, !vatExempt, vatExempt ? "NotApplicable" : "Recommended", vatExempt ? "Exemption selected; verify supporting authority." : "15% VAT is calculated after Customs Duty, Excise Tax, and Surtax in the configured assessment order.", request.TargetCurrency),
-            Line("Withholding Tax", WithholdingRate, 6, "CIF", WithholdingSource, withholdingApplicable, withholdingApplicable ? "Recommended" : "NotApplicable", withholdingApplicable ? "3% of CIF for commercial imports; an advance income-tax payment." : "Not selected for this import or excluded by the commercial-import setting.", request.TargetCurrency),
-            Line("Social Welfare Levy", SocialWelfareLevyRate, 7, "CIF", SocialWelfareSource, socialApplicable, socialExempt || surtaxApplies ? "NotApplicable" : surtaxThresholdUnknown ? "ReviewRequired" : "Recommended", socialExempt ? "Exemption selected; verify supporting authority." : surtaxApplies ? "Not applied because the import is already subject to surtax." : surtaxThresholdUnknown ? "Confirm surtax eligibility after the Customs Duty rate is resolved." : "3% of CIF when the import is not subject to surtax, subject to exemptions.", request.TargetCurrency)
-        };
-        if (hasSpecificRate)
-        {
-            var comparisonOnly = exciseRule!.Mode == ExciseSpecificMode.GreaterOf;
-            var specificNote = comparisonOnly
-                ? $"{exciseRule.SpecificRate:0.##} ETB per {exciseRule.Unit}. Comparison amount only; the payable excise is the greater of this amount or the ad valorem excise. {exciseRule.Notes} {specificRate.Source}."
-                : $"{exciseRule.SpecificRate:0.##} ETB per {exciseRule.Unit}. Added to the ad valorem excise. {exciseRule.Notes} {specificRate.Source}.";
-            lines.Add(Line("Excise Tax (specific)", exciseRule.SpecificRate, 3, comparisonOnly ? "UNIT_RATE_ETB_GREATER_OF" : "UNIT_RATE_ETB", exciseRule.SourceReference ?? ExciseSource,
-                exciseUnitMatches && specificRate.Rate.HasValue,
-                specificNeedsReview ? "ReviewRequired" : "Recommended",
-                specificNote, "ETB", "PerUnit"));
-        }
-        var supplied = submitted.Where(x => !string.IsNullOrWhiteSpace(x.Name))
-            .GroupBy(x => x.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        foreach (var line in lines)
-        {
-            if (!supplied.TryGetValue(line.Name, out var overrideLine)) continue;
-            var recommendedApplicable = line.IsApplicable;
-            line.Value = overrideLine.Value; line.CalculationType = overrideLine.CalculationType; line.Notes = string.IsNullOrWhiteSpace(overrideLine.Notes) ? line.Notes : overrideLine.Notes.Trim();
-            if (overrideLine.IsApplicable.HasValue) line.IsApplicable = overrideLine.IsApplicable.Value;
-            var applicabilityChanged = overrideLine.IsApplicable.HasValue && overrideLine.IsApplicable.Value != recommendedApplicable;
-            if (Math.Abs(line.Value - line.RecommendedValue) > 0.0001m || !string.Equals(line.CalculationType, line.Name == "Excise Tax (specific)" ? "PerUnit" : "Percentage", StringComparison.OrdinalIgnoreCase) || applicabilityChanged || string.Equals(overrideLine.Status, "OfficerAdjusted", StringComparison.OrdinalIgnoreCase)) line.Status = "OfficerAdjusted";
-            if (line.Name == "Excise Tax" && request.ExciseTaxApplicable) { line.IsApplicable = true; line.Status = "OfficerAdjusted"; }
-        }
-        if (dutyExempt)
-        {
-            var exemptDuty = lines.First(x => x.Name == "Customs Duty");
-            exemptDuty.IsApplicable = false;
-            exemptDuty.Status = "OfficerAdjusted";
-            exemptDuty.Notes = "Officer-selected exemption. Verify the governing authority and evidence before confirming.";
-        }
-        foreach (var custom in submitted.Where(x => !string.IsNullOrWhiteSpace(x.Name) && !lines.Any(line => string.Equals(line.Name, x.Name.Trim(), StringComparison.OrdinalIgnoreCase))))
-            lines.Add(Line(custom.Name!.Trim(), custom.Value, 90 + (custom.Order ?? 0), custom.CalculationBasis ?? "CIF", "Officer-entered charge. An optional note may record the legal source.", true, "OfficerAdjusted", custom.Notes ?? "", request.TargetCurrency, custom.CalculationType));
-
-        var cif = request.CustomsValueAmount;
-        var dutyLine = lines.First(x => x.Name == "Customs Duty");
-        var exciseLine = lines.First(x => x.Name == "Excise Tax");
-        var surtaxLine = lines.First(x => x.Name == "Surtax");
-        var vatLine = lines.First(x => x.Name == "VAT");
-        var specificLine = lines.FirstOrDefault(x => x.Name == "Excise Tax (specific)");
-        var specificAmount = specificLine?.IsApplicable == true && specificLine.CalculationType == "PerUnit" && specificRate.Rate.HasValue
-            ? Money(specificLine.Value * request.Quantity * specificRate.Rate.Value) : 0m;
-        var dutyAmount = dutyLine.IsApplicable ? Money(cif * dutyLine.Value / 100m) : 0m;
-        var excisePercentageAmount = exciseLine.IsApplicable && exciseLine.CalculationType == "Percentage"
-            ? Money((cif + dutyAmount) * exciseLine.Value / 100m) : 0m;
-        var exciseAdditionalAmount = exciseRule?.Mode == ExciseSpecificMode.GreaterOf && specificLine?.IsApplicable == true && exciseUnitMatches && specificRate.Rate.HasValue
-            ? Math.Max(0m, Money(Math.Max(excisePercentageAmount, specificAmount) - excisePercentageAmount))
-            : specificAmount;
-        if (exciseRule?.Mode == ExciseSpecificMode.GreaterOf && specificLine?.IsApplicable == true && exciseUnitMatches && specificRate.Rate.HasValue && exciseLine.IsApplicable)
-            exciseLine.Notes += $" Applied excise is the greater of {exciseLine.Value:0.##}% or {specificLine.Value:0.##} ETB × {request.Quantity:0.####} {request.Unit}, converted to {request.TargetCurrency}.";
-        var calculated = SequentialImportTaxCalculator.Calculate(
-            cif, dutyLine.Value, exciseLine.Value, surtaxLine.Value, vatLine.Value, exciseAdditionalAmount,
-            dutyLine.IsApplicable, exciseLine.IsApplicable, surtaxLine.IsApplicable, vatLine.IsApplicable);
-        foreach (var line in lines.OrderBy(x => x.Order).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
-        {
-            if (line.Name == "Customs Duty") { line.BaseAmount = calculated.DutyBase; line.CalculatedAmount = calculated.Duty; continue; }
-            if (line.Name == "Excise Tax") { line.BaseAmount = calculated.ExciseBase; line.CalculatedAmount = exciseRule?.Mode == ExciseSpecificMode.Additive ? excisePercentageAmount : calculated.Excise; continue; }
-            if (line.Name == "Excise Tax (specific)") { line.BaseAmount = request.Quantity; line.CalculatedAmount = line.IsApplicable ? specificAmount : 0m; continue; }
-            if (line.Name == "Surtax") { line.BaseAmount = calculated.SurtaxBase; line.CalculatedAmount = calculated.Surtax; continue; }
-            if (line.Name == "VAT") { line.BaseAmount = calculated.VatBase; line.CalculatedAmount = calculated.Vat; continue; }
-            if (line.CalculationType == "PerUnit")
-            {
-                line.BaseAmount = request.Quantity;
-                line.CalculatedAmount = line.IsApplicable ? Money(line.Value * request.Quantity * (specificRate.Rate ?? 0m)) : 0m;
-                continue;
-            }
-            line.BaseAmount = Money(BaseFor(line.CalculationBasis, cif, calculated.Duty, calculated.Excise, calculated.Surtax, calculated.Vat));
-            line.CalculatedAmount = line.IsApplicable ? Money(line.CalculationType == "Fixed" ? line.Value : line.BaseAmount * line.Value / 100m) : 0m;
-        }
-        var surtax = lines.FirstOrDefault(x => x.Name == "Surtax"); var social = lines.FirstOrDefault(x => x.Name == "Social Welfare Levy");
-        if (social is not null && surtax is not null && surtax.IsApplicable) { social.IsApplicable = false; social.Status = "NotApplicable"; social.CalculatedAmount = 0m; social.Notes = "Not applied because the import is subject to surtax under the configured Social Welfare Levy rule."; }
-        return lines.OrderBy(x => x.Order).ToList();
-    }
-
-    private enum ExciseSpecificMode { Additive, GreaterOf }
-    private sealed record ExciseRule(decimal AdValoremRate, decimal SpecificRate, string Unit, ExciseSpecificMode Mode, string Notes, string? SourceReference = null);
-
     private static bool IsExciseComparisonLine(ValuationPhase2TaxLine line) =>
         line.Name == "Excise Tax (specific)" && line.CalculationBasis == "UNIT_RATE_ETB_GREATER_OF";
 
-    private static ExciseRule? ExciseRuleFor(NationalTariffLine? tariff)
+    private async Task<(bool IsManufacturing, bool IsMachineryOrEquipment)> LoadImporterAssessmentContextAsync(ValuationDecision decision, CancellationToken ct)
     {
-        if (tariff is null) return null;
-        var code = new string((tariff.Code ?? "").Where(char.IsDigit).ToArray());
-        var itemNo = new string((tariff.TariffItemNo ?? "").Where(char.IsDigit).ToArray());
-        var identifier = itemNo.Length > 0 ? itemNo : code;
-        if (identifier.StartsWith("240210", StringComparison.Ordinal)) return new(30m, 644m, "KG", ExciseSpecificMode.Additive, "Directive 1007/2024: 30% plus ETB 644 per kilogram for cigars, cheroots, and cigarillos.");
-        if (identifier.StartsWith("240220", StringComparison.Ordinal) || identifier.StartsWith("240290", StringComparison.Ordinal)) return new(30m, 20m, "PACK20", ExciseSpecificMode.Additive, "Directive 1007/2024: 30% plus ETB 20 per pack of 20 cigarettes or covered tobacco-substitute products.");
-        if (identifier.StartsWith("240319", StringComparison.Ordinal) || identifier.StartsWith("240391", StringComparison.Ordinal) || identifier.StartsWith("240399", StringComparison.Ordinal)) return new(30m, 644m, "KG", ExciseSpecificMode.Additive, "Directive 1007/2024: 30% plus ETB 644 per kilogram for the listed smoking tobacco, homogenized/reconstituted tobacco, snuff, extracts, and essences.");
-        if (identifier.StartsWith("2401", StringComparison.Ordinal)) return new(20m, 0m, "KG", ExciseSpecificMode.Additive, "Excise Tax Proclamation No. 1186/2020: tobacco leaf is taxed at 20%.", ExciseProclamationSource);
-        if (identifier.StartsWith("220300", StringComparison.Ordinal)) return new(40m, 28m, "L", ExciseSpecificMode.GreaterOf, "Directive 1007/2024: imported malt beer is taxed at 40% or ETB 28 per litre, whichever is higher.");
-        if (identifier.StartsWith("2204", StringComparison.Ordinal)) return new(40m, 0m, "L", ExciseSpecificMode.Additive, "Excise Tax Proclamation No. 1186/2020: grape wine and other listed fermented fruit beverages are taxed at 40%.", ExciseProclamationSource);
-        if (identifier.StartsWith("22060010", StringComparison.Ordinal) || identifier.StartsWith("22089010", StringComparison.Ordinal)) return new(40m, 28m, "L", ExciseSpecificMode.GreaterOf, "Directive 1007/2024: covered fermented/ready-to-drink beverages containing no more than 7% alcohol by volume are taxed at 40% or ETB 28 per litre, whichever is higher.");
-        if (identifier.StartsWith("220720", StringComparison.Ordinal)) return new(60m, 0m, "L", ExciseSpecificMode.Additive, "Excise Tax Proclamation No. 1186/2020: the tariff-listed pure alcohol class is taxed at 60%.", ExciseProclamationSource);
-        if (identifier.StartsWith("2206", StringComparison.Ordinal) || identifier.StartsWith("2207", StringComparison.Ordinal) || identifier.StartsWith("2208", StringComparison.Ordinal)) return new(80m, 0m, "L", ExciseSpecificMode.Additive, "Excise Tax Proclamation No. 1186/2020: the listed spirits/ethyl-alcohol classes are taxed at 80%; pure alcohol tariff item 2207.2000 is separately taxed at 60%.", ExciseProclamationSource);
-        if (identifier.StartsWith("39232110", StringComparison.Ordinal) || identifier.StartsWith("39232910", StringComparison.Ordinal)) return new(0m, 103m, "KG", ExciseSpecificMode.Additive, "Directive 1007/2024: ETB 103 per kilogram for shopping plastic bags.");
-        return null;
+        var phaseOneManufacturing = string.Equals(ReadProductType(decision.EvidenceNotes), "MANUFACTURING", StringComparison.OrdinalIgnoreCase);
+        if (!decision.ImporterDeclarationId.HasValue) return (phaseOneManufacturing, false);
+        var declaration = await db.ImporterDeclarations.AsNoTracking()
+            .Where(item => item.Id == decision.ImporterDeclarationId.Value)
+            .Select(item => new { item.ImportPurpose, item.IsMachineryOrEquipment })
+            .SingleOrDefaultAsync(ct);
+        return (phaseOneManufacturing || string.Equals(declaration?.ImportPurpose, "MANUFACTURING", StringComparison.OrdinalIgnoreCase), declaration?.IsMachineryOrEquipment == true);
     }
 
-    private static bool ExciseMayApply(NationalTariffLine? tariff, string productCategory)
+    private static string? ReadProductType(string? evidenceNotes)
     {
-        var item = new string((tariff?.TariffItemNo ?? tariff?.Code ?? "").Where(char.IsDigit).ToArray());
-        var heading = item.Length >= 4 ? item[..4] : item;
-        var headingNumber = int.TryParse(heading, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedHeading) ? parsedHeading : 0;
-        if (heading is "1701" or "1704" or "2201" or "2202" or "2203" or "2204" or "2205" or "2206" or "2207" or "2208" or "2209"
-            or "2401" or "2403" or "2710" or "2711" or "3303" or "3304" or "3305" or "3306" or "3307"
-            or "7106" or "7108" or "7110" or "7112" or "8525" or "8528" or "8701" or "8702" or "8703" or "8704" or "8705" or "8706" or "8711")
-            return true;
-        if (headingNumber is >= 6101 and <= 6117 or >= 6201 and <= 6217) return true;
-
-        var category = productCategory.Trim();
-        return category.Contains("alcohol", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("beverage", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("tobacco", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("sugar", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("cosmetic", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("textile", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("vehicle", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("petroleum", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("plastic bag", StringComparison.OrdinalIgnoreCase)
-            || category.Contains("precious metal", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static ValuationPhase2TaxLine Line(string name, decimal value, int order, string basis, string source, bool applicable, string status, string notes, string currency = "ETB", string calculationType = "Percentage") => new() { Id = Guid.NewGuid(), Name = name, CalculationType = calculationType, Value = value, RecommendedValue = value, Currency = currency, Order = order, CalculationBasis = basis, SourceReference = source, IsApplicable = applicable, Status = status, Notes = notes };
-    private static decimal BaseFor(string basis, decimal cif, decimal duty, decimal excise, decimal surtax, decimal vat) => basis.Trim().ToUpperInvariant() switch { "CIF" => cif, "CIFPLUSDUTY" => cif + duty, "CIFPLUSDUTYPLUSEXCISE" => cif + duty + excise, "CIFPLUSDUTYPLUSEXCISEPLUSSURTAX" => cif + duty + excise + surtax, "CIFPLUSDUTYPLUSVATPLUSEXCISE" => cif + duty + vat + excise, "INITIALDUTY" => cif + duty, _ => cif };
-    private static bool UnitMatches(string unit, string required)
-    {
-        var normalized = new string((unit ?? "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
-        return required switch
+        if (string.IsNullOrWhiteSpace(evidenceNotes)) return null;
+        try
         {
-            "KG" => normalized is "KG" or "KGS" or "KILOGRAM" or "KILOGRAMS" || normalized.Contains("KG") || normalized.Contains("KILOGRAM"),
-            "L" => normalized is "L" or "LT" or "LITRE" or "LITRES" or "LITER" or "LITERS" || normalized.Contains("LITRE") || normalized.Contains("LITER"),
-            "PACK20" => normalized.Contains("PACK") && normalized.Contains("20"),
-            _ => false,
-        };
+            using var document = JsonDocument.Parse(evidenceNotes);
+            if (!document.RootElement.TryGetProperty("productType", out var value) || value.ValueKind != JsonValueKind.String) return null;
+            var productType = value.GetString()?.Trim().ToUpperInvariant();
+            return productType is "COMMODITY" or "MANUFACTURING" ? productType : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
+
     private static decimal? ParseRate(string? duty)
     {
         if (string.IsNullOrWhiteSpace(duty)) return null;
@@ -478,8 +327,6 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
         var match = Regex.Match(duty, @"(?<![0-9])([0-9]+(?:[.,][0-9]+)?)\s*%?");
         return match.Success && decimal.TryParse(match.Groups[1].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var rate) ? rate : null;
     }
-
-    private static decimal ExpectedRate(string name) => name.ToUpperInvariant() switch { "VAT" => VatRate, "SURTAX" => SurtaxRate, "SOCIAL WELFARE LEVY" => SocialWelfareLevyRate, "WITHHOLDING TAX" => WithholdingRate, _ => 0m };
 
     private static Phase2Request CarryForwardPhase1Value(ValuationDecision decision, Phase2Request request)
     {
@@ -516,7 +363,7 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
             importer.IsCommercialProduct, importer.IsMachineryOrEquipment, importer.Quantity, importer.Unit,
             requestedTreatments = JsonSerializer.Deserialize<string[]>(importer.RequestedTreatmentsJson) ?? []
         },
-        phase1 = new { hsCodeId = decision.HsCodeId, decision.ProductId, decision.ProductName, decision.PurchaseCountryCode, decision.PurchaseCountryName, decision.SelectedPriceSource, decision.ValuationMethod, decision.ProductPhotoUrl, initialDuty = GetInitialDuty(decision), initialDutyCurrency = GetInitialDutyCurrency(decision), source = decision.InitialDuty.HasValue ? "Phase 1 initial duty" : "Phase 1 reference value fallback", fobCifCalculation = ReadFobCifCalculation(decision.FobCifCalculationJson), decision.DeclaredPriceAmount, decision.DeclaredPriceCurrency, decision.DeclaredPriceConvertedAmount, decision.DeclaredPriceConvertedCurrency, decision.DeclaredPriceExchangeRate, decision.DeclaredPriceExchangeRateSource, decision.DeclaredPriceExchangeRateDate, decision.ReceiptFileName, decision.ReceiptContentType, decision.ReceiptFileSize, decision.ReceiptSha256, decision.ReceiptUploadedAt },
+        phase1 = new { hsCodeId = decision.HsCodeId, decision.ProductId, decision.ProductName, productType = ReadProductType(decision.EvidenceNotes), decision.PurchaseCountryCode, decision.PurchaseCountryName, decision.SelectedPriceSource, decision.ValuationMethod, decision.ProductPhotoUrl, initialDuty = GetInitialDuty(decision), initialDutyCurrency = GetInitialDutyCurrency(decision), source = decision.InitialDuty.HasValue ? "Phase 1 initial duty" : "Phase 1 reference value fallback", fobCifCalculation = ReadFobCifCalculation(decision.FobCifCalculationJson), decision.DeclaredPriceAmount, decision.DeclaredPriceCurrency, decision.DeclaredPriceConvertedAmount, decision.DeclaredPriceConvertedCurrency, decision.DeclaredPriceExchangeRate, decision.DeclaredPriceExchangeRateSource, decision.DeclaredPriceExchangeRateDate, decision.ReceiptFileName, decision.ReceiptContentType, decision.ReceiptFileSize, decision.ReceiptSha256, decision.ReceiptUploadedAt },
         phase2 = phase2 is null ? null : new
         {
             phase2.Id, phase2.Status, phase2.OriginalHsCodeId, phase2.SelectedHsCodeId, phase2.CustomsValueAmount, phase2.CustomsValueCurrency, phase2.Quantity, phase2.Unit, phase2.OriginCountry, phase2.ProductCategory,
