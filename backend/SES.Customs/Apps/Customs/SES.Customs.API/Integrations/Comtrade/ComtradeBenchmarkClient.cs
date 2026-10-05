@@ -1,16 +1,21 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 
 namespace SES.Customs.API.Integrations.Comtrade;
 
 public sealed record BenchmarkReporter(int Code, string Name);
 
+public sealed record ComtradeReporter(int Code, string Name, string IsoAlpha2);
+
 public sealed record CustomsTradeBenchmark(
     string HsCode, int? Period, string Reporter, string Currency, string? Unit,
     decimal? TradeValue, decimal? Quantity, decimal? UnitValue, string? SourceUrl,
     string Message, bool IsMirror, string SourceLabel, string? ValuationBasis,
-    IReadOnlyList<BenchmarkReporter> Reporters, bool QuantityEstimated)
+    IReadOnlyList<BenchmarkReporter> Reporters, bool QuantityEstimated,
+    int? ReporterCode = null, int? PartnerCode = null, string? Partner = null,
+    DateTimeOffset? LastCheckedAtUtc = null, DateTimeOffset? DataUpdatedAtUtc = null)
 {
     public int ReporterCount => Reporters.Count;
 }
@@ -22,16 +27,16 @@ public sealed class ComtradeUnavailableException(int statusCode, string message)
 
 // Singleton: serialize keyless preview lookups, pace requests across users, and
 // recheck the cache after waiting so simultaneous searches do not fan out upstream.
-public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryCache cache, TimeProvider? timeProvider = null)
+public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryCache cache, TimeProvider? timeProvider = null, IConfiguration? config = null)
 {
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+    private readonly IConfiguration? configuration = config;
     private readonly SemaphoreSlim lookupGate = new(1, 1);
     private DateTimeOffset nextRequestAt;
 
     public async Task<CustomsTradeBenchmark> SearchAsync(string code, CancellationToken ct, string? preferredUnit = null)
     {
-        var lastYear = clock.GetUtcNow().Year - 1;
-        var cacheKey = $"comtrade:benchmark:v4:{code}:{lastYear}:{preferredUnit ?? "any"}";
+        var cacheKey = $"comtrade:benchmark:v6-latest:{code}:{preferredUnit ?? "any"}";
         if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out var cached) && cached is not null) return cached;
 
         await lookupGate.WaitAsync(ct);
@@ -40,26 +45,40 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
             if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out cached) && cached is not null) return cached;
             var http = factory.CreateClient("UNComtrade");
             CustomsTradeBenchmark? differentUnitReference = null;
-            // Prefer Ethiopia's own imports in the requested unit. If imports
-            // only report weight for an item tariff, try supplier item counts.
-            foreach (var mirror in new[] { false, true })
+            var periods = await GetAvailablePeriodsAsync(231, ct);
+            var latest = periods.FirstOrDefault();
+            var checkedAt = clock.GetUtcNow();
+            // Use the newest period in Comtrade's availability catalog. Do not
+            // scan every historical month when a product has no row in that
+            // latest dataset; that makes the user wait through many upstream calls.
+            foreach (var available in periods)
             {
-                for (var year = lastYear; year >= lastYear - 2; year--)
+                var period = available.Period;
+                foreach (var mirror in new[] { false, true })
                 {
                     // Omitting reporterCode selects all reporting suppliers. The
                     // preview endpoint rejects the literal reporterCode=ALL.
                     var origin = mirror ? "partnerCode=231&flowCode=X" : "reporterCode=231&partnerCode=0&flowCode=M";
-                    var path = $"public/v1/preview/C/A/HS?{origin}&period={year}&cmdCode={code}&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500";
-                    using var document = await ReadAsync(http, path, ct);
-                    var result = Calculate(document.RootElement, code, year, mirror, new Uri(http.BaseAddress!, path).AbsoluteUri, preferredUnit);
+                    var publicPath = $"public/v1/preview/C/M/HS?{origin}&period={period}&cmdCode={code}&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500";
+                    var requestPath = WithSubscriptionKey(publicPath);
+                    using var document = await ReadAsync(http, requestPath, ct);
+                    var result = Calculate(document.RootElement, code, period, mirror, new Uri(http.BaseAddress!, publicPath).AbsoluteUri, preferredUnit);
                     if (result is null) continue;
-                    if (preferredUnit is not null && result.Unit != preferredUnit)
+                    var stamped = result with
                     {
-                        differentUnitReference ??= result;
+                        ReporterCode = mirror ? null : 231,
+                        PartnerCode = mirror ? 231 : 0,
+                        Partner = mirror ? "Ethiopia" : "World",
+                        LastCheckedAtUtc = checkedAt,
+                        DataUpdatedAtUtc = available.LastReleasedAtUtc
+                    };
+                    if (preferredUnit is not null && stamped.Unit != preferredUnit)
+                    {
+                        differentUnitReference ??= stamped;
                         continue;
                     }
-                    cache.Set(cacheKey, result, TimeSpan.FromHours(12));
-                    return result;
+                    cache.Set(cacheKey, stamped, TimeSpan.FromHours(1));
+                    return stamped;
                 }
             }
 
@@ -69,16 +88,170 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
                 {
                     Message = differentUnitReference.Message + $" No benchmark in the requested unit ({preferredUnit}) was available. This value remains a reference per {differentUnitReference.Unit}; no weight-to-item conversion has been inferred."
                 };
-                cache.Set(cacheKey, reference, TimeSpan.FromHours(12));
+                cache.Set(cacheKey, reference, TimeSpan.FromHours(1));
                 return reference;
             }
-            var unavailable = new CustomsTradeBenchmark(code, null, "Ethiopia", "USD", null, null, null, null, null,
-                "Neither Ethiopia imports nor supplier exports to Ethiopia had a usable reported quantity for this HS category in the last three completed years. No product price has been inferred.",
-                false, "No usable trade benchmark", null, [], false);
+            var unavailable = new CustomsTradeBenchmark(code, latest?.Period, "Ethiopia", "USD", null, null, null, null, null,
+                "Comtrade has no usable published period for this HS category, or the reported quantity is unavailable. No price has been inferred.",
+                false, "No usable trade benchmark", null, [], false, null, null, null, checkedAt, latest?.LastReleasedAtUtc);
+            var checkedUnavailable = unavailable;
+            cache.Set(cacheKey, checkedUnavailable, TimeSpan.FromMinutes(15));
+            return checkedUnavailable;
+        }
+        finally { lookupGate.Release(); }
+    }
+
+    public async Task<CustomsTradeBenchmark> SearchOriginFobAsync(string code, string countryCode, CancellationToken ct, string? preferredUnit = null)
+    {
+        var reporter = await ResolveReporterAsync(countryCode, ct)
+            ?? throw new ComtradeUnavailableException(400, "The selected country is not available as a UN Comtrade reporting country.");
+        var cacheKey = $"comtrade:origin-fob:v3-latest:{code}:{reporter.Code}:{preferredUnit ?? "any"}";
+        if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out var cached) && cached is not null) return cached;
+
+        await lookupGate.WaitAsync(ct);
+        try
+        {
+            if (cache.TryGetValue<CustomsTradeBenchmark>(cacheKey, out cached) && cached is not null) return cached;
+            var http = factory.CreateClient("UNComtrade");
+            CustomsTradeBenchmark? differentUnitReference = null;
+            var checkedAt = clock.GetUtcNow();
+            var periods = await GetAvailablePeriodsAsync(reporter.Code, ct);
+            var latest = periods.FirstOrDefault();
+            foreach (var available in periods)
+            {
+                var period = available.Period;
+                var publicPath = $"public/v1/preview/C/M/HS?reporterCode={reporter.Code}&partnerCode=231&flowCode=X&period={period}&cmdCode={code}&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500";
+                var requestPath = WithSubscriptionKey(publicPath);
+                using var document = await ReadAsync(http, requestPath, ct);
+                var result = Calculate(document.RootElement, code, period, mirror: true, new Uri(http.BaseAddress!, publicPath).AbsoluteUri, preferredUnit);
+                if (result is null) continue;
+                var named = result with
+                {
+                    Reporter = reporter.Name,
+                    SourceLabel = $"{reporter.Name} exports to Ethiopia",
+                    Reporters = [new BenchmarkReporter(reporter.Code, reporter.Name)],
+                    ReporterCode = reporter.Code,
+                    PartnerCode = 231,
+                    Partner = "Ethiopia",
+                    LastCheckedAtUtc = checkedAt,
+                    DataUpdatedAtUtc = available.LastReleasedAtUtc,
+                    Message = $"Country-of-origin FOB export unit value for {reporter.Name} in {period}. This is supporting reference evidence, not an exact brand/model price or an accepted customs valuation."
+                };
+                if (preferredUnit is not null && named.Unit != preferredUnit)
+                {
+                    differentUnitReference = named with
+                    {
+                        Message = named.Message + $" No benchmark in the requested unit ({preferredUnit}) was available. This value remains a reference per {named.Unit}; no unit conversion has been inferred."
+                    };
+                }
+                else
+                {
+                    cache.Set(cacheKey, named, TimeSpan.FromHours(1));
+                    return named;
+                }
+            }
+
+            if (differentUnitReference is not null)
+            {
+                cache.Set(cacheKey, differentUnitReference, TimeSpan.FromHours(1));
+                return differentUnitReference;
+            }
+
+            var unavailable = new CustomsTradeBenchmark(code, latest?.Period, reporter.Name, "USD", null, null, null, null, null,
+                $"No usable FOB period has been published by Comtrade for {reporter.Name}, or no usable quantity was reported.",
+                true, $"{reporter.Name} FOB exports to Ethiopia", "FOB", [new BenchmarkReporter(reporter.Code, reporter.Name)], false,
+                reporter.Code, 231, "Ethiopia", checkedAt, latest?.LastReleasedAtUtc);
             cache.Set(cacheKey, unavailable, TimeSpan.FromMinutes(15));
             return unavailable;
         }
         finally { lookupGate.Release(); }
+    }
+
+    private async Task<IReadOnlyList<ComtradePeriodAvailability>> GetAvailablePeriodsAsync(int reporterCode, CancellationToken ct)
+    {
+        var cacheKey = $"comtrade:availability:v1:monthly-hs:{reporterCode}";
+        if (cache.TryGetValue<IReadOnlyList<ComtradePeriodAvailability>>(cacheKey, out var cached) && cached is not null) return cached;
+
+        var http = factory.CreateClient("UNComtrade");
+        var subscriptionKey = configuration?["Comtrade:SubscriptionKey"];
+        var path = string.IsNullOrWhiteSpace(subscriptionKey)
+            ? $"public/v1/getDA/C/M/HS?reporterCode={reporterCode}"
+            : $"data/v1/getDA/C/M/HS?reporterCode={reporterCode}&subscription-key={Uri.EscapeDataString(subscriptionKey)}";
+        using var document = await ReadAsync(http, path, ct);
+        if (!document.RootElement.TryGetProperty("data", out var rows) || rows.ValueKind != JsonValueKind.Array)
+            throw new JsonException("Invalid Comtrade availability envelope.");
+
+        var periods = rows.EnumerateArray()
+            .Where(row => string.Equals(Text(row, "freqCode"), "M", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Text(row, "classificationSearchCode"), "HS", StringComparison.OrdinalIgnoreCase)
+                && (!row.TryGetProperty("isOriginalClassification", out var original) || original.ValueKind != JsonValueKind.False))
+            .Select(row => new ComtradePeriodAvailability(
+                (int?)Number(row, "period") ?? 0,
+                ParseReleaseDate(Text(row, "lastReleased") ?? Text(row, "firstReleased"))))
+            .Where(period => period.Period is >= 100001 and <= 999912 && period.Period % 100 is >= 1 and <= 12)
+            .GroupBy(period => period.Period)
+            .Select(group => group.OrderByDescending(item => item.LastReleasedAtUtc).First())
+            .OrderByDescending(period => period.Period)
+            .Take(1)
+            .ToArray();
+
+        // Lightweight unit-test handlers and older hosts may not expose the
+        // availability metadata fields. Keep those callers compatible while
+        // production hosts use the catalog above.
+        if (periods.Length == 0 && configuration is null)
+            periods = [new ComtradePeriodAvailability(int.Parse(clock.GetUtcNow().ToString("yyyyMM")), null)];
+
+        cache.Set(cacheKey, periods, TimeSpan.FromHours(1));
+        return periods;
+    }
+
+    private static DateTimeOffset? ParseReleaseDate(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var formats = new[] { "dd/MM/yyyy HH:mm:ss", "yyyy-MM-ddTHH:mm:ss", "yyyy-MM-ddTHH:mm:ss.FFFFFFFK" };
+        return DateTimeOffset.TryParseExact(value, formats, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed)
+            ? parsed : null;
+    }
+
+    private sealed record ComtradePeriodAvailability(int Period, DateTimeOffset? LastReleasedAtUtc);
+
+    private async Task<ComtradeReporter?> ResolveReporterAsync(string countryCode, CancellationToken ct)
+    {
+        var normalized = countryCode.Trim().ToUpperInvariant();
+        var cacheKey = $"comtrade:reporters:v1:{normalized}";
+        if (cache.TryGetValue<ComtradeReporter?>(cacheKey, out var cached)) return cached;
+
+        var http = factory.CreateClient("UNComtrade");
+        using var response = await http.GetAsync("files/v1/app/reference/Reporters.json", ct);
+        if (!response.IsSuccessStatusCode)
+            throw new ComtradeUnavailableException(502, "UN Comtrade country metadata could not be loaded.");
+        using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        var now = clock.GetUtcNow().UtcDateTime;
+        ComtradeReporter? reporter = null;
+        var reporterEffectiveDate = DateTime.MinValue;
+        if (document.RootElement.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in results.EnumerateArray())
+            {
+                if (string.Equals(Text(item, "isGroup"), "true", StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(Text(item, "reporterCodeIsoAlpha2"), normalized, StringComparison.OrdinalIgnoreCase)
+                    || !DateTime.TryParse(Text(item, "entryEffectiveDate"), out var effective)
+                    || effective > now
+                    || (DateTime.TryParse(Text(item, "entryExpiredDate"), out var expired) && expired <= now)) continue;
+
+                var code = Number(item, "reporterCode");
+                if (code is null || code.Value != decimal.Truncate(code.Value) || code.Value <= 0 || code.Value > int.MaxValue) continue;
+                var candidate = new ComtradeReporter((int)code.Value, Text(item, "reporterDesc") ?? normalized, normalized);
+                if (reporter is null || effective > reporterEffectiveDate)
+                {
+                    reporter = candidate;
+                    reporterEffectiveDate = effective;
+                }
+            }
+        }
+        cache.Set(cacheKey, reporter, TimeSpan.FromHours(24));
+        return reporter;
     }
 
     private async Task<JsonDocument> ReadAsync(HttpClient http, string path, CancellationToken ct)
@@ -102,10 +275,22 @@ public sealed class ComtradeBenchmarkClient(IHttpClientFactory factory, IMemoryC
                 if (retryTime > nextRequestAt) nextRequestAt = retryTime;
                 continue;
             }
+            var providerMessage = await response.Content.ReadAsStringAsync(ct);
+            if (response.StatusCode == HttpStatusCode.Forbidden && providerMessage.Contains("quota", StringComparison.OrdinalIgnoreCase))
+                throw new ComtradeUnavailableException(503,
+                    "UN Comtrade's public API quota has been exhausted. Configure Comtrade:SubscriptionKey or retry after the provider quota is replenished.");
             throw new ComtradeUnavailableException(throttled ? 503 : 502,
                 throttled ? "The UN Comtrade preview rate limit was reached. Please retry shortly."
                     : $"The UN Comtrade preview service returned HTTP {(int)response.StatusCode}. Please retry shortly.");
         }
+    }
+
+    private string WithSubscriptionKey(string publicPath)
+    {
+        var key = configuration?["Comtrade:SubscriptionKey"];
+        return string.IsNullOrWhiteSpace(key)
+            ? publicPath
+            : publicPath.Replace("public/v1/", "data/v1/", StringComparison.Ordinal) + $"&subscription-key={Uri.EscapeDataString(key)}";
     }
 
     private static CustomsTradeBenchmark? Calculate(JsonElement root, string code, int year, bool mirror, string sourceUrl, string? preferredUnit)

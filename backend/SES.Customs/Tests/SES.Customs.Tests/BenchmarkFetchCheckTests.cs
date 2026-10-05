@@ -12,13 +12,14 @@ namespace SES.Customs.Tests;
 
 public sealed class BenchmarkFetchCheckTests
 {
+    private const int CurrentPeriod = 202610;
     [Theory]
     [InlineData(false, "CIF")]
     [InlineData(true, "FOB")]
     public void VerifiesMatchingImportsAndSupplierExports(bool mirror, string basis)
     {
         var benchmark = ValidBenchmark(mirror);
-        var result = BenchmarkFetchVerification.Verify(benchmark, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(benchmark, "851713", "u", CurrentPeriod);
         Assert.Equal("verified", result.Status);
         Assert.Equal(basis, benchmark.ValuationBasis);
         Assert.Equal(9, result.Checks.Count);
@@ -27,7 +28,7 @@ public sealed class BenchmarkFetchCheckTests
     [Fact]
     public void EmptySuccessfulResponseIsNoDataNotVerified()
     {
-        var result = BenchmarkFetchVerification.Verify(NoData(), "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(NoData(), "851713", "u", CurrentPeriod);
         Assert.Equal("no_data", result.Status);
         Assert.Empty(result.Checks);
     }
@@ -35,14 +36,14 @@ public sealed class BenchmarkFetchCheckTests
     [Fact]
     public void PartialResultWithNoPriceFailsVerification()
     {
-        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { UnitValue = null }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { UnitValue = null }, "851713", "u", CurrentPeriod);
         Assert.Equal("invalid_result", result.Status);
     }
 
     [Fact]
     public void WeightResultForItemRequestIsReferenceOnly()
     {
-        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { Unit = "kg" }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { Unit = "kg" }, "851713", "u", CurrentPeriod);
         Assert.Equal("unit_mismatch", result.Status);
         Assert.Contains("Reference only", result.Message);
     }
@@ -50,26 +51,26 @@ public sealed class BenchmarkFetchCheckTests
     [Fact]
     public void TinyPositiveTradeValueMayLegitimatelyRoundToZero()
     {
-        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { TradeValue = .01m, Quantity = 100, UnitValue = 0 }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { TradeValue = .01m, Quantity = 100, UnitValue = 0 }, "851713", "u", CurrentPeriod);
         Assert.Equal("verified", result.Status);
     }
 
     [Fact]
     public void ArithmeticUsesTheSameDecimalRoundingAsTheBenchmark()
     {
-        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { TradeValue = 10.05m, Quantity = 10, UnitValue = 1.00m }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { TradeValue = 10.05m, Quantity = 10, UnitValue = 1.00m }, "851713", "u", CurrentPeriod);
         Assert.Equal("verified", result.Status);
     }
 
     [Fact]
     public void WrongCodeCurrencyPriceYearAndReporterFailChecks()
     {
-        var invalid = ValidBenchmark() with { HsCode = "100630", Currency = "ETB", UnitValue = 25, Period = 2026, Reporters = [new(156, "China")] };
-        var result = BenchmarkFetchVerification.Verify(invalid, "851713", "u", 2026);
+        var invalid = ValidBenchmark() with { HsCode = "100630", Currency = "ETB", UnitValue = 25, Period = 202600, Reporters = [new(156, "China")] };
+        var result = BenchmarkFetchVerification.Verify(invalid, "851713", "u", CurrentPeriod);
         Assert.Equal("invalid_result", result.Status);
         Assert.Contains("HS code", result.Message);
         Assert.Contains("Currency", result.Message);
-        Assert.Contains("Year", result.Message);
+        Assert.Contains("current month", result.Message);
         Assert.Contains("Price", result.Message);
         Assert.Contains("Reporting countries", result.Message);
     }
@@ -77,12 +78,12 @@ public sealed class BenchmarkFetchCheckTests
     [Theory]
     [InlineData(null)]
     [InlineData("not-a-url")]
-    [InlineData("http://comtradeapi.un.org/public/v1/preview/C/A/HS")]
-    [InlineData("https://example.com/public/v1/preview/C/A/HS")]
-    [InlineData("https://comtradeapi.un.org/public/v1/preview/C/A/HS")]
+    [InlineData("http://comtradeapi.un.org/public/v1/preview/C/M/HS")]
+    [InlineData("https://example.com/public/v1/preview/C/M/HS")]
+    [InlineData("https://comtradeapi.un.org/public/v1/preview/C/M/HS")]
     public void MissingOrWrongSourceIsInvalidInsteadOfThrowing(string? source)
     {
-        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { SourceUrl = source }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(ValidBenchmark() with { SourceUrl = source }, "851713", "u", CurrentPeriod);
         Assert.Equal("invalid_result", result.Status);
         Assert.Contains("UN Comtrade source", result.Message);
     }
@@ -96,7 +97,7 @@ public sealed class BenchmarkFetchCheckTests
     public void SourceMustMatchRequestedDimensions(string before, string after)
     {
         var benchmark = ValidBenchmark();
-        var result = BenchmarkFetchVerification.Verify(benchmark with { SourceUrl = benchmark.SourceUrl!.Replace(before, after) }, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(benchmark with { SourceUrl = benchmark.SourceUrl!.Replace(before, after) }, "851713", "u", CurrentPeriod);
         Assert.Equal("invalid_result", result.Status);
     }
 
@@ -104,7 +105,7 @@ public sealed class BenchmarkFetchCheckTests
     public void DuplicateReportersAndWrongMirrorBasisAreInvalid()
     {
         var benchmark = ValidBenchmark(true) with { ValuationBasis = "CIF", Reporters = [new(156, "China"), new(156, "China")] };
-        var result = BenchmarkFetchVerification.Verify(benchmark, "851713", "u", 2026);
+        var result = BenchmarkFetchVerification.Verify(benchmark, "851713", "u", CurrentPeriod);
         Assert.Equal("invalid_result", result.Status);
         Assert.Contains("Reporting countries", result.Message);
         Assert.Contains("Valuation basis", result.Message);
@@ -181,9 +182,9 @@ public sealed class BenchmarkFetchCheckTests
         Assert.Empty(fixture.Requests);
     }
 
-    private static CustomsTradeBenchmark ValidBenchmark(bool mirror = false) => new("851713", 2025, mirror ? "Supplier countries" : "Ethiopia", "USD", "u",
-        100, 10, 10, "https://comtradeapi.un.org/public/v1/preview/C/A/HS?" + (mirror ? "partnerCode=231&flowCode=X" : "reporterCode=231&partnerCode=0&flowCode=M")
-        + "&period=2025&cmdCode=851713&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500",
+    private static CustomsTradeBenchmark ValidBenchmark(bool mirror = false) => new("851713", CurrentPeriod, mirror ? "Supplier countries" : "Ethiopia", "USD", "u",
+        100, 10, 10, "https://comtradeapi.un.org/public/v1/preview/C/M/HS?" + (mirror ? "partnerCode=231&flowCode=X" : "reporterCode=231&partnerCode=0&flowCode=M")
+        + $"&period={CurrentPeriod}&cmdCode=851713&partner2Code=0&customsCode=C00&motCode=0&maxRecords=500",
         "Category benchmark only.", mirror, mirror ? "Supplier exports" : "Ethiopia imports", mirror ? "FOB" : "CIF",
         [new(mirror ? 156 : 231, mirror ? "China" : "Ethiopia")], false);
 
@@ -201,7 +202,7 @@ public sealed class BenchmarkFetchCheckTests
         public Fixture(CustomsTradeBenchmark? benchmark)
         {
             http = new HttpClient(this, disposeHandler: false) { BaseAddress = new Uri("https://comtradeapi.un.org/") };
-            if (benchmark is not null) cache.Set($"comtrade:benchmark:v4:851713:{DateTimeOffset.UtcNow.Year - 1}:u", benchmark);
+            if (benchmark is not null) cache.Set($"comtrade:benchmark:v5-monthly:851713:{CurrentPeriod}:u", benchmark);
             Controller = new(new ComtradeBenchmarkClient(this, cache));
             Db.HsRevisions.Add(Revision);
             Db.SaveChanges();

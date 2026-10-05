@@ -49,7 +49,7 @@ public sealed class CustomsTradeBenchmarkController(ComtradeBenchmarkClient clie
         var checkedAt = DateTimeOffset.UtcNow;
         if (result is OkObjectResult { Value: CustomsTradeBenchmark benchmark })
             return Ok(new BenchmarkFetchCheck(code, preferredUnit, checkedAt, catalogue,
-                BenchmarkFetchVerification.Verify(benchmark, code, preferredUnit, checkedAt.Year), benchmark));
+                BenchmarkFetchVerification.Verify(benchmark, code, preferredUnit, int.Parse(checkedAt.UtcDateTime.ToString("yyyyMM"))), benchmark));
         var problem = (result as ObjectResult)?.Value as ProblemDetails;
         return Ok(new BenchmarkFetchCheck(code, preferredUnit, checkedAt, catalogue,
             new("api_error", problem?.Detail ?? "The benchmark API could not complete this lookup.", [],
@@ -87,5 +87,25 @@ public sealed class CustomsTradeBenchmarkController(ComtradeBenchmarkClient clie
         {
             return Problem(statusCode: 502, title: "UN Comtrade returned an unreadable response", detail: "The provider did not return valid trade records. Please retry shortly.");
         }
+    }
+
+    [HttpGet("origin-fob")]
+    public async Task<IActionResult> OriginFob([FromQuery] string? hsCode, [FromQuery] string? countryCode, CancellationToken ct, [FromQuery] string? unit = null)
+    {
+        var code = Regex.Replace(hsCode ?? "", "[^0-9]", "");
+        if (code.Length < 6) return BadRequest(new { message = "Select an HS code before looking up a country-of-origin FOB value." });
+        if (!Regex.IsMatch(countryCode ?? "", "^[A-Za-z]{2}$")) return BadRequest(new { message = "Select a valid country of origin." });
+        var preferredUnit = string.IsNullOrWhiteSpace(unit) ? null : unit.Trim().ToLowerInvariant();
+        if (preferredUnit is not (null or "u" or "kg")) return BadRequest(new { message = "The preferred FOB unit must be u (items) or kg (kilograms)." });
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        try
+        {
+            return Ok(await client.SearchOriginFobAsync(code[..6], countryCode!, timeout.Token, preferredUnit));
+        }
+        catch (ComtradeUnavailableException exception) { return Problem(statusCode: exception.StatusCode, title: "UN Comtrade FOB data is unavailable", detail: exception.Message); }
+        catch (HttpRequestException) { return Problem(statusCode: 502, title: "UN Comtrade could not be reached", detail: "The country-of-origin FOB provider could not be reached. Please retry shortly."); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return Problem(statusCode: 504, title: "UN Comtrade timed out", detail: "The country-of-origin FOB lookup timed out. Please retry shortly."); }
+        catch (JsonException) { return Problem(statusCode: 502, title: "UN Comtrade returned an unreadable response", detail: "The provider did not return valid FOB trade records. Please retry shortly."); }
     }
 }

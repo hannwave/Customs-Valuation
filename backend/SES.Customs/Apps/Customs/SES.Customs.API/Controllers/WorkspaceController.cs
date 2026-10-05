@@ -825,7 +825,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         rates.TryGetValue(to, out var targetEtb);
         Validate(sourceEtb > 0 && targetEtb > 0, $"An approved {from} to {to} exchange rate is unavailable.");
         var rate = sourceEtb / targetEtb;
-        return new(Math.Round(amount * rate, 2, MidpointRounding.AwayFromZero), Math.Round(rate, 12), "Approved ETB cross-rate (exchange.et / configured fallback)", date);
+        return new(Math.Round(amount * rate, 2, MidpointRounding.AwayFromZero), Math.Round(rate, 12), "NBE reference rate (Frankfurter primary; configured fallback)", date);
     }
 
     private static string? NormalizeCurrency(string? value)

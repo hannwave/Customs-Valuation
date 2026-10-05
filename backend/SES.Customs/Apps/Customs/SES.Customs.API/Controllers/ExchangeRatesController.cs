@@ -33,7 +33,7 @@ public sealed class ExchangeRatesController(HistoricalFxClient fx) : ControllerB
             convertedAmount = Math.Round(amount * rate, 2, MidpointRounding.AwayFromZero),
             to = targetCurrency,
             rate = Math.Round(rate, 12),
-            source = "Approved ETB cross-rate (exchange.et / configured fallback)",
+            source = "NBE reference rate (Frankfurter primary; configured fallback)",
             date
         });
     }

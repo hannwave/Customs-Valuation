@@ -52,6 +52,7 @@ export interface ValuationSession {
   purchaseCountryName?: string;
   international: InternationalPriceSearch | null;
   customsBenchmark?: CustomsTradeBenchmark | null;
+  countryOriginFob?: CustomsTradeBenchmark | null;
   historical?: HistoricalSessionEvidence | null;
   customerTransaction?: CustomerTransactionEvidence | null;
   originFob?: OriginFobEvidence | null;
