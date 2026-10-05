@@ -90,7 +90,7 @@ const exemptionOptions = [
   ["DIPLOMATIC", "Diplomatic goods"],
   ["TAX_EXEMPT", "General tax exemption"],
   ["CUSTOMS_DUTY_EXEMPT", "Customs duty exemption (officer approved)"],
-  ["MACHINERY_EQUIPMENT_EXEMPT", "Machinery / manufacturing equipment duty exemption (officer approved)"],
+  ["MACHINERY_EQUIPMENT_EXEMPT", "Qualifying machinery tariff and VAT exemption (officer approved)"],
   ["VAT_EXEMPT", "VAT exemption"],
   ["SURTAX_EXEMPT", "Surtax exemption"],
   ["SOCIAL_WELFARE_EXEMPT", "Social welfare levy exemption"],
@@ -104,10 +104,11 @@ const permanentTaxDefinitions = [
   { name: "VAT", calculationBasis: "CIFPlusDutyPlusExcisePlusSurtax", order: 5 },
   { name: "Withholding Tax", calculationBasis: "CIF", order: 6 },
   { name: "Social Welfare Levy", calculationBasis: "CIF", order: 7 },
+  { name: "Cargo Scanning Fee", calculationBasis: "CIF", order: 8 },
 ] as const;
 
 const standardTaxNames: string[] = [...permanentTaxDefinitions.map((line) => line.name), "Excise Tax (specific)"];
-const currentPhase2RuleVersion = "officer-sequential-duty-excise-surtax-v2";
+const currentPhase2RuleVersion = "officer-sequential-duty-excise-surtax-product-type-v4";
 
 function draftWithCurrentRecommendations(draft: Phase2Request): Phase2Request {
   return {
@@ -239,7 +240,7 @@ function draftFromResponse(data: Phase2Response): Phase2Request {
     quantity: data.importerDeclaration?.quantity || 1,
     unit: data.importerDeclaration?.unit || "Pieces (PCS)",
     isCommercialImport: data.importerDeclaration?.isCommercialProduct ?? true,
-    productCategory: data.importerDeclaration?.importPurpose === "MANUFACTURING" ? "Manufacturing input" : "General goods",
+    productCategory: data.phase1.productType === "MANUFACTURING" || data.importerDeclaration?.importPurpose === "MANUFACTURING" ? "Manufacturing input" : "General goods",
     // Importer claims are displayed to the officer; exemption codes stay empty until the officer chooses them.
   };
 
@@ -406,6 +407,8 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currency = draft.targetCurrency || "ETB";
+  const isManufacturingProduct = data?.phase1.productType === "MANUFACTURING" || data?.importerDeclaration?.importPurpose === "MANUFACTURING";
+  const isCommodityProduct = data?.phase1.productType === "COMMODITY";
   const remarksIssue = officerNoteIssue(draft.notes);
   const adjustmentNoteIssue = officerNoteIssue(draft.adjustmentReason);
   const noteIssue = remarksIssue ?? adjustmentNoteIssue;
@@ -415,8 +418,18 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   );
 
   const rows = useMemo(
-    () => previewLines(draft.taxLines, Number(draft.customsValueAmount) || 0, Number(draft.quantity) || 0, currency),
-    [draft.taxLines, draft.customsValueAmount, draft.quantity, currency],
+    () => {
+      const preview = previewLines(draft.taxLines, Number(draft.customsValueAmount) || 0, Number(draft.quantity) || 0, currency);
+      if (!isManufacturingProduct) return preview;
+      return preview.map((line) => ({
+        ...line,
+        isApplicable: false,
+        status: line.status === "Exempt" ? line.status : "NotApplicable",
+        notes: line.status === "Exempt" ? line.notes : "Not applicable: manufacturing product type has no assessment taxes or fees.",
+        calculatedAmount: 0,
+      }));
+    },
+    [draft.taxLines, draft.customsValueAmount, draft.quantity, currency, isManufacturingProduct],
   );
 
   const totalTaxPreview = rows
@@ -712,6 +725,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   }
 
   function addTax() {
+    if (isManufacturingProduct) return;
     const name = newTaxName.trim();
     if (!name) return;
     if (standardTaxNames.some((standardName) => standardName.toLowerCase() === name.toLowerCase())) {
@@ -896,73 +910,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
           )}
         </div>
 
-        {/* Description & Keyword Search Bar */}
-        <div className="phase2-search-strip">
-          <div className="phase2-search-input-wrap">
-            <FiSearch />
-            <input
-              type="text"
-              className="phase2-search-input"
-              placeholder="Search product description or keyword (e.g. iPhone 13, Cigar, Laptop, Tobacco)..."
-              value={keywordQuery}
-              onChange={(e) => {
-                setKeywordQuery(e.target.value);
-                void triggerKeywordSearch(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void triggerKeywordSearch();
-                }
-              }}
-            />
-            {keywordQuery && (
-              <button
-                type="button"
-                className="phase2-search-clear"
-                onClick={() => {
-                  setKeywordQuery("");
-                  setKeywordResults([]);
-                  setShowKeywordResults(false);
-                }}
-                aria-label="Clear search"
-              >
-                <FiX />
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            className="phase2-search-btn"
-            onClick={() => void triggerKeywordSearch()}
-            disabled={isSearchingKeyword}
-          >
-            <FiSearch /> {isSearchingKeyword ? "Searching…" : "Search Tariff"}
-          </button>
-
-          {/* Keyword Search Popover Results */}
-          {showKeywordResults && keywordResults.length > 0 && (
-            <div className="hs-suggestions-popover">
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 8px", fontSize: "10px", color: "#64748b", borderBottom: "1px solid #e2e8f0" }}>
-                <span>Matching Tariff Headings ({keywordResults.length})</span>
-                <button type="button" onClick={() => setShowKeywordResults(false)} style={{ border: 0, background: "none", color: "#94a3b8", cursor: "pointer" }}><FiX /></button>
-              </div>
-              {keywordResults.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`hs-suggestion-item ${item.id === draft.selectedHsCodeId ? "is-selected" : ""}`}
-                  onClick={() => selectHsItem(item, true)}
-                >
-                  <span className="hs-suggestion-code">{displayHsCode(item)}</span>
-                  <span className="hs-suggestion-desc">{item.descriptionEn}</span>
-                  {item.duty && <span className="hs-suggestion-duty">{item.duty} duty</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="product-hero">
           <div className="product-hero-image">
             {productImage ? (
@@ -999,6 +946,80 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
             </div>
 
             <div className="product-hero-fields">
+              <div className="product-hero-field product-hero-field--wide">
+                <label htmlFor="phase2-product-search">Product to search</label>
+                <div className="phase2-search-strip phase2-search-strip--paired">
+                  <div className="phase2-search-input-wrap">
+                    <FiSearch />
+                    <input
+                      id="phase2-product-search"
+                      type="text"
+                      className="phase2-search-input"
+                      placeholder="Product, description, or HS code"
+                      value={keywordQuery}
+                      onChange={(event) => {
+                        setKeywordQuery(event.currentTarget.value);
+                        void triggerKeywordSearch(event.currentTarget.value);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void triggerKeywordSearch();
+                        }
+                      }}
+                    />
+                    {keywordQuery && (
+                      <button
+                        type="button"
+                        className="phase2-search-clear"
+                        onClick={() => {
+                          setKeywordQuery("");
+                          setKeywordResults([]);
+                          setShowKeywordResults(false);
+                        }}
+                        aria-label="Clear product search"
+                      >
+                        <FiX />
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    className="phase2-search-btn"
+                    type="button"
+                    onClick={() => void triggerKeywordSearch()}
+                    disabled={isSearchingKeyword}
+                    aria-label="Search products and tariff descriptions"
+                    title="Search products and tariff descriptions"
+                  >
+                    <FiSearch />
+                  </button>
+                  {showKeywordResults && keywordResults.length > 0 && (
+                    <div className="hs-suggestions-popover">
+                      <div className="phase2-keyword-results-heading">
+                        <span>Matching tariff items ({keywordResults.length})</span>
+                        <button type="button" onClick={() => setShowKeywordResults(false)} aria-label="Close search results"><FiX /></button>
+                      </div>
+                      {keywordResults.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`hs-suggestion-item ${item.id === draft.selectedHsCodeId ? "is-selected" : ""}`}
+                          onClick={() => selectHsItem(item, true)}
+                        >
+                          <span className="hs-suggestion-code">{displayHsCode(item)}</span>
+                          <span className="hs-suggestion-desc">{item.descriptionEn}</span>
+                          {item.duty && <span className="hs-suggestion-duty">{item.duty} duty</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="product-hero-tariff">
+                  <small>Product description</small>
+                  <span>{selectedHs?.descriptionEn ?? "Search for a product or enter an HS code to view its description."}</span>
+                </div>
+              </div>
+
               {/* Interactive, editable HS Code Input */}
               <div className="product-hero-field">
                 <label>HS Code</label>
@@ -1061,17 +1082,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Dynamic Tariff Description Field */}
-              <div className="product-hero-field product-hero-field--wide">
-                <label>Tariff description</label>
-                <span className="product-hero-tariff">
-                  {selectedHs?.descriptionEn ??
-                    (draft.selectedHsCodeId
-                      ? "Tariff description loaded for selected HS line."
-                      : "No tariff line selected. Type an HS code or search keywords above.")}
-                </span>
               </div>
             </div>
           </div>
@@ -1150,6 +1160,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                     <input
                       type="checkbox"
                       checked={draft.exemptionCodes.includes(code)}
+                      disabled={code === "MACHINERY_EQUIPMENT_EXEMPT" && !(data?.importerDeclaration?.importPurpose === "MANUFACTURING" && data.importerDeclaration.isMachineryOrEquipment)}
                       onChange={() => toggleExemption(code)}
                     />
                     {label}
@@ -1224,7 +1235,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                               <p>Original: {original ? `${original.value}${original.calculationType === "Percentage" ? "%" : ""} · ${original.isApplicable === false ? "Not applied" : "Applied"}` : "No original line"} → Revised: {line.value}{line.calculationType === "Percentage" ? "%" : ""} · {line.isApplicable === false ? "Not applied" : "Applied"}</p>
                               <p>Tax difference: {comparable ? money(line.calculatedAmount - (original?.calculatedAmount ?? 0), currency) : "Awaiting comparable calculations"}{isExciseComparisonLine(line) ? " (comparison only)" : ""}</p>
                             </>; })()}
-                            <p>Reason: {draft.adjustmentReason || "No adjustment reason entered"}</p>
+                            <p>Assessment status: {line.status === "Exempt" ? "EXEMPT" : line.isApplicable === false ? "NOT APPLICABLE" : "APPLICABLE"}</p>
+                            <p>Assessment reason: {line.notes || "No specific reason recorded."}</p>
+                            <p>Officer adjustment reason: {draft.adjustmentReason || "No adjustment reason entered"}</p>
                           </details>
                         </td>
                         <td>
@@ -1247,10 +1260,15 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             </small>
                           )}
                         </td>
-                        <td>{displayBasis(line.calculationBasis)}</td>
+                        <td>
+                          {displayBasis(line.calculationBasis)}
+                          {line.name === "Cargo Scanning Fee" && <small className="tax-line-base-value">Tax/Fee Base: {money(line.baseAmount, currency)}</small>}
+                        </td>
                         <td className="amount-cell">
-                          {line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false
+                          {line.status === "Pending" || line.status === "ReviewRequired"
                             ? "—"
+                            : line.isApplicable === false
+                              ? <div className="tax-line-assessment-status"><strong>{money(0, currency)}</strong><span>{line.status === "Exempt" ? "EXEMPT" : "NOT APPLICABLE"}</span><small>{line.notes || "No specific reason recorded."}</small></div>
                             : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
                               ? "Refresh calculation"
                               : money(line.calculatedAmount, currency)}
@@ -1262,6 +1280,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             role="switch"
                             aria-checked={line.isApplicable !== false}
                             onClick={() => toggleLine(index)}
+                            disabled={line.status === "Exempt" || isManufacturingProduct}
                             aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name, line.calculationBasis)}`}
                           >
                             <span />
@@ -1287,7 +1306,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                   <button type="button" onClick={() => setShowNewTax(false)}><FiX /></button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setShowNewTax(true)}>
+                <button type="button" onClick={() => setShowNewTax(true)} disabled={isManufacturingProduct}>
                   <FiPlus /> Add tax type
                 </button>
               )}
@@ -1326,8 +1345,10 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                 <div className="calculation-summary-line" key={`${line.name}-summary-${index}`}>
                   <span>{displayTaxName(line.name, line.calculationBasis)}{isExciseComparisonLine(line) ? " (comparison only)" : ""}</span>
                   <strong>
-                    {line.status === "Pending" || line.status === "ReviewRequired" || line.isApplicable === false
+                    {line.status === "Pending" || line.status === "ReviewRequired"
                       ? "—"
+                      : line.isApplicable === false
+                        ? `0.00 ${currency} · ${line.status === "Exempt" ? "EXEMPT" : "NOT APPLICABLE"}`
                       : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
                         ? "Refresh calculation"
                       : money(line.calculatedAmount, currency)}
@@ -1336,17 +1357,19 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                 </div>
               ))}
               <div className="calculation-summary-line calculation-summary-line--total">
-                <span>Duties and taxes (before adjustments)</span>
+                <span>Total value of taxes</span>
                   <strong>{calculationNotReady ? "Provisional — review required" : money(totalTaxPreview, currency)}</strong>
               </div>
               <div className="calculation-summary-line"><span>Exemptions</span><strong>−{money(draft.exemptionAmount, currency)}</strong></div>
               <div className="calculation-summary-line"><span>Waivers</span><strong>−{money(draft.waiverAmount, currency)}</strong></div>
               <div className="calculation-summary-line"><span>Adjustment</span><strong>{money(adjustment, currency)}</strong></div>
               <div className="calculation-summary-line"><span>Duties and taxes balance after adjustments (excluding CIF; negative is credit)</span><strong>{calculationNotReady ? "Provisional — review required" : money(netTaxes, currency)}</strong></div>
-              <div className="calculation-summary-line calculation-summary-line--payable">
-                <span>CIF + duties and taxes − exemptions − waivers + adjustment (minimum zero)</span>
-                  <strong>{calculationNotReady ? "Provisional — review required" : money(finalPreview, currency)}</strong>
-              </div>
+              {isCommodityProduct && (
+                <div className="calculation-summary-line calculation-summary-line--total">
+                  <span>Total taxes payable for this commodity</span>
+                  <strong>{calculationNotReady ? "Provisional — review required" : money(Math.max(0, netTaxes), currency)}</strong>
+                </div>
+              )}
             </div>
           </section>
 
