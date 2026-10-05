@@ -1006,6 +1006,7 @@ tbody tr:hover{background:#f5f9fe}
 .feedback-toast-dismiss:hover{background:#102a560d;color:var(--navy)}
 .feedback-toast-retry{margin-top:9px;border:0;border-bottom:1px solid currentColor;padding:0 0 2px;background:transparent;color:inherit;font-size:11px;font-weight:700}
 .feedback-toast-timer{position:absolute;right:0;bottom:0;left:0;height:3px;border-radius:0 0 12px 12px;background:currentColor;transform-origin:left;animation:feedback-toast-timeout linear forwards;opacity:.35}
+.trade-freshness strong{font-weight:700}.trade-freshness.is-fresh strong{color:#16804b}.trade-freshness.is-aging strong{color:#a15c00}.trade-freshness.is-outdated strong{color:#b42318}.trade-freshness.is-muted strong{color:#667085}
 .feedback-toast{position:relative;overflow:hidden}
 @keyframes feedback-toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes feedback-toast-timeout{from{transform:scaleX(1)}to{transform:scaleX(0)}}

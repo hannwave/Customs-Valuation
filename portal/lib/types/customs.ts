@@ -78,6 +78,7 @@ export interface CustomsTradeBenchmark {
   partnerCode?: number | null;
   partner?: string | null;
   lastCheckedAtUtc?: string | null;
+  dataUpdatedAtUtc?: string | null;
 }
 export interface InternationalPriceSync extends InternationalPriceSearch {
   hsCodeId: string;

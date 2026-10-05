@@ -82,6 +82,19 @@ function tradeCheckedAt(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function tradeFreshness(value: CustomsTradeBenchmark | null) {
+  if (!value?.dataUpdatedAtUtc) return { label: "Update date unavailable", className: "is-muted" };
+  const updated = new Date(value.dataUpdatedAtUtc);
+  if (Number.isNaN(updated.getTime())) return { label: `Updated ${value.dataUpdatedAtUtc}`, className: "is-muted" };
+  const now = new Date();
+  const threeMonthsAgo = new Date(now);
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  const ageDays = Math.max(0, (now.getTime() - updated.getTime()) / 86400000);
+  if (updated >= new Date(now.getTime() - 7 * 86400000)) return { label: "Fresh · updated within 7 days", className: "is-fresh" };
+  if (updated < threeMonthsAgo) return { label: "Outdated · updated more than 3 months ago", className: "is-outdated" };
+  return { label: `Older than 7 days · ${Math.floor(ageDays)} days ago`, className: "is-aging" };
+}
+
 function StatisticCard({ title, icon, stats, currency, href }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; href: string }) {
   const tone = "international";
   return <Link href={href} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
@@ -98,6 +111,7 @@ function StatisticCard({ title, icon, stats, currency, href }: { title: string; 
 }
 
 function CountryOriginFobCard({ value, countryName, busy, error, onRetry }: { value: CustomsTradeBenchmark | null; countryName: string; busy: boolean; error: string; onRetry: () => void }) {
+  const freshness = tradeFreshness(value);
   return <section className="valuation-stat-card manufacturer-price-card country-origin-fob-card" aria-label="Country of Origin FOB reference price">
     <div className="valuation-card-title"><span><FiMapPin /></span><strong>Country of Origin FOB</strong><em>{tradePeriod(value?.period)}</em></div>
     {busy ? <p role="status" className="manufacturer-price-note">Loading {countryName || "country"} FOB export evidence…</p>
@@ -105,7 +119,8 @@ function CountryOriginFobCard({ value, countryName, busy, error, onRetry }: { va
         : value?.unitValue != null ? <>
           <span className="valuation-label">{value.reporter} · {value.partner || "Ethiopia"} · {value.hsCode} · {tradePeriod(value.period)} · {value.currency} · FOB / {value.unit === "u" ? "item" : value.unit}</span>
           <b>{money(value.unitValue, value.currency)} / {value.unit === "u" ? "item" : value.unit}</b>
-          <p className="manufacturer-price-note">Last checked {tradeCheckedAt(value.lastCheckedAtUtc)} · reported quantity {value.quantity?.toLocaleString() ?? "not recorded"} {value.unit || ""}</p>
+          <p className={`manufacturer-price-note trade-freshness ${freshness.className}`}><strong>{freshness.label}</strong> · data updated {tradeCheckedAt(value.dataUpdatedAtUtc)} · last checked {tradeCheckedAt(value.lastCheckedAtUtc)}</p>
+          <p className="manufacturer-price-note">Reported quantity {value.quantity?.toLocaleString() ?? "not recorded"} {value.unit || ""}</p>
           <p className="manufacturer-price-note">Latest available UN Comtrade export reference for the selected country of origin. Reference only; it does not replace the declared/import price.</p>
           <p className="manufacturer-price-note">WTO customs valuation principles require evidence to be considered with the transaction and other available evidence; WTO does not publish a universal fixed product price.</p>
           {value.sourceUrl && <a className="manufacturer-source-link" href={value.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade FOB source <FiArrowRight /></a>}
@@ -787,7 +802,8 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
                 : customsBenchmark?.unitValue != null ? <>
                   <span className="valuation-label">{customsBenchmark.sourceLabel ?? "Ethiopia imports"} · {customsBenchmark.partner || "World"} · HS {customsBenchmark.hsCode} · {tradePeriod(customsBenchmark.period)}{customsBenchmark.valuationBasis ? ` · ${customsBenchmark.valuationBasis}` : ""}</span>
                   <b>{money(customsBenchmark.unitValue, "USD")} / {customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}</b>
-                  <p className="manufacturer-price-note">Reporter {customsBenchmark.reporter} · Last checked {tradeCheckedAt(customsBenchmark.lastCheckedAtUtc)} · reported quantity {customsBenchmark.quantity?.toLocaleString() ?? "not recorded"} {customsBenchmark.unit || ""}</p>
+                <p className={`manufacturer-price-note trade-freshness ${tradeFreshness(customsBenchmark).className}`}><strong>{tradeFreshness(customsBenchmark).label}</strong> · data updated {tradeCheckedAt(customsBenchmark.dataUpdatedAtUtc)} · last checked {tradeCheckedAt(customsBenchmark.lastCheckedAtUtc)}</p>
+                <p className="manufacturer-price-note">Reporter {customsBenchmark.reporter} · reported quantity {customsBenchmark.quantity?.toLocaleString() ?? "not recorded"} {customsBenchmark.unit || ""}</p>
                   <p className="manufacturer-price-note">Latest available trade reference. {benchmarkIsPerItem ? benchmarkPreferredValue == null ? benchmarkConversionError || "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Benchmark loaded per ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}. Reference only: the invoice quantity and tariff units must be comparable before this can be used as a valuation amount.`}</p>
                   {benchmarkConversionError && <button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkConversionRetry(value => value + 1)}>Retry conversion</button>}
                   <p className="manufacturer-price-note">{customsBenchmark.message}</p>
