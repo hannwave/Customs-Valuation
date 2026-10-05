@@ -9,7 +9,7 @@ public sealed record BenchmarkFetchCheck(string HsCode, string? RequestedUnit, D
 
 public static class BenchmarkFetchVerification
 {
-    public static BenchmarkVerification Verify(CustomsTradeBenchmark benchmark, string code, string? unit, int currentYear)
+    public static BenchmarkVerification Verify(CustomsTradeBenchmark benchmark, string code, string? unit, int currentPeriod)
     {
         if (benchmark.UnitValue is null && benchmark.TradeValue is null && benchmark.Quantity is null && benchmark.HsCode == code)
             return new("no_data", benchmark.Message, []);
@@ -24,12 +24,14 @@ public static class BenchmarkFetchVerification
 
         Check(benchmark.HsCode == code, "HS code matches the request");
         Check(benchmark.Currency == "USD", "Currency is USD");
-        Check(benchmark.Period >= currentYear - 3 && benchmark.Period < currentYear, "Year is within the last three completed years");
+        Check(benchmark.Period is >= 100001 and <= 999912 && benchmark.Period.Value % 100 is >= 1 and <= 12,
+            "Trade period is a valid published monthly period");
         Check(benchmark.TradeValue is > 0 && benchmark.Quantity is > 0 && benchmark.UnitValue is >= 0
             && Math.Round(benchmark.TradeValue.Value / benchmark.Quantity.Value, 2) == benchmark.UnitValue,
             "Price equals trade value divided by quantity, rounded to two decimals");
         Check(!string.IsNullOrWhiteSpace(benchmark.Unit), "Reported quantity unit is present");
-        Check(SourceMatches(benchmark), "UN Comtrade source matches the HS code, year and trade flow");
+        Check(SourceMatches(benchmark), "UN Comtrade source matches the HS code, published period and trade flow");
+        Check(benchmark.LastCheckedAtUtc is not null, "Latest-period lookup timestamp is recorded");
         Check(benchmark.Reporters.Count > 0 && benchmark.Reporters.Select(reporter => reporter.Code).Distinct().Count() == benchmark.Reporters.Count
             && benchmark.Reporters.All(reporter => benchmark.IsMirror ? reporter.Code is > 0 and <= 999 and not (231 or 97) : reporter.Code == 231),
             "Reporting countries match the import or supplier-export source");
@@ -47,7 +49,7 @@ public static class BenchmarkFetchVerification
     private static bool SourceMatches(CustomsTradeBenchmark benchmark)
     {
         if (!Uri.TryCreate(benchmark.SourceUrl, UriKind.Absolute, out var source) || source.Scheme != "https"
-            || source.Host != "comtradeapi.un.org" || source.AbsolutePath != "/public/v1/preview/C/A/HS") return false;
+            || source.Host != "comtradeapi.un.org" || source.AbsolutePath != "/public/v1/preview/C/M/HS") return false;
         var query = QueryHelpers.ParseQuery(source.Query);
         string Value(string key) => query.TryGetValue(key, out var value) ? value.ToString() : "";
         return Value("cmdCode") == benchmark.HsCode && Value("period") == benchmark.Period?.ToString()

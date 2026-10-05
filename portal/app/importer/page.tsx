@@ -10,6 +10,7 @@ import { FeedbackToast } from "@/components/FeedbackToast";
 import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { importerApi, importerApiBase, type CatalogOption, type ImporterDeclaration, type TariffOption } from "@/lib/importer";
+import { compareCountries, preferredCountryCodes } from "@/lib/country-order";
 
 type Location = { id: string; displayName: string; officialCode: string; region: string };
 type Summary = Pick<ImporterDeclaration, "id" | "reference" | "status" | "productName" | "submittedAt" | "version">;
@@ -23,7 +24,7 @@ const treatments = [
   ["CUSTOMS_DUTY_EXEMPTION", "Customs duty exemption review"], ["MACHINERY_EXEMPTION", "Machinery or equipment exemption review"],
 ] as const;
 const purposeLabels: Record<string, string> = { MANUFACTURING: "Manufacturing / production", COMMERCIAL_RESALE: "Commercial resale", PERSONAL: "Personal use", INSTITUTIONAL: "Institutional use", OTHER: "Other" };
-const preferredCountries = ["CN", "IN", "TR", "AE", "SA", "QA", "OM", "KW", "BH", "JO", "EG", "IQ", "LB", "IL", "IR", "YE"];
+const preferredCountries = preferredCountryCodes;
 function CountryFlag({ code }: { code: string }) {
   const Icon = Flags[code as keyof typeof Flags];
   return Icon ? <Icon aria-hidden="true" className="importer-country-flag" /> : null;
@@ -71,10 +72,7 @@ export default function ImporterPage() {
     const names = new Intl.DisplayNames(["en"], { type: "region" });
     return countries.filter(code => /^[A-Z]{2}$/.test(code)).map(code => ({ code, name: code === "XK" ? "Kosovo" : names.of(code) ?? code }))
       .filter(item => item.name !== item.code)
-      .sort((a, b) => {
-        const ai = preferredCountries.indexOf(a.code), bi = preferredCountries.indexOf(b.code);
-        return ai >= 0 && bi >= 0 ? ai - bi : ai >= 0 ? -1 : bi >= 0 ? 1 : a.name.localeCompare(b.name);
-      });
+      .sort(compareCountries);
   }, []);
 
   useEffect(() => {
@@ -136,8 +134,8 @@ export default function ImporterPage() {
   }, [catalogQuery, catalogRetry]);
 
   const matchingCountries = countryOptions.filter(item => `${item.name} ${item.code}`.toLowerCase().includes(countrySearch.toLowerCase()));
-  const frequentCountries = matchingCountries.filter(item => preferredCountries.includes(item.code));
-  const otherCountries = matchingCountries.filter(item => !preferredCountries.includes(item.code));
+  const frequentCountries = matchingCountries.filter(item => preferredCountries.some(code => code === item.code));
+  const otherCountries = matchingCountries.filter(item => !preferredCountries.some(code => code === item.code));
   function chooseEdit(declaration: ImporterDeclaration | null) {
     setEditing(declaration); setSelectedHs(declaration?.suggestedTariffLineId ?? ""); setSelectedTariff(null); setCountry(declaration?.originCountryCode ?? "");
     setPurpose(declaration?.importPurpose ?? ""); setCommercial(declaration?.isCommercialProduct ?? false);

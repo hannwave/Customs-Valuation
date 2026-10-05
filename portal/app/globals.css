@@ -1796,7 +1796,7 @@ textarea[aria-invalid="true"]{border-color:#dc2626!important;box-shadow:0 0 0 2p
 .overview-evidence-workspace .valuation-manufacturer-search-option label span{font-weight:400;color:#71839b}
 .overview-evidence-workspace .valuation-manufacturer-search-option input{min-width:0;width:100%;height:38px;padding:0 11px;border:1px solid #cbd9e8;border-radius:8px;color:#173657;background:#fff;font-size:11px}
 .overview-evidence-workspace .valuation-manufacturer-search-option small{grid-column:2;color:#71839b;font-size:10px;line-height:1.4}
-.valuation-stat-grid.valuation-results-overview{grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:18px}
+.valuation-stat-grid.valuation-results-overview{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:18px}
 .valuation-results-overview .manufacturer-price-card{grid-column:auto;display:block}
 .valuation-results-overview .manufacturer-price-card .valuation-card-title{margin-bottom:26px}
 .valuation-results-overview .manufacturer-price-card .valuation-label{overflow-wrap:anywhere}

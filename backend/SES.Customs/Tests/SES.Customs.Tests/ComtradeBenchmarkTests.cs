@@ -10,6 +10,7 @@ namespace SES.Customs.Tests;
 
 public sealed class ComtradeBenchmarkTests
 {
+    private const int CurrentPeriod = 202610;
     [Theory]
     [InlineData(5, 10)]
     [InlineData(6, 20)]
@@ -25,6 +26,17 @@ public sealed class ComtradeBenchmarkTests
         Assert.False(result.IsMirror);
         Assert.Equal("CIF", result.ValuationBasis);
         Assert.Single(fixture.Requests);
+    }
+
+    [Fact]
+    public async Task RequestsOnlyTheCurrentMonthlyPeriod()
+    {
+        using var fixture = new Fixture(_ => Data(Row()));
+        var result = await fixture.Client.SearchAsync("851713", CancellationToken.None);
+        var request = Assert.Single(fixture.Requests);
+        Assert.Contains("/public/v1/preview/C/M/HS", request.AbsolutePath);
+        Assert.Contains($"period={CurrentPeriod}", request.Query);
+        Assert.Equal(CurrentPeriod, result.Period);
     }
 
     [Theory]
@@ -53,13 +65,13 @@ public sealed class ComtradeBenchmarkTests
     }
 
     [Fact]
-    public async Task PrefersOlderEthiopiaImportsToNewerSupplierReports()
+    public async Task UsesCurrentMonthEthiopiaImportsBeforeSupplierReports()
     {
-        using var fixture = new Fixture(uri => uri.Query.Contains("period=2023") ? Data(Row(year: 2023)) : Data());
+        using var fixture = new Fixture(uri => uri.Query.Contains($"period={CurrentPeriod}") ? Data(Row(year: CurrentPeriod)) : Data());
         var result = await fixture.Client.SearchAsync("851713", CancellationToken.None);
-        Assert.Equal(2023, result.Period);
+        Assert.Equal(CurrentPeriod, result.Period);
         Assert.False(result.IsMirror);
-        Assert.Equal(3, fixture.Requests.Count);
+        Assert.Equal(1, fixture.Requests.Count);
         Assert.All(fixture.Requests, uri => Assert.Contains("reporterCode=231", uri.Query));
     }
 
@@ -69,17 +81,17 @@ public sealed class ComtradeBenchmarkTests
     public async Task AcceptsMatchingRiceAndCigarCategoryTotalsAggregatedFromTariffLines(string code, string quantity, string value, string expectedPrice)
     {
         var culture = System.Globalization.CultureInfo.InvariantCulture;
-        var row = Row(year: 2023, unit: 8, quantity: decimal.Parse(quantity, culture), value: decimal.Parse(value, culture), code: code, aggregate: true);
-        using var fixture = new Fixture(uri => uri.Query.Contains("period=2023") ? Data(row) : Data());
+        var row = Row(year: CurrentPeriod, unit: 8, quantity: decimal.Parse(quantity, culture), value: decimal.Parse(value, culture), code: code, aggregate: true);
+        using var fixture = new Fixture(uri => uri.Query.Contains($"period={CurrentPeriod}") ? Data(row) : Data());
         var result = await fixture.Client.SearchAsync(code, CancellationToken.None);
         Assert.False(result.IsMirror);
-        Assert.Equal(2023, result.Period);
+        Assert.Equal(CurrentPeriod, result.Period);
         Assert.Equal("CIF", result.ValuationBasis);
         Assert.Equal("kg", result.Unit);
         Assert.Equal(decimal.Parse(expectedPrice, culture), result.UnitValue);
         Assert.Equal(decimal.Parse(quantity, culture), result.Quantity);
         Assert.Equal(231, Assert.Single(result.Reporters).Code);
-        Assert.Equal(3, fixture.Requests.Count);
+        Assert.Equal(1, fixture.Requests.Count);
     }
 
     [Fact]
@@ -108,7 +120,7 @@ public sealed class ComtradeBenchmarkTests
         Assert.Equal("u", result.Unit);
         Assert.True(result.IsMirror);
         Assert.Equal(20m, result.UnitValue);
-        Assert.Equal(4, fixture.Requests.Count);
+        Assert.Equal(2, fixture.Requests.Count);
     }
 
     [Fact]
@@ -140,7 +152,7 @@ public sealed class ComtradeBenchmarkTests
         Assert.Equal(10m, result.UnitValue);
         Assert.Contains("No benchmark in the requested unit (u)", result.Message);
         Assert.Contains("no weight-to-item conversion", result.Message);
-        Assert.Equal(6, fixture.Requests.Count);
+        Assert.Equal(2, fixture.Requests.Count);
     }
 
     [Fact]
@@ -152,10 +164,10 @@ public sealed class ComtradeBenchmarkTests
         var noQuantity = Row(unit: -1, quantity: 0);
         noQuantity["netWgt"] = 10000;
         using var fixture = new Fixture(uri => uri.Query.Contains("flowCode=M") ? Data(noQuantity)
-            : Data(china, china, usa, weightOnly, Row(reporter: 528, year: 2024, mirror: true, value: 100000)));
+            : Data(china, china, usa, weightOnly, Row(reporter: 528, year: CurrentPeriod, mirror: true, value: 100000)));
         var result = await fixture.Client.SearchAsync("851713", CancellationToken.None);
         Assert.True(result.IsMirror);
-        Assert.Equal(2025, result.Period);
+        Assert.Equal(CurrentPeriod, result.Period);
         Assert.Equal("FOB", result.ValuationBasis);
         Assert.Equal(1000m, result.TradeValue);
         Assert.Equal(40m, result.Quantity);
@@ -166,7 +178,7 @@ public sealed class ComtradeBenchmarkTests
         Assert.Contains("not equivalent to a CIF", result.Message);
         Assert.DoesNotContain("reporterCode=", result.SourceUrl!);
         Assert.Contains("partnerCode=231", result.SourceUrl!);
-        Assert.Equal(4, fixture.Requests.Count);
+        Assert.Equal(2, fixture.Requests.Count);
     }
 
     [Fact]
@@ -208,9 +220,9 @@ public sealed class ComtradeBenchmarkTests
         Assert.Null(result.UnitValue);
         Assert.Null(result.Period);
         Assert.Empty(result.Reporters);
-        Assert.Equal(6, fixture.Requests.Count);
+        Assert.Equal(2, fixture.Requests.Count);
         Assert.Same(result, await fixture.Client.SearchAsync("851713", CancellationToken.None));
-        Assert.Equal(6, fixture.Requests.Count);
+        Assert.Equal(2, fixture.Requests.Count);
     }
 
     [Theory]
@@ -293,7 +305,7 @@ public sealed class ComtradeBenchmarkTests
         Assert.Equal("851713", Assert.IsType<CustomsTradeBenchmark>(result.Value).HsCode);
     }
 
-    private static Dictionary<string, object?> Row(int reporter = 231, int year = 2025, bool mirror = false, int unit = 5, decimal quantity = 10, decimal value = 100, string code = "851713", bool aggregate = false) => new()
+    private static Dictionary<string, object?> Row(int reporter = 231, int year = CurrentPeriod, bool mirror = false, int unit = 5, decimal quantity = 10, decimal value = 100, string code = "851713", bool aggregate = false) => new()
     {
         ["cmdCode"] = code, ["period"] = year.ToString(), ["reporterCode"] = reporter,
         ["flowCode"] = mirror ? "X" : "M", ["partnerCode"] = mirror ? 231 : 0,
@@ -340,6 +352,6 @@ public sealed class ComtradeBenchmarkTests
     private sealed class AdvancingClock : TimeProvider
     {
         private int ticks;
-        public override DateTimeOffset GetUtcNow() => new DateTimeOffset(2026, 9, 28, 0, 0, 0, TimeSpan.Zero).AddSeconds(Interlocked.Increment(ref ticks) * 20);
+        public override DateTimeOffset GetUtcNow() => new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(Interlocked.Increment(ref ticks) * 20);
     }
 }

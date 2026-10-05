@@ -64,7 +64,7 @@ public sealed class ValuationDecisionsController(CustomsDbContext db, Historical
             if (!rates.TryGetValue(paidCurrency, out var paidEtb) || paidEtb <= 0 || !rates.TryGetValue(systemCurrency, out var systemEtb) || systemEtb <= 0)
                 return BadRequest(new { message = $"An approved {paidCurrency} to {systemCurrency} exchange rate is unavailable." });
             rate = paidEtb / systemEtb;
-            rateSource = "Approved ETB cross-rate (exchange.et / configured fallback)";
+            rateSource = "NBE reference rate (Frankfurter primary; configured fallback)";
         }
         await using var receiptStream = new MemoryStream();
         await request.Receipt.CopyToAsync(receiptStream, ct);

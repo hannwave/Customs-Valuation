@@ -66,7 +66,7 @@ builder.Services.AddHttpClient<ApifyManufacturerPriceClient>(client =>
 builder.Services.AddHttpClient("UNComtrade", client =>
 {
     client.BaseAddress = new Uri("https://comtradeapi.un.org/");
-    client.Timeout = TimeSpan.FromSeconds(20);
+    client.Timeout = TimeSpan.FromSeconds(45);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("SES-Customs-Valuation/1.0");
 });
 builder.Services.Configure<PriceWatchaOptions>(builder.Configuration.GetSection(PriceWatchaOptions.SectionName));

@@ -20,6 +20,7 @@ import type { Phase2Response, CustomsTradeBenchmark, HsCode, InternationalPriceS
 import { roleLabel, workspaceApi, type DashboardLocation, type WorkspaceDashboard, type WorkspaceProfile } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession, updateValuationSession, writeValuationSession, addRecentSearch, readRecentSearches, removeRecentSearch, type HistoricalSessionEvidence } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
+import { compareCountries } from "@/lib/country-order";
 
 type Phase = "one" | "two";
 
@@ -65,6 +66,20 @@ function money(value: number | null | undefined, currency: string) {
   return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
 }
 
+function tradePeriod(period: number | null | undefined) {
+  if (period == null) return "Current month";
+  const value = String(period);
+  if (!/^\d{6}$/.test(value)) return value;
+  const date = new Date(Date.UTC(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, 1));
+  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function tradeCheckedAt(value: string | null | undefined) {
+  if (!value) return "Not recorded";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 function StatisticCard({ title, icon, stats, currency, href }: { title: string; icon: React.ReactNode; stats: PriceStatistics | null; currency: string; href: string }) {
   const tone = "international";
   return <Link href={href} className={`valuation-stat-card valuation-stat-card--${tone} valuation-stat-card--link`} aria-label={`Open ${title.toLowerCase()} details`}>
@@ -78,6 +93,22 @@ function StatisticCard({ title, icon, stats, currency, href }: { title: string; 
       <div><dt>Maximum</dt><dd>{money(stats?.maximum, currency)}</dd></div>
     </dl>
   </Link>;
+}
+
+function CountryOriginFobCard({ value, countryName, busy, error, onRetry }: { value: CustomsTradeBenchmark | null; countryName: string; busy: boolean; error: string; onRetry: () => void }) {
+  return <section className="valuation-stat-card manufacturer-price-card country-origin-fob-card" aria-label="Country of Origin FOB reference price">
+    <div className="valuation-card-title"><span><FiMapPin /></span><strong>Country of Origin FOB</strong><em>{tradePeriod(value?.period)}</em></div>
+    {busy ? <p role="status" className="manufacturer-price-note">Loading {countryName || "country"} FOB export evidence…</p>
+      : error ? <><p role="alert" className="manufacturer-price-error">{error}</p><button type="button" className="manufacturer-source-link" onClick={onRetry}>Retry FOB lookup</button></>
+        : value?.unitValue != null ? <>
+          <span className="valuation-label">{value.reporter} · {value.partner || "Ethiopia"} · {value.hsCode} · {tradePeriod(value.period)} · {value.currency} · FOB / {value.unit === "u" ? "item" : value.unit}</span>
+          <b>{money(value.unitValue, value.currency)} / {value.unit === "u" ? "item" : value.unit}</b>
+          <p className="manufacturer-price-note">Last checked {tradeCheckedAt(value.lastCheckedAtUtc)} · reported quantity {value.quantity?.toLocaleString() ?? "not recorded"} {value.unit || ""}</p>
+          <p className="manufacturer-price-note">Latest available UN Comtrade export reference for the selected country of origin. Reference only; it does not replace the declared/import price.</p>
+          <p className="manufacturer-price-note">WTO customs valuation principles require evidence to be considered with the transaction and other available evidence; WTO does not publish a universal fixed product price.</p>
+          {value.sourceUrl && <a className="manufacturer-source-link" href={value.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade FOB source <FiArrowRight /></a>}
+        </> : <><p className="manufacturer-price-note">{value?.message ?? `No country-of-origin FOB data is available for ${countryName || "the selected country"}.`}</p>{value && <button type="button" className="manufacturer-source-link" onClick={onRetry}>Retry FOB lookup</button>}</>}
+  </section>;
 }
 
 function EvidenceTrend({ international, customerPrice, currency }: { international: PriceStatistics | null; customerPrice: number | null; currency: string }) {
@@ -107,9 +138,13 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
   const [international, setInternational] = useState<InternationalPriceSearch | null>(null);
   const [customsBenchmark, setCustomsBenchmark] = useState<CustomsTradeBenchmark | null>(null);
+  const [countryOriginFob, setCountryOriginFob] = useState<CustomsTradeBenchmark | null>(null);
   const [benchmarkBusy, setBenchmarkBusy] = useState(false);
   const [benchmarkError, setBenchmarkError] = useState("");
   const [benchmarkRetry, setBenchmarkRetry] = useState(0);
+  const [countryOriginFobBusy, setCountryOriginFobBusy] = useState(false);
+  const [countryOriginFobError, setCountryOriginFobError] = useState("");
+  const [countryOriginFobRetry, setCountryOriginFobRetry] = useState(0);
   const [benchmarkConversion, setBenchmarkConversion] = useState<ConvertedPrice | null>(null);
   const [benchmarkConversionError, setBenchmarkConversionError] = useState("");
   const [benchmarkConversionRetry, setBenchmarkConversionRetry] = useState(0);
@@ -141,7 +176,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
   useEffect(() => {
     const names = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
     setCountryOptions(COUNTRY_CODES.map(code => ({ code, name: names?.of(code) ?? code }))
-      .sort((a, b) => a.name.localeCompare(b.name, "en")));
+      .sort(compareCountries));
   }, []);
 
   useEffect(() => {
@@ -157,6 +192,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     if (!active) return;
     setQuery(active.query); setMarket(active.market); setPurchaseCountry(active.purchaseCountryCode ?? ""); setInternational(active.international); setHistorical(active.historical ?? null);
     setCustomsBenchmark(active.customsBenchmark ?? null);
+    setCountryOriginFob(active.countryOriginFob ?? null);
     if (active.international || active.historical || active.customsBenchmark) setSearchedTerm(active.query);
     if (active.hsCode) setHsInput(active.hsCode);
     if (active.hsCodeId) {
@@ -214,6 +250,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     setHsCandidates([]);
     setHsMessage("");
     setCustomsBenchmark(null);
+    setCountryOriginFob(null);
     setBenchmarkConversion(null);
     if (selected === "customsBenchmark") setSelected("internationalMedian");
     setBenchmarkError("");
@@ -229,6 +266,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     setHsCandidates([]);
     setHsMessage("");
     setCustomsBenchmark(null);
+    setCountryOriginFob(null);
     setBenchmarkConversion(null);
     setBenchmarkError("");
     if (selected === "customsBenchmark") setSelected("internationalMedian");
@@ -247,7 +285,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     const serial = ++searchSerial.current;
     const hsSerial = ++hsLookupSerial.current;
     setBusy(true); setError(""); setRecordNotice(""); setInternational(null); setHistorical(null);
-    setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setSearchedTerm(term);
+    setCustomsBenchmark(null); setCountryOriginFob(null); setBenchmarkConversion(null); setBenchmarkError(""); setCountryOriginFobError(""); setSearchedTerm(term);
     setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage("");
     setSelected("internationalMedian"); setCustomValue(""); setJustification("");
     // Start a fresh client-side session for this search. Later asynchronous
@@ -261,6 +299,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
       purchaseCountryName: countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry,
       international: null,
       customsBenchmark: null,
+      countryOriginFob: null,
       historical: null,
       hsCodeId: null,
       hsCode: "",
@@ -387,13 +426,41 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
             : response.status === 404 ? "The running API does not expose the trade benchmark. Restart it with the latest build."
               : `Customs trade benchmark could not be loaded (HTTP ${response.status}).`));
         if (typeof body.hsCode !== "string" || typeof body.message !== "string") throw new Error("The API returned an invalid trade benchmark response.");
-        return body as CustomsTradeBenchmark;
+        const result = body as CustomsTradeBenchmark;
+        return result;
       })
       .then(result => { if (!cancelled) { setCustomsBenchmark(result); updateValuationSession({ customsBenchmark: result }); } })
       .catch(reason => { if (!cancelled) setBenchmarkError(reason instanceof TypeError ? "The customs API could not be reached. Check that it is running, then retry." : reason instanceof Error ? reason.message : "Customs trade benchmark could not be loaded."); })
       .finally(() => { if (!cancelled) setBenchmarkBusy(false); });
     return () => { cancelled = true; abort.abort(); };
   }, [hsCode, benchmarkHsCode, benchmarkPreferredUnit, searchedTerm, benchmarkRetry]);
+
+  useEffect(() => {
+    if (!searchedTerm || benchmarkHsCode.length < 6 || !purchaseCountry) {
+      setCountryOriginFobBusy(false);
+      return;
+    }
+    let cancelled = false;
+    const abort = new AbortController();
+    const token = getSessionAccessToken();
+    if (!token) { setCountryOriginFobBusy(false); setCountryOriginFobError("Sign in again to load the country-of-origin FOB value."); return; }
+    setCountryOriginFobBusy(true); setCountryOriginFobError(""); setCountryOriginFob(null);
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    const params = new URLSearchParams({ hsCode: benchmarkHsCode, countryCode: purchaseCountry });
+    if (benchmarkPreferredUnit) params.set("unit", benchmarkPreferredUnit);
+    void fetch(`${base}/api/customs-trade-benchmark/origin-fob?${params}`, { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal })
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail ?? body.message ?? body.title ?? `Country-of-origin FOB lookup failed (HTTP ${response.status}).`);
+        if (typeof body.hsCode !== "string" || typeof body.message !== "string") throw new Error("The API returned an invalid country-of-origin FOB response.");
+        const result = body as CustomsTradeBenchmark;
+        return result;
+      })
+      .then(result => { if (!cancelled) { setCountryOriginFob(result); updateValuationSession({ countryOriginFob: result }); } })
+      .catch(reason => { if (!cancelled && reason?.name !== "AbortError") setCountryOriginFobError(reason instanceof Error ? reason.message : "Country-of-origin FOB data could not be loaded."); })
+      .finally(() => { if (!cancelled) setCountryOriginFobBusy(false); });
+    return () => { cancelled = true; abort.abort(); };
+  }, [hsCode, benchmarkHsCode, benchmarkPreferredUnit, purchaseCountry, searchedTerm, countryOriginFobRetry]);
 
   useEffect(() => {
     const amount = Number(declaredPrice);
@@ -509,7 +576,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
     finally { setRecording(false); }
   }
   const internationalOutliers = international?.statistics?.potentialOutliers.length ?? 0;
-  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setBenchmarkError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
+  const clearAll = () => { searchSerial.current++; hsLookupSerial.current++; clearValuationSession(); setQuery(""); setPurchaseCountry(""); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setCountryOriginFob(null); setBenchmarkConversion(null); setBenchmarkError(""); setCountryOriginFobError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); setHsBusy(false); setDeclaredPrice(""); setReceiptFile(null); setDeclaredConversion(null); setSelected("internationalMedian"); setCustomValue(""); setJustification(""); setError(""); setRecordNotice(""); };
   const handleRecentClick = (term: string) => { setQuery(term); const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>; setTimeout(() => { const form = document.getElementById("valuation-search-form") as HTMLFormElement | null; if (form) form.requestSubmit(); }, 0); };
   const handleRemoveRecent = (term: string) => { removeRecentSearch(term); setRecentSearches(readRecentSearches()); };
   return <section className="overview-evidence-workspace">
@@ -525,7 +592,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
           <label className="valuation-field-label" htmlFor="valuation-product-query">Product to search</label>
           <div className="valuation-search-input-wrap">
             <FiSearch aria-hidden="true" />
-          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setBenchmarkConversion(null); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
+          <input id="valuation-product-query" aria-label="Product description" placeholder="Search by brand and product, model, or HS code" value={query} onChange={event => { setQuery(event.currentTarget.value); setSearchedTerm(""); setInternational(null); setHistorical(null); setCustomsBenchmark(null); setCountryOriginFob(null); setBenchmarkConversion(null); setCountryOriginFobError(""); setHsCode(null); setHsInput(""); setHsCandidates([]); setHsMessage(""); hsLookupSerial.current++; setError(""); }} required />
           </div>
         </div>
         <div className="valuation-market-select">
@@ -606,6 +673,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
       <>
         <div className="valuation-stat-grid valuation-results-overview">
             <StatisticCard title="Global market statistics" icon={<FiGlobe />} stats={international?.statistics ?? null} currency={currency} href={`/international-prices?q=${encodeURIComponent(query.trim())}&market=${market}`} />
+            <CountryOriginFobCard value={countryOriginFob} countryName={countryOptions.find(country => country.code === purchaseCountry)?.name ?? purchaseCountry} busy={countryOriginFobBusy} error={countryOriginFobError} onRetry={() => setCountryOriginFobRetry(value => value + 1)} />
             <section className="paid-price-card paid-price-card--inline valuation-stat-card customer-price-card" aria-label="Required customer transaction evidence">
               <div className="valuation-card-title customer-price-card-title"><span><FiUser /></span><strong>Customer-paid price</strong><em>{hasDeclaredAmount ? "n = 1" : "Required"}</em></div>
               <div className="customer-price-readout" aria-live="polite">
@@ -617,13 +685,14 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
               </div>
             </section>
             <section className="valuation-stat-card manufacturer-price-card" aria-label="Customs trade benchmark">
-              <div className="valuation-card-title"><span><FiArchive /></span><strong>Customs trade benchmark</strong><em>{customsBenchmark?.period ?? "HS category"}</em></div>
+              <div className="valuation-card-title"><span><FiArchive /></span><strong>Customs trade benchmark</strong><em>{tradePeriod(customsBenchmark?.period)}</em></div>
               {benchmarkBusy ? <p role="status" className="manufacturer-price-note">Checking Ethiopia imports and supplier export reports…</p>
                 : benchmarkError ? <><p role="alert" className="manufacturer-price-error">{benchmarkError}</p><button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkRetry(value => value + 1)}>Retry benchmark</button></>
                 : customsBenchmark?.unitValue != null ? <>
-                  <span className="valuation-label">{customsBenchmark.sourceLabel ?? "Ethiopia imports"} · HS {customsBenchmark.hsCode} · {customsBenchmark.period}{customsBenchmark.valuationBasis ? ` · ${customsBenchmark.valuationBasis}` : ""}</span>
+                  <span className="valuation-label">{customsBenchmark.sourceLabel ?? "Ethiopia imports"} · {customsBenchmark.partner || "World"} · HS {customsBenchmark.hsCode} · {tradePeriod(customsBenchmark.period)}{customsBenchmark.valuationBasis ? ` · ${customsBenchmark.valuationBasis}` : ""}</span>
                   <b>{money(customsBenchmark.unitValue, "USD")} / {customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}</b>
-                  <p className="manufacturer-price-note">{benchmarkIsPerItem ? benchmarkPreferredValue == null ? benchmarkConversionError || "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Benchmark loaded per ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}. Reference only: the invoice quantity and tariff units must be comparable before this can be used as a valuation amount.`}</p>
+                  <p className="manufacturer-price-note">Reporter {customsBenchmark.reporter} · Last checked {tradeCheckedAt(customsBenchmark.lastCheckedAtUtc)} · reported quantity {customsBenchmark.quantity?.toLocaleString() ?? "not recorded"} {customsBenchmark.unit || ""}</p>
+                  <p className="manufacturer-price-note">Latest available trade reference. {benchmarkIsPerItem ? benchmarkPreferredValue == null ? benchmarkConversionError || "Converting to the selected currency…" : `≈ ${money(benchmarkPreferredValue, currency)} per item` : `Benchmark loaded per ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}. Reference only: the invoice quantity and tariff units must be comparable before this can be used as a valuation amount.`}</p>
                   {benchmarkConversionError && <button type="button" className="manufacturer-source-link" onClick={() => setBenchmarkConversionRetry(value => value + 1)}>Retry conversion</button>}
                   <p className="manufacturer-price-note">{customsBenchmark.message}</p>
                   {customsBenchmark.sourceUrl && <a className="manufacturer-source-link" href={customsBenchmark.sourceUrl} target="_blank" rel="noopener noreferrer">UN Comtrade source <FiArrowRight /></a>}
@@ -645,7 +714,7 @@ function OfficerEvidenceWorkspace({ profile, onSubmitted, importDeclaration }: {
           <div className="reference-options">
             <label className={selected === "internationalMedian" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.median == null} checked={selected === "internationalMedian"} onChange={() => setSelected("internationalMedian")} /><span><strong>International market median</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.median, currency)}</b></label>
             <label className={selected === "internationalMean" ? "is-selected" : ""}><input type="radio" disabled={international?.statistics?.mean == null} checked={selected === "internationalMean"} onChange={() => setSelected("internationalMean")} /><span><strong>International market mean</strong><small>{international?.statistics?.observationCount ?? 0} observations · {currency}</small></span><b>{money(international?.statistics?.mean, currency)}</b></label>
-            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} title={!benchmarkIsPerItem ? `Reference only: reported per ${customsBenchmark.unit}; invoice quantity and units must be comparable.` : undefined} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {customsBenchmark.period} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} {!benchmarkIsPerItem && "(reference only)"} · {customsBenchmark.isMirror ? "export mirror" : "import"}{customsBenchmark.valuationBasis ? ` (${customsBenchmark.valuationBasis})` : ""} · category average</small></span><b>{benchmarkIsPerItem ? money(benchmarkPreferredValue, currency) : `${money(customsBenchmark.unitValue, "USD")} / ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}`}</b></label>}
+            {customsBenchmark?.unitValue != null && <label className={selected === "customsBenchmark" ? "is-selected" : ""}><input type="radio" disabled={benchmarkPreferredValue == null} title={!benchmarkIsPerItem ? `Reference only: reported per ${customsBenchmark.unit}; invoice quantity and units must be comparable.` : undefined} checked={selected === "customsBenchmark"} onChange={() => setSelected("customsBenchmark")} /><span><strong>Customs trade benchmark</strong><small>HS {customsBenchmark.hsCode} · {tradePeriod(customsBenchmark.period)} · {customsBenchmark.unit === "u" ? "per item" : `per ${customsBenchmark.unit}`} {!benchmarkIsPerItem && "(reference only)"} · {customsBenchmark.isMirror ? "export mirror" : "import"}{customsBenchmark.valuationBasis ? ` (${customsBenchmark.valuationBasis})` : ""} · category average</small></span><b>{benchmarkIsPerItem ? money(benchmarkPreferredValue, currency) : `${money(customsBenchmark.unitValue, "USD")} / ${customsBenchmark.unit === "u" ? "item" : customsBenchmark.unit}`}</b></label>}
             <label className={selected === "declaredPrice" ? "is-selected" : ""}><input type="radio" disabled={declaredConversion?.to !== currency || Number(declaredPrice) <= 0} checked={selected === "declaredPrice"} onChange={() => setSelected("declaredPrice")} /><span><strong>Customer’s original price paid</strong><small>{declaredPrice ? `Invoice ${declaredCurrency} ${Number(declaredPrice).toLocaleString()} · ${receiptFile ? "receipt attached" : "receipt required"}` : "Enter the invoice amount and attach its receipt above"}</small></span><b>{declaredConversion?.to === currency ? money(declaredConversion.convertedAmount, currency) : "—"}</b></label>
             <label className={selected === "custom" ? "is-selected" : ""}><input type="radio" checked={selected === "custom"} onChange={() => setSelected("custom")} /><span><strong>Enter a different customs value</strong><small>Use an officer-selected amount · {currency}</small></span></label>
             {selected === "custom" && <div className="custom-reference-field"><label htmlFor="custom-reference-input">Customs value <span>({currency})</span></label><input id="custom-reference-input" className="custom-reference-input" type="number" min="0.01" step="0.01" placeholder={"Enter amount in " + currency} value={customValue} onChange={event => setCustomValue(event.currentTarget.value)} /><small>Enter the amount the officer wants to carry into Final Assessment.</small></div>}

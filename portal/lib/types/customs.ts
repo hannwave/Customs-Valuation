@@ -74,6 +74,10 @@ export interface CustomsTradeBenchmark {
   reporters?: { code: number; name: string }[];
   reporterCount?: number;
   quantityEstimated?: boolean;
+  reporterCode?: number | null;
+  partnerCode?: number | null;
+  partner?: string | null;
+  lastCheckedAtUtc?: string | null;
 }
 export interface InternationalPriceSync extends InternationalPriceSearch {
   hsCodeId: string;
