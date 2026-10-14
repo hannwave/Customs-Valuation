@@ -15,7 +15,13 @@ public sealed record AdministratorRegistrationRequestDto(string Username, string
 public sealed record RegistrationReviewDto(string? Reason);
 public sealed record OfficerRegistrationApprovalDto(Guid LocationId, string Responsibilities);
 public sealed record CreateUserRequest(string Username, string FullName, string Email, string Role, string Password);
-public sealed record ImporterRegistrationRequest(string FullName, string Email, string Password, string ConfirmPassword);
+public sealed class ImporterRegistrationForm : SES.Customs.API.Services.ImporterProfileForm
+{
+    public string FullName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string ConfirmPassword { get; set; } = "";
+}
 
 [ApiController, Route("api/auth")]
 public sealed class AuthController(AuthService auth, IConfiguration configuration, SES.Customs.Infrastructure.Context.CustomsDbContext db, WorkspaceAccess access) : ControllerBase
@@ -32,8 +38,8 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
         return Ok(new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Username, user.Email, user.FullName, user.Role } });
     }
 
-    [AllowAnonymous, HttpPost("register-importer")]
-    public async Task<IActionResult> RegisterImporter(ImporterRegistrationRequest request, CancellationToken ct)
+    [AllowAnonymous, HttpPost("register-importer"), RequestSizeLimit(45_000_000)]
+    public async Task<IActionResult> RegisterImporter([FromForm] ImporterRegistrationForm request, [FromServices] SES.Customs.API.Services.ImporterProfileService profiles, CancellationToken ct)
     {
         var name = request.FullName?.Trim() ?? "";
         var email = request.Email?.Trim().ToLowerInvariant() ?? "";
@@ -43,9 +49,22 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
             return BadRequest(new { message = "Passwords must match and contain at least eight characters, including uppercase, lowercase, a number and a symbol." });
         if (await db.AuthAccounts.AnyAsync(x => x.Email.ToLower() == email || x.Username.ToLower() == email, ct))
             return Conflict(new { message = "An account already uses this email address. Sign in instead." });
+        SES.Customs.Core.Models.ImporterProfile profile;
+        try { profile = await profiles.ApplyAsync(null, Guid.Empty, name, request, ct); }
+        catch (WorkspaceException ex) { return StatusCode(ex.Status, new { message = ex.Message }); }
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var user = await auth.CreateAsync(email, email, name, SES.Customs.Core.Models.AccessRules.Importer, request.Password ?? "", ct: ct);
-        return Created("/api/auth/me", new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Email, user.FullName, user.Role } });
+        profile.AccountId = user.Id;
+        db.ImporterProfiles.Add(profile);
+        profiles.Audit(profile, user.Id, user.Username, "IMPORTER_VERIFICATION_SUBMITTED", null);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Created("/api/importer-profile", new { accessToken = Token(user), tokenType = "Bearer", expiresIn = 3600, user = new { user.Id, user.Email, user.FullName, user.Role } });
     }
+
+    [AllowAnonymous, HttpGet("importer-regions")]
+    public async Task<IActionResult> ImporterRegions([FromServices] SES.Customs.API.Services.ImporterProfileService profiles, CancellationToken ct) =>
+        Ok((await profiles.RegionsAsync(ct)).Select(l => new { l.Id, l.Name, l.DisplayName, l.OfficialCode }));
 
     [AllowAnonymous, HttpPost("register")]
     public async Task<IActionResult> Register(RegistrationRequestDto request, CancellationToken ct)

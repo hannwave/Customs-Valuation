@@ -71,7 +71,7 @@ public sealed class ComtradeBenchmarkTests
         var result = await fixture.Client.SearchAsync("851713", CancellationToken.None);
         Assert.Equal(CurrentPeriod, result.Period);
         Assert.False(result.IsMirror);
-        Assert.Equal(1, fixture.Requests.Count);
+        Assert.Single(fixture.Requests);
         Assert.All(fixture.Requests, uri => Assert.Contains("reporterCode=231", uri.Query));
     }
 
@@ -91,7 +91,7 @@ public sealed class ComtradeBenchmarkTests
         Assert.Equal(decimal.Parse(expectedPrice, culture), result.UnitValue);
         Assert.Equal(decimal.Parse(quantity, culture), result.Quantity);
         Assert.Equal(231, Assert.Single(result.Reporters).Code);
-        Assert.Equal(1, fixture.Requests.Count);
+        Assert.Single(fixture.Requests);
     }
 
     [Fact]

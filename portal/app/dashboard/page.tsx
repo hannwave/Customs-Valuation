@@ -938,9 +938,8 @@ function OfficerDashboard({ profile }: { profile: WorkspaceProfile }) {
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("importDeclarationId");
     if (!id) return;
-    void importerApi<ImporterDeclaration>(`/importer-declarations/${encodeURIComponent(id)}`)
-      .then(item => { if (item.status !== "ASSESSMENT_READY") throw new Error("The importer submission is not ready for assessment."); setImportDeclaration(item); })
-      .catch(reason => setImportError(reason instanceof Error ? reason.message : "Importer submission unavailable."));
+    // Importer declarations are valued, taxed and finalised in their own case workspace.
+    window.location.replace(`/importer-review/${encodeURIComponent(id)}`);
   }, []);
   const [linkedCase, setLinkedCase] = useState("");
   const [phase, setCurrentPhase] = useState<Phase>("one");

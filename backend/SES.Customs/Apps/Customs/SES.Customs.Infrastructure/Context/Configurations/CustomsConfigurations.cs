@@ -40,6 +40,28 @@ public sealed class TariffConfiguration : IEntityTypeConfiguration<NationalTarif
         b.ToTable("national_tariff_lines"); b.HasKey(x => x.Id); b.Property(x => x.Unit).HasMaxLength(80); b.Property(x => x.Duty).HasMaxLength(80);
         b.HasIndex(x => new { x.HsCodeId, x.Code, x.EffectiveDate }).IsUnique();
         b.HasOne<HsCode>().WithMany().HasForeignKey(x => x.HsCodeId).OnDelete(DeleteBehavior.Restrict);
+        b.Property(x => x.NationalCode).HasMaxLength(11); b.HasIndex(x => x.NationalCode);
+        b.HasMany(x => x.TaxRates).WithOne().HasForeignKey(x => x.TariffLineId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class TariffTaxTypeConfiguration : IEntityTypeConfiguration<TariffTaxType>
+{
+    public void Configure(EntityTypeBuilder<TariffTaxType> b)
+    {
+        b.ToTable("tariff_tax_types"); b.HasKey(x => x.Code);
+        b.Property(x => x.Code).HasMaxLength(10); b.Property(x => x.Name).HasMaxLength(120);
+        b.Property(x => x.Description).HasMaxLength(400); b.Property(x => x.Scope).HasMaxLength(30);
+        b.HasData(TariffTaxCodes.All.Select(x => new TariffTaxType { Code = x.Code, Name = x.Name, Description = x.Description, Scope = x.Scope, DisplayOrder = x.DisplayOrder }));
+    }
+}
+public sealed class TariffTaxRateConfiguration : IEntityTypeConfiguration<TariffTaxRate>
+{
+    public void Configure(EntityTypeBuilder<TariffTaxRate> b)
+    {
+        b.ToTable("tariff_tax_rates"); b.HasKey(x => x.Id);
+        b.HasIndex(x => new { x.TariffLineId, x.TaxCode }).IsUnique(); b.HasIndex(x => x.TaxCode);
+        b.Property(x => x.TaxCode).HasMaxLength(10); b.Property(x => x.Rate).HasPrecision(9, 4); b.Property(x => x.SourceReference).HasMaxLength(300);
+        b.HasOne<TariffTaxType>().WithMany().HasForeignKey(x => x.TaxCode).OnDelete(DeleteBehavior.Restrict);
     }
 }
 public sealed class PriceConfiguration : IEntityTypeConfiguration<PriceEvidence>

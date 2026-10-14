@@ -165,10 +165,40 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
             : null;
         db.ValuationAuditSnapshots.Add(ValuationAuditSnapshotFactory.Create(
             audit, decision, phase2, selectedHs?.Code, string.IsNullOrWhiteSpace(tariff.DescriptionEn) ? selectedHs?.DescriptionEn : tariff.DescriptionEn, officer, office));
+        if (status == "Completed" && decision.ImporterDeclarationId.HasValue) await FinaliseImporterDeclarationAsync(decision, phase2, audit.Justification, ct);
         await db.SaveChangesAsync(ct);
         if (transaction is not null) await transaction.CommitAsync(ct);
         var saved = await db.ValuationPhase2s.AsNoTracking().Include(x => x.TaxLines).FirstAsync(x => x.Id == phase2.Id, ct);
         return Ok(await MapResponse(decision, saved, ct));
+    }
+
+    /// <summary>Records the confirmed assessment on the importer's declaration and tells the importer what is payable.</summary>
+    private async Task FinaliseImporterDeclarationAsync(ValuationDecision decision, ValuationPhase2 phase2, string? note, CancellationToken ct)
+    {
+        var declaration = await db.ImporterDeclarations.FirstOrDefaultAsync(x => x.Id == decision.ImporterDeclarationId!.Value, ct);
+        if (declaration is null) return;
+        var revised = declaration.Status == "ASSESSED";
+        var now = DateTimeOffset.UtcNow;
+        declaration.Status = "ASSESSED"; declaration.AssessedAt = now; declaration.UpdatedAt = now; declaration.Version = Guid.NewGuid();
+        declaration.AssessmentCurrency = phase2.TargetCurrency; declaration.AssessedCustomsValue = phase2.CustomsValueAmount;
+        declaration.AssessedTotalTax = phase2.TotalTax; declaration.AssessedPayable = Money(Math.Max(0m, phase2.FinalAmount - phase2.CustomsValueAmount));
+        declaration.AssessmentJson = JsonSerializer.Serialize(phase2.TaxLines.Where(x => !IsExciseComparisonLine(x)).OrderBy(x => x.Order).Select(x => new
+        {
+            name = x.Name, calculationType = x.CalculationType, rate = x.Value, currency = x.Currency, calculationBasis = x.CalculationBasis,
+            baseAmount = x.BaseAmount, amount = x.CalculatedAmount, isApplicable = x.IsApplicable, status = x.Status
+        }));
+        var currency = phase2.TargetCurrency;
+        db.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(), UserId = CurrentSubject(), SubjectUserId = declaration.ImporterId, Username = User.Identity?.Name ?? "", OccurredAt = now,
+            Action = "IMPORTER_DECLARATION_ASSESSED", Module = "ImporterDeclarations", RecordId = declaration.Id, LocationId = declaration.LocationId, Decision = "ASSESSED",
+            Justification = note, NewValueJson = JsonSerializer.Serialize(new { declaration.Reference, valuationDecisionId = decision.Id, assessmentId = phase2.Id, currency,
+                customsValue = declaration.AssessedCustomsValue, totalTax = declaration.AssessedTotalTax, payable = declaration.AssessedPayable, revised })
+        });
+        db.ImporterNotifications.Add(ImporterNotification.Create(declaration.ImporterId, declaration.Id, "DECLARATION_ASSESSED",
+            revised ? $"Revised assessment for {declaration.Reference}" : $"{declaration.Reference} has been assessed",
+            $"Customs value {currency} {declaration.AssessedCustomsValue:N2}. Duties and taxes payable: {currency} {declaration.AssessedPayable:N2}.",
+            $"/importer/declarations/{declaration.Id}"));
     }
 
     private async Task<(ValuationDecision? Decision, ValuationPhase2? Existing, IActionResult? Error)> LoadDecisionAsync(Guid decisionId, CancellationToken ct)
@@ -237,10 +267,10 @@ public sealed class ValuationPhase2Controller(CustomsDbContext db, HistoricalFxC
                 .Where(x => x.Id == decision.ImporterDeclarationId.Value)
                 .Select(x => x.ConfirmedTariffLineId).SingleOrDefaultAsync(ct);
             return confirmedLineId.HasValue
-                ? await db.NationalTariffLines.AsNoTracking().FirstOrDefaultAsync(x => x.Id == confirmedLineId.Value && x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today), ct)
+                ? await db.NationalTariffLines.AsNoTracking().Include(x => x.TaxRates).FirstOrDefaultAsync(x => x.Id == confirmedLineId.Value && x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today), ct)
                 : null;
         }
-        return await db.NationalTariffLines.AsNoTracking().Where(x => x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today)).OrderByDescending(x => x.EffectiveDate).ThenBy(x => x.Code).FirstOrDefaultAsync(ct);
+        return await db.NationalTariffLines.AsNoTracking().Include(x => x.TaxRates).Where(x => x.HsCodeId == hsCodeId && x.EffectiveDate <= today && (x.EndDate == null || x.EndDate >= today)).OrderByDescending(x => x.EffectiveDate).ThenBy(x => x.Code).FirstOrDefaultAsync(ct);
     }
 
     private async Task<(decimal? Rate, string Source)> GetEtbToTargetRateAsync(NationalTariffLine tariff, string targetCurrency, CancellationToken ct)

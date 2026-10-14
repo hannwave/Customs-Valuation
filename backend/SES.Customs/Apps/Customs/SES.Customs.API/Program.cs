@@ -47,6 +47,8 @@ if (Encoding.UTF8.GetByteCount(jwtKey) < 32) throw new InvalidOperationException
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<WorkspaceAccess>();
+builder.Services.AddScoped<SES.Customs.API.Services.ImporterProfileService>();
+builder.Services.AddScoped<SES.Customs.API.Services.ErcaTariffImporter>();
 builder.Services.AddScoped<WorkspaceExceptionFilter>();
 builder.Services.Configure<SerpApiOptions>(builder.Configuration.GetSection(SerpApiOptions.SectionName));
 builder.Services.AddHttpClient<SerpApiClient>((services, client) =>
@@ -150,6 +152,8 @@ app.Use(async (context, next) =>
     // inherit access to existing staff APIs that only require authentication.
     if (context.User.IsInRole(AccessRules.Importer) &&
         !context.Request.Path.StartsWithSegments("/api/importer-declarations") &&
+        !context.Request.Path.StartsWithSegments("/api/importer-profile") &&
+        !context.Request.Path.StartsWithSegments("/api/importer-notifications") &&
         !context.Request.Path.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase))
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;

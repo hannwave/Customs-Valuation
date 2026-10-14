@@ -22,7 +22,12 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
     public DbSet<RegistrationRequestEntity> RegistrationRequests => Set<RegistrationRequestEntity>();
     public DbSet<ImporterDeclaration> ImporterDeclarations => Set<ImporterDeclaration>();
     public DbSet<ImporterDocument> ImporterDocuments => Set<ImporterDocument>();
+    public DbSet<ImporterNotification> ImporterNotifications => Set<ImporterNotification>();
+    public DbSet<ImporterProfile> ImporterProfiles => Set<ImporterProfile>();
+    public DbSet<ImporterProfileDocument> ImporterProfileDocuments => Set<ImporterProfileDocument>();
     public DbSet<NationalTariffLine> NationalTariffLines => Set<NationalTariffLine>();
+    public DbSet<TariffTaxType> TariffTaxTypes => Set<TariffTaxType>();
+    public DbSet<TariffTaxRate> TariffTaxRates => Set<TariffTaxRate>();
     public DbSet<HsCodeUpdateMapping> HsCodeUpdateMappings => Set<HsCodeUpdateMapping>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,11 +85,49 @@ public sealed class CustomsDbContext(DbContextOptions<CustomsDbContext> options)
             entity.Property(x => x.Reference).HasMaxLength(40); entity.Property(x => x.OriginCountryCode).HasMaxLength(2);
             entity.Property(x => x.ImportPurpose).HasMaxLength(40); entity.Property(x => x.RequestedTreatmentsJson).HasColumnType("jsonb");
             entity.Property(x => x.Quantity).HasPrecision(20, 4);
+            entity.Property(x => x.InvoiceAmount).HasPrecision(20, 2); entity.Property(x => x.InvoiceCurrency).HasMaxLength(3);
+            entity.Property(x => x.FreightAmount).HasPrecision(20, 2); entity.Property(x => x.InsuranceAmount).HasPrecision(20, 2);
+            entity.Property(x => x.AssessmentCurrency).HasMaxLength(3); entity.Property(x => x.AssessedCustomsValue).HasPrecision(20, 2);
+            entity.Property(x => x.AssessedTotalTax).HasPrecision(20, 2); entity.Property(x => x.AssessedPayable).HasPrecision(20, 2);
+            entity.Property(x => x.AssessmentJson).HasColumnType("jsonb");
             entity.HasMany(x => x.Documents).WithOne().HasForeignKey(x => x.DeclarationId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ImporterNotification>(entity => {
+            entity.ToTable("importer_notifications"); entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.ImporterId, x.CreatedAt });
+            entity.HasOne<AuthAccountEntity>().WithMany().HasForeignKey(x => x.ImporterId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ImporterDeclaration>().WithMany().HasForeignKey(x => x.DeclarationId).OnDelete(DeleteBehavior.Cascade);
+            entity.Property(x => x.Kind).HasMaxLength(60); entity.Property(x => x.Title).HasMaxLength(200);
+            entity.Property(x => x.Message).HasMaxLength(2000); entity.Property(x => x.Link).HasMaxLength(300);
         });
         modelBuilder.Entity<ImporterDocument>(entity => {
             entity.ToTable("importer_documents"); entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.DeclarationId, x.Kind }).IsUnique();
+            entity.Property(x => x.Kind).HasMaxLength(40); entity.Property(x => x.FileName).HasMaxLength(255);
+            entity.Property(x => x.ContentType).HasMaxLength(100); entity.Property(x => x.Sha256).HasMaxLength(64);
+        });
+        modelBuilder.Entity<ImporterProfile>(entity => {
+            entity.ToTable("importer_profiles"); entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.AccountId).IsUnique(); entity.HasIndex(x => new { x.RegionKey, x.VerificationStatus, x.SubmittedAt });
+            entity.HasIndex(x => x.Tin); entity.HasIndex(x => x.IdNumber);
+            entity.HasOne<AuthAccountEntity>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<CustomsLocation>().WithMany().HasForeignKey(x => x.RegionLocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.Property(x => x.ImporterType).HasMaxLength(30); entity.Property(x => x.VerificationStatus).HasMaxLength(30);
+            entity.Property(x => x.LegalName).HasMaxLength(200); entity.Property(x => x.TradeName).HasMaxLength(200);
+            entity.Property(x => x.Tin).HasMaxLength(10); entity.Property(x => x.TradeLicenseNumber).HasMaxLength(60);
+            entity.Property(x => x.BusinessRegistrationNumber).HasMaxLength(60); entity.Property(x => x.VatNumber).HasMaxLength(30);
+            entity.Property(x => x.AgentLicenseNumber).HasMaxLength(60); entity.Property(x => x.IdType).HasMaxLength(30);
+            entity.Property(x => x.IdNumber).HasMaxLength(30); entity.Property(x => x.Nationality).HasMaxLength(2);
+            entity.Property(x => x.ResidencyStatus).HasMaxLength(30); entity.Property(x => x.RepresentativeRole).HasMaxLength(120);
+            entity.Property(x => x.Phone).HasMaxLength(20); entity.Property(x => x.RegionKey).HasMaxLength(120);
+            entity.Property(x => x.City).HasMaxLength(120); entity.Property(x => x.Woreda).HasMaxLength(120);
+            entity.Property(x => x.AddressLine).HasMaxLength(300); entity.Property(x => x.ReviewNote).HasMaxLength(2000);
+            entity.HasMany(x => x.Documents).WithOne().HasForeignKey(x => x.ProfileId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ImporterProfileDocument>(entity => {
+            entity.ToTable("importer_profile_documents"); entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.ProfileId, x.Kind }).IsUnique();
             entity.Property(x => x.Kind).HasMaxLength(40); entity.Property(x => x.FileName).HasMaxLength(255);
             entity.Property(x => x.ContentType).HasMaxLength(100); entity.Property(x => x.Sha256).HasMaxLength(64);
         });

@@ -7,8 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FiActivity, FiArchive, FiBarChart2, FiBookOpen, FiCheckSquare, FiChevronLeft, FiChevronRight,
   FiFileText, FiGlobe, FiGrid, FiInfo, FiLogOut, FiMapPin, FiMenu, FiSettings,
-  FiShield, FiUser, FiUsers, FiX,
-} from "react-icons/fi";
+  FiShield, FiUser, FiUsers, FiX, FiUserCheck } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Brand } from "@/components/Brand";
@@ -54,7 +53,7 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     { label: "ACTIVITY", links: [{ href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
   ] : [];
   return [
-    { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/importer-review", key: "importerReview", label: "Importer submissions", icon: FiFileText }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
+    { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/importer-review", key: "importerReview", label: "Importer submissions", icon: FiFileText }, { href: "/importer-verifications", key: "importerVerifications", label: "Importer verification", icon: FiUserCheck }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     ...sessionGroups,
     accountGroup,
   ];
@@ -71,7 +70,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [hasValuationSession, setHasValuationSession] = useState(false);
   const [notifications, setNotifications] = useState<WorkspaceNotifications | null>(null);
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
-  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact" || pathname === "/importer" || pathname === "/importer/register";
+  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact" || pathname === "/importer" || pathname.startsWith("/importer/") || pathname === "/document-viewer";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {

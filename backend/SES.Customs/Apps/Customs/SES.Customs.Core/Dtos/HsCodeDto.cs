@@ -28,7 +28,11 @@ public sealed record HsTariffLineDto(
     string Duty,
     string SourceReference,
     DateOnly EffectiveDate,
-    DateOnly? EndDate);
+    DateOnly? EndDate,
+    string? NationalCode = null,
+    IReadOnlyList<TariffTaxRateDto>? TaxRates = null);
+
+public sealed record TariffTaxRateDto(string TaxCode, decimal Rate);
 
 public sealed record HsCodeDetailDto(
     Guid Id,
