@@ -1,85 +1,103 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
-import { importerApi, type ImporterDeclaration, type TariffOption } from "@/lib/importer";
-import { getPhase2HsCode } from "@/lib/phase2Api";
-import type { HsCode } from "@/lib/types/customs";
+import { FiChevronRight, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
+import { FeedbackToast } from "@/components/FeedbackToast";
+import { formatMoney, importerApi } from "@/lib/importer";
+import { StatusBadge } from "@/components/officer/StatusBadge";
+import { type Queue } from "@/lib/officer-case";
 
-type Summary = Pick<ImporterDeclaration, "id" | "reference" | "status" | "productName" | "originCountryName" | "submittedAt">;
-const treatmentLabels: Record<string, string> = {
-  WITHHOLDING_REVIEW: "Withholding tax review", VAT_EXEMPTION: "VAT exemption review",
-  CUSTOMS_DUTY_EXEMPTION: "Customs duty exemption review", MACHINERY_EXEMPTION: "Machinery / equipment exemption review",
-};
+type Tab = { key: string; label: string; statuses: string[]; hint: string };
+const tabs: Tab[] = [
+  { key: "review", label: "Needs review", statuses: ["SUBMITTED"], hint: "New and resubmitted" },
+  { key: "valuation", label: "Valuation", statuses: ["VERIFIED", "ASSESSMENT_READY"], hint: "Set the customs value" },
+  { key: "tax", label: "Tax assessment", statuses: ["IN_ASSESSMENT"], hint: "Confirm duties and taxes" },
+  { key: "waiting", label: "Awaiting importer", statuses: ["INFORMATION_REQUESTED"], hint: "Information requested" },
+  { key: "assessed", label: "Assessed", statuses: ["ASSESSED"], hint: "Notice issued" },
+  { key: "rejected", label: "Rejected", statuses: ["REJECTED"], hint: "Closed" },
+  { key: "all", label: "All", statuses: [], hint: "Every submission" },
+];
+const REFRESH_MS = 60_000;
 
-export default function ImporterReviewPage() {
-  const [items, setItems] = useState<Summary[]>([]);
-  const [selected, setSelected] = useState<ImporterDeclaration | null>(null);
-  const [resolvedHsCode, setResolvedHsCode] = useState<HsCode | null>(null);
-  const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState(""); const [tariffSearch, setTariffSearch] = useState("");
-  const [candidates, setCandidates] = useState<TariffOption[]>([]); const [confirmedLine, setConfirmedLine] = useState("");
-  const load = useCallback(async () => {
-    try { setItems(await importerApi<Summary[]>("/importer-declarations")); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Queue unavailable."); }
-  }, []);
+function age(value: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000));
+  if (minutes < 60) return minutes <= 1 ? "just now" : `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days < 14 ? `${days} d ago` : new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+export default function ImporterSubmissionsPage() {
+  const router = useRouter();
+  const [tab, setTab] = useState("review");
+  const [search, setSearch] = useState(""); const [query, setQuery] = useState("");
+  const [queue, setQueue] = useState<Queue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => { const timer = window.setTimeout(() => setQuery(search.trim()), 300); return () => window.clearTimeout(timer); }, [search]);
+  const current = tabs.find(item => item.key === tab) ?? tabs[0];
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (current.statuses.length) params.set("status", current.statuses.join(","));
+      if (query) params.set("q", query);
+      setQueue(await importerApi<Queue>(`/importer-declarations/queue?${params}`)); setError("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Submissions could not be loaded."); }
+    finally { setLoading(false); }
+  }, [current, query]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    let cancelled = false;
-    const hsCodeId = selected?.confirmedHsCodeId ?? selected?.suggestedHsCodeId;
-    if (!hsCodeId) { setResolvedHsCode(null); return; }
-    setResolvedHsCode(null);
-    void getPhase2HsCode(hsCodeId)
-      .then(code => { if (!cancelled) setResolvedHsCode(code); })
-      .catch(() => { if (!cancelled) setResolvedHsCode(null); });
-    return () => { cancelled = true; };
-  }, [selected?.confirmedHsCodeId, selected?.suggestedHsCodeId]);
-  useEffect(() => {
-    if (!selected || tariffSearch.trim().length < 2) { setCandidates([]); return; }
-    const timer = window.setTimeout(() => {
-      void importerApi<{ items: TariffOption[] }>(`/importer-declarations/catalog?${new URLSearchParams({ stage: "tariffs", q: tariffSearch.trim() })}`)
-        .then(result => setCandidates(result.items)).catch(reason => setError(String(reason)));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [selected, tariffSearch]);
-  async function open(id: string) {
-    setError(""); setNotice("");
-    try {
-      const declaration = await importerApi<ImporterDeclaration>(`/importer-declarations/${id}`);
-      setSelected(declaration); setConfirmedLine(declaration.confirmedTariffLineId ?? declaration.suggestedTariffLineId);
-      setTariffSearch(""); setNote(declaration.reviewNote ?? "");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Declaration unavailable."); }
-  }
-  async function review(action: string) {
-    if (!selected) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const result = await importerApi<ImporterDeclaration>(`/importer-declarations/${selected.id}/review`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, confirmedTariffLineId: action === "APPROVE_INFORMATION" ? confirmedLine : null, note, expectedVersion: selected.version }),
-      });
-      setSelected(result); setNotice(`${result.reference}: ${result.status.replaceAll("_", " ").toLowerCase()}.`);
-      await load();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Review could not be saved."); }
-    finally { setBusy(false); }
-  }
-  return <div className="importer-review-page"><div className="importer-intro"><p className="importer-eyebrow">CUSTOMS OFFICER</p><h1>Importer submissions</h1><p>Review item details and mandatory documents. Confirm the tariff line before the declaration enters valuation and tax assessment.</p></div>
-    {error && <div className="importer-error" role="alert">{error}</div>}{notice && <div className="importer-success" role="status">{notice}</div>}
-    <div className="importer-review-grid"><section className="importer-card"><h2>Branch queue</h2>{items.length ? <ul className="importer-list">{items.map(item => <li key={item.id}><strong>{item.productName}</strong><span>{item.reference} · {item.originCountryName}</span><small>{item.status.replaceAll("_", " ")} · {new Date(item.submittedAt).toLocaleDateString()}</small><button type="button" onClick={() => void open(item.id)}>Review details</button></li>)}</ul> : <p>No importer submissions are assigned to your branch.</p>}</section>
-      <section className="importer-card">{selected ? <><p className="importer-eyebrow">{selected.reference}</p><h2>{selected.productName}</h2><p><strong>Status:</strong> {selected.status.replaceAll("_", " ")}</p>
-        <dl className="importer-item-classification"><div><dt>Item description</dt><dd>{selected.description}</dd></div><div><dt>{selected.confirmedHsCodeId ? "Confirmed HS code" : "Suggested HS code"}</dt><dd>{resolvedHsCode?.tariffItemNo || resolvedHsCode?.code || (selected.confirmedHsCodeId || selected.suggestedHsCodeId ? "Loading HS code…" : "Not assigned")}</dd></div></dl>
-        <dl className="importer-detail-grid"><div><dt>Country of origin</dt><dd>{selected.originCountryName}</dd></div><div><dt>Purpose</dt><dd>{selected.importPurpose.replaceAll("_", " ")}</dd></div><div><dt>Quantity</dt><dd>{selected.quantity} {selected.unit}</dd></div><div><dt>Provisional tariff description</dt><dd>{selected.suggestedTariffDescription}</dd></div><div><dt>Brand / model</dt><dd>{selected.brand || "—"} / {selected.model || "—"}</dd></div><div><dt>Manufacturer</dt><dd>{selected.manufacturer || "—"}</dd></div><div><dt>Serial / part number</dt><dd>{selected.serialOrPartNumber || "—"}</dd></div><div><dt>Machinery / equipment</dt><dd>{selected.isMachineryOrEquipment ? "Claimed by importer" : "No"}</dd></div></dl>
-        {selected.specifications && <p><strong>Specifications:</strong> {selected.specifications}</p>}{selected.purposeDetails && <p><strong>Purpose details:</strong> {selected.purposeDetails}</p>}
-        <h3>Potential tax treatment</h3>{selected.requestedTreatments.length ? <ul>{selected.requestedTreatments.map(code => <li key={code}>{treatmentLabels[code] ?? code}</li>)}</ul> : <p>No special treatment requested.</p>}<p className="importer-disclaimer">These are importer claims. Apply an exemption only after checking the governing rule and evidence in the officer assessment workflow.</p>
-        <h3>Documents</h3><div className="importer-review-documents">{selected.documents.map(document => <div key={document.kind}><strong>{document.kind.replaceAll("_", " ")}</strong><small>{document.fileName} · {(document.size / 1024).toFixed(0)} KB</small><ImporterDocumentPreview declarationId={selected.id} kind={document.kind} label={document.kind.replaceAll("_", " ")} contentType={document.contentType} /></div>)}</div>
-        {selected.status === "SUBMITTED" && <div className="importer-officer-actions"><h3>HS mapping and review</h3><label>Search current tariff descriptions<input value={tariffSearch} onChange={e => setTariffSearch(e.target.value)} placeholder="Search by keyword or HS code" /></label>
-          <label>Confirmed tariff item<select value={confirmedLine} onChange={e => setConfirmedLine(e.target.value)}><option value={selected.suggestedTariffLineId}>Importer suggestion: {selected.suggestedTariffDescription}</option>{candidates.filter(x => x.tariffLineId !== selected.suggestedTariffLineId).map(item => <option key={item.tariffLineId} value={item.tariffLineId}>{item.tariffItemNo || item.hsCode} · {item.description}</option>)}</select></label>
-          <label>Review note<textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Explain a correction or information request" /></label>
-          <div className="importer-actions"><button type="button" disabled={busy || !confirmedLine} className="importer-primary" onClick={() => void review("APPROVE_INFORMATION")}>Confirm HS and approve information</button><button type="button" disabled={busy} onClick={() => void review("REQUEST_INFORMATION")}>Request information</button><button type="button" disabled={busy} onClick={() => void review("REJECT")}>Reject submission</button></div>
-        </div>}
-        {selected.status === "VERIFIED" && <div className="importer-officer-actions"><p>Information and HS mapping verified. Continue when ready to begin valuation.</p><button type="button" disabled={busy} className="importer-primary" onClick={() => void review("CONTINUE_ASSESSMENT")}>Continue to assessment</button></div>}
-        {selected.status === "ASSESSMENT_READY" && <div className="importer-officer-actions"><p>Ready for officer valuation and duty/tax assessment. No tax or exemption has been granted.</p><Link className="importer-primary" href={`/dashboard?importDeclarationId=${selected.id}`}>Open valuation workspace</Link></div>}
-        </> : <p>Select a submission to inspect its details and documents.</p>}</section></div>
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(true); }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const count = (item: Tab) => queue ? item.statuses.length ? item.statuses.reduce((sum, status) => sum + (queue.counts[status] ?? 0), 0) : queue.total : null;
+
+  return <div className="oc-page">
+    <header className="oc-page-head">
+      <div><p className="oc-eyebrow">Customs officer · importer declarations</p><h1>Importer submissions</h1>
+        <p>Review, value, tax and finalise each declaration in one place. The importer is notified in their portal at every decision.</p></div>
+      <button type="button" className="oc-icon-button" onClick={() => void load()} aria-label="Refresh submissions" title="Refresh"><FiRefreshCw aria-hidden="true" className={loading ? "oc-spin" : ""} /></button>
+    </header>
+
+    <div className="oc-tabs" role="tablist" aria-label="Filter submissions by stage">
+      {tabs.map(item => { const value = count(item);
+        return <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} className={`oc-tab is-${item.key}${tab === item.key ? " is-active" : ""}`} onClick={() => setTab(item.key)}>
+          <span>{item.label}</span><strong>{value ?? "–"}</strong><small>{item.hint}</small>
+        </button>; })}
+    </div>
+
+    <section className="iv-table-card">
+      <div className="iv-table-toolbar">
+        <h2>{current.label} <small>{queue ? `${queue.items.length} shown` : ""}</small></h2>
+        <label className="iv-search"><FiSearch aria-hidden="true" /><input value={search} onChange={event => setSearch(event.target.value)} maxLength={100} placeholder="Reference, product, importer, TIN or HS code" aria-label="Search submissions" />{search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search"><FiX /></button>}</label>
+      </div>
+      <div className="iv-table-scroll">
+        <table className="iv-table oc-queue-table">
+          <thead><tr><th scope="col">Declaration</th><th scope="col">Importer</th><th scope="col">HS code</th><th scope="col">Declared value</th><th scope="col">Origin</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span className="sr-only">Open</span></th></tr></thead>
+          <tbody>
+            {loading && !queue ? Array.from({ length: 4 }, (_, index) => <tr key={index} className="oc-skeleton-row"><td colSpan={8}><span /></td></tr>)
+              : queue?.items.length ? queue.items.map(row => <tr key={row.id} onClick={() => router.push(`/importer-review/${row.id}`)}>
+                <td data-label="Declaration"><strong>{row.productName}</strong><small className="iv-mono">{row.reference}{row.brand ? ` · ${[row.brand, row.model].filter(Boolean).join(" ")}` : ""}</small></td>
+                <td data-label="Importer"><strong>{row.importerName || "—"}</strong><small>{row.importerTin ? <>TIN <span className="iv-mono">{row.importerTin}</span></> : "No TIN"}</small></td>
+                <td data-label="HS code"><span className={`oc-hs-chip${row.hsConfirmed ? " is-confirmed" : ""}`} title={row.hsConfirmed ? "Confirmed by an officer" : "Suggested by the importer"}>{row.hsCode || "—"}</span><small>{row.hsConfirmed ? "Confirmed" : "Importer's choice"}</small></td>
+                <td data-label="Declared value"><strong>{formatMoney(row.invoiceAmount, row.invoiceCurrency)}</strong><small>{row.quantity} {row.unit}{row.assessedPayable != null ? ` · payable ${formatMoney(row.assessedPayable, row.assessmentCurrency)}` : ""}</small></td>
+                <td data-label="Origin">{row.originCountryName}<small>{row.branch}</small></td>
+                <td data-label="Status"><StatusBadge status={row.status} /></td>
+                <td data-label="Updated" title={new Date(row.updatedAt).toLocaleString()}>{age(row.updatedAt)}</td>
+                <td className="iv-table-action"><Link className="iv-open" href={`/importer-review/${row.id}`} onClick={event => event.stopPropagation()}>Open<FiChevronRight aria-hidden="true" /></Link></td>
+              </tr>)
+              : <tr><td colSpan={8} className="iv-table-empty">{query ? `No submissions match “${query}”.` : `No submissions in “${current.label.toLowerCase()}”.`}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <FeedbackToast error={error} onDismissError={() => setError("")} onRetry={() => void load()} />
   </div>;
 }

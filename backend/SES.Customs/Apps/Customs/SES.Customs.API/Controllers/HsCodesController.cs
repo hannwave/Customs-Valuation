@@ -129,7 +129,7 @@ public sealed class HsCodesController(IMediator mediator, IConfiguration configu
         var db = scope.ServiceProvider.GetRequiredService<CustomsDbContext>();
         var code = await db.HsCodes.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.Id, x.RevisionId, Code = x.Code ?? "", DescriptionEn = x.DescriptionEn ?? "", x.DescriptionAm }).SingleOrDefaultAsync(ct);
         if (code is null) return NotFound();
-        var lines = await db.NationalTariffLines.AsNoTracking().Where(x => x.HsCodeId == id).OrderByDescending(x => x.EffectiveDate).ThenBy(x => x.Code).Select(x => new HsTariffLineDto(x.Id, x.Code, x.DescriptionEn, x.DescriptionAm, x.Unit, x.Duty, x.SourceReference, x.EffectiveDate, x.EndDate)).ToListAsync(ct);
+        var lines = await db.NationalTariffLines.AsNoTracking().Where(x => x.HsCodeId == id).OrderByDescending(x => x.EffectiveDate).ThenBy(x => x.Code).Select(x => new HsTariffLineDto(x.Id, x.Code, x.DescriptionEn, x.DescriptionAm, x.Unit, x.Duty, x.SourceReference, x.EffectiveDate, x.EndDate, x.NationalCode, x.TaxRates.OrderBy(r => r.TaxCode).Select(r => new TariffTaxRateDto(r.TaxCode, r.Rate)).ToList())).ToListAsync(ct);
         return Ok(new HsCodeDetailDto(code.Id, code.RevisionId, code.Code, code.DescriptionEn, code.DescriptionAm, lines));
     }
 

@@ -36,6 +36,27 @@ Form field: file
 
 The importer validates six-digit HS codes and eight-digit national tariff lines, updates descriptions and stores duty/unit metadata.
 
+## ERCA tariff and tax rates
+
+Tariff lines carry the 11-digit ERCA national code and every tax column of the ERCA tariff book (`tariff_tax_types`, `tariff_tax_rates`): DR duty, ER excise, VAT, WHR withholding, SR surtax, EXR export duty and the second-schedule D2R, DSR and DAR rates. The tax assessment reads these rates for the selected line; when SR is blank it uses D2R as the surtax rate, and it falls back to the statutory defaults only for lines with no stored rate.
+
+To refresh from the public ERCA tariff search (requires Node and Chrome; the scraper pauses between requests):
+
+```powershell
+node scripts/erca-tariff-scrape.cjs <output-folder>   # resumable; writes erca-codes.json and erca-lines.json
+node scripts/erca-tariff-rows.cjs <output-folder>     # writes erca-tariff-rows.json and prints coverage
+```
+
+Apply the rows file as a System Administrator, previewing first:
+
+```text
+POST /api/tariff/erca-import?dryRun=true&retrievedOn=2026-10-14
+Authorization: Bearer <system-administrator JWT>
+Form field: file
+```
+
+Matching lines are updated in place, new ERCA lines are created, and lines ERCA no longer lists are end-dated (never deleted); lines referenced by importer declarations are kept. The 14 October 2026 snapshot is stored in `backend/SES.Customs/Data/erca-tariff-2026-10-14.json`. Read rates with `GET /api/tariff/tax-types`, `GET /api/tariff/lines?code=8517` and `GET /api/tariff/lines/{id}/taxes`.
+
 ## Authentication workflow
 
 1. A user submits `/signup`.

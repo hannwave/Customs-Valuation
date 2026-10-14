@@ -40,6 +40,11 @@ public sealed class ImporterDeclarationFlowTests
             LocationType = "BRANCH", Region = "TEST", Status = "ACTIVE", SupportsImport = true,
             EffectiveFrom = DateTimeOffset.UtcNow.AddDays(-2)
         });
+        db.ImporterProfiles.Add(new ImporterProfile
+        {
+            Id = Guid.NewGuid(), AccountId = importerId, ImporterType = ImporterVerification.Business,
+            VerificationStatus = ImporterVerification.Verified, RegionLocationId = locationId, RegionKey = "TEST"
+        });
         db.HsRevisions.Add(new HsRevision { Id = revisionId, Name = "Disposable HS", Status = "Active", EffectiveDate = today.AddDays(-1) });
         db.HsCodes.Add(new HsCode
         {
@@ -78,6 +83,7 @@ public sealed class ImporterDeclarationFlowTests
             ImportPurpose = "COMMERCIAL_RESALE", IsCommercialProduct = true,
             Brand = "Disposable", Model = "TEST-1", ProductName = "Disposable sample product",
             Description = "A disposable sample product for validating importer submission.", Quantity = 1, Unit = "piece",
+            InvoiceAmount = 250m, InvoiceCurrency = "usd", FreightAmount = 20m,
             CommercialInvoice = new FormFile(invoiceStream, 0, pdf.Length, "CommercialInvoice", "invoice.pdf"),
             PackingList = new FormFile(packingStream, 0, pdf.Length, "PackingList", "packing.pdf"),
             CertificateOfOrigin = new FormFile(originStream, 0, pdf.Length, "CertificateOfOrigin", "origin.pdf")

@@ -47,6 +47,7 @@ public static class ImportTaxAssessmentCalculator
     private const string SocialWelfareSource = "https://www.mofed.gov.et/media/filer_public/9f/70/9f702522-6150-4a70-98fa-d80b1c0eb3b4/macro_fiscal_performance_2024_mof.pdf";
     private const string WithholdingSource = "https://www.mofed.gov.et/mof-directive/tax-directive/";
     private const string ExciseProclamationSource = "https://www.ecc.gov.et/proclamations";
+    private const string TariffSource = "https://customs.erca.gov.et/trade/help/tariff/search";
 
     private static readonly HashSet<string> SurtaxExcludedCategories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -59,7 +60,7 @@ public static class ImportTaxAssessmentCalculator
         "mauritius", "rwanda", "sudan", "zambia", "zimbabwe"
     };
 
-    public static bool HasConfiguredExciseRule(NationalTariffLine? tariff) => ExciseRuleFor(tariff) is not null;
+    public static bool HasConfiguredExciseRule(NationalTariffLine? tariff) => ExciseRuleFor(tariff) is not null || TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Excise) > 0;
     public static bool RequiresEtbConversion(NationalTariffLine? tariff) => ExciseRuleFor(tariff) is { SpecificRate: > 0 };
 
     public static List<ValuationPhase2TaxLine> Calculate(ImportTaxAssessmentInput input)
@@ -67,10 +68,26 @@ public static class ImportTaxAssessmentCalculator
         var tariff = input.Tariff;
         var submitted = input.Overrides;
         var exciseRule = ExciseRuleFor(tariff);
+        // Rates the national tariff stores for this line override the statutory defaults below.
+        var tariffDuty = TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Duty);
+        var tariffExcise = TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Excise);
+        var tariffVat = TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Vat);
+        var tariffWithholding = TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Withholding);
+        // ERCA lists surtax explicitly on very few lines; its second-schedule rate (D2R) carries the 10% surtax
+        // for every line where it applies (duty above 15%, exempt goods at 0), so it is used when SR is blank.
+        var listedSurtax = TariffTaxCodes.RateFor(tariff, TariffTaxCodes.Surtax);
+        var tariffSurtax = listedSurtax ?? TariffTaxCodes.RateFor(tariff, TariffTaxCodes.SecondScheduleDuty);
+        var surtaxSourceLabel = listedSurtax.HasValue ? "surtax rate (SR)" : "second-schedule rate (D2R)";
+        if (tariffExcise.HasValue)
+            exciseRule = exciseRule is not null ? exciseRule with { AdValoremRate = tariffExcise.Value }
+                : tariffExcise.Value > 0 ? new ExciseRule(tariffExcise.Value, 0m, "", ExciseSpecificMode.Additive, $"National tariff excise rate {tariffExcise.Value:0.##}% for this item.", TariffSource) : null;
+        var vatRate = tariffVat ?? VatRate;
+        var withholdingRate = tariffWithholding ?? WithholdingRate;
+        var surtaxRate = tariffSurtax is > 0 ? tariffSurtax.Value : SurtaxRate;
         var codes = new HashSet<string>(input.ExemptionCodes.Select(code => code.Trim()), StringComparer.OrdinalIgnoreCase);
         var machineryExemption = QualifiesForMachineryExemption(input, codes);
         var dutyExempt = codes.Contains("CUSTOMS_DUTY_EXEMPT") || machineryExemption;
-        var recommendedDutyRate = ParseRate(tariff.Duty);
+        var recommendedDutyRate = tariffDuty ?? ParseRate(tariff.Duty);
         var suppliedDuty = submitted.FirstOrDefault(line => string.Equals(line.Name.Trim(), "Customs Duty", StringComparison.OrdinalIgnoreCase));
         var dutyNeedsReview = !recommendedDutyRate.HasValue;
         var dutyRate = recommendedDutyRate ?? suppliedDuty?.Value ?? 0m;
@@ -78,13 +95,16 @@ public static class ImportTaxAssessmentCalculator
         var dutyRateKnown = dutyExempt || recommendedDutyRate.HasValue || suppliedDuty is not null;
         var surtaxExcluded = codes.Contains("SURTAX_EXEMPT") || SurtaxExcludedCategories.Contains(input.ProductCategory.Trim());
         var surtaxThresholdUnknown = !dutyRateKnown;
-        var surtaxApplies = !surtaxExcluded && !surtaxThresholdUnknown && !dutyExempt && dutyRate > SurtaxDutyThreshold;
+        var surtaxApplies = tariffSurtax.HasValue
+            ? tariffSurtax.Value > 0 && !surtaxExcluded && !dutyExempt
+            : !surtaxExcluded && !surtaxThresholdUnknown && !dutyExempt && dutyRate > SurtaxDutyThreshold;
+        if (tariffSurtax.HasValue) surtaxThresholdUnknown = false;
         var vatExempt = codes.Contains("VAT_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC") || machineryExemption;
         var socialExempt = codes.Contains("SOCIAL_WELFARE_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
         var withholdingApplicable = input.IsCommercialImport && input.WithholdingApplicable && !input.IsManufacturing && !codes.Contains("WITHHOLDING_NOT_APPLICABLE");
         var socialApplicable = !socialExempt && !surtaxApplies && !surtaxThresholdUnknown;
         var exciseRate = exciseRule?.AdValoremRate ?? 0m;
-        var exciseCategoryReview = exciseRule is null && ExciseMayApply(tariff, input.ProductCategory);
+        var exciseCategoryReview = exciseRule is null && !tariffExcise.HasValue && ExciseMayApply(tariff, input.ProductCategory);
         var exciseApplies = exciseRule is not null || input.ExciseTaxApplicable || exciseCategoryReview;
         var exciseNeedsReview = exciseRule is null && (input.ExciseTaxApplicable || exciseCategoryReview);
         var exciseUnitMatches = exciseRule is not null && UnitMatches(input.Unit, exciseRule.Unit);
@@ -95,7 +115,9 @@ public static class ImportTaxAssessmentCalculator
             : "No verified excise rate was found for this tariff item; review the current excise schedule before applying.");
         if (exciseRule is not null && specificNeedsReview)
             exciseNote += !exciseUnitMatches ? $" Shipment unit must be {exciseRule.Unit} for its specific-rate component." : $" {input.EtbRateSource}.";
-        var surtaxNote = surtaxThresholdUnknown
+        var surtaxNote = tariffSurtax.HasValue
+            ? surtaxApplies ? $"{surtaxRate:0.##}% surtax from the national tariff's {surtaxSourceLabel} for this item." : tariffSurtax.Value > 0 ? "Product category or recorded exemption excludes the tariff's surtax." : $"The national tariff's {surtaxSourceLabel} is 0% for this item, so no surtax applies."
+            : surtaxThresholdUnknown
             ? "Confirm the officer-approved Customs Duty rate before deciding whether the 10% import surtax applies."
             : surtaxApplies
                 ? "10% import surtax is recommended under the configured duty threshold and applicable product-category checks."
@@ -105,11 +127,11 @@ public static class ImportTaxAssessmentCalculator
         var machineryReason = "Qualifying machinery exemption approved by the officer; verify the governing authority and evidence recorded in assessment notes.";
         var lines = new List<ValuationPhase2TaxLine>
         {
-            Line("Customs Duty", dutyRate, 1, "CIF", tariff.SourceReference, !dutyExempt, dutyExempt ? "Exempt" : dutyNeedsReview ? "ReviewRequired" : "Recommended", machineryExemption ? machineryReason : dutyExempt ? "Officer-selected exemption. Verify the governing authority and evidence before confirming." : dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", input.Currency),
+            Line("Customs Duty", dutyRate, 1, "CIF", tariffDuty.HasValue ? TariffSource : tariff.SourceReference, !dutyExempt, dutyExempt ? "Exempt" : dutyNeedsReview ? "ReviewRequired" : "Recommended", machineryExemption ? machineryReason : dutyExempt ? "Officer-selected exemption. Verify the governing authority and evidence before confirming." : dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", input.Currency),
             Line("Excise Tax", exciseRate, 2, "CIFPlusDuty", exciseRule?.SourceReference ?? ExciseSource, exciseApplies, exciseNeedsReview || specificNeedsReview ? "ReviewRequired" : exciseApplies ? "Recommended" : "NotApplicable", exciseNote, input.Currency),
-            Line("Surtax", SurtaxRate, 4, "CIFPlusDutyPlusExcise", SurtaxSource, surtaxApplies, surtaxThresholdUnknown ? "ReviewRequired" : surtaxApplies ? "Recommended" : "NotApplicable", surtaxNote, input.Currency),
-            Line("VAT", VatRate, 5, "CIFPlusDutyPlusExcisePlusSurtax", VatSource, !vatExempt, machineryExemption ? "Exempt" : vatExempt ? "NotApplicable" : "Recommended", machineryExemption ? machineryReason : vatExempt ? "Exemption selected; verify supporting authority." : "15% VAT is calculated after Customs Duty, Excise Tax, and Surtax in the configured assessment order.", input.Currency),
-            Line("Withholding Tax", WithholdingRate, 6, "CIF", WithholdingSource, withholdingApplicable, withholdingApplicable ? "Recommended" : "NotApplicable", input.IsManufacturing ? "Not applicable: manufacturing importer/transaction exemption." : withholdingApplicable ? "3% of CIF for commercial imports; an advance income-tax payment." : "Not selected for this import or excluded by the commercial-import setting.", input.Currency),
+            Line("Surtax", surtaxRate, 4, "CIFPlusDutyPlusExcise", tariffSurtax.HasValue ? TariffSource : SurtaxSource, surtaxApplies, surtaxThresholdUnknown ? "ReviewRequired" : surtaxApplies ? "Recommended" : "NotApplicable", surtaxNote, input.Currency),
+            Line("VAT", vatRate, 5, "CIFPlusDutyPlusExcisePlusSurtax", tariffVat.HasValue ? TariffSource : VatSource, !vatExempt, machineryExemption ? "Exempt" : vatExempt ? "NotApplicable" : "Recommended", machineryExemption ? machineryReason : vatExempt ? "Exemption selected; verify supporting authority." : $"{vatRate:0.##}% VAT{(tariffVat.HasValue ? " from the national tariff" : "")}, calculated after Customs Duty, Excise Tax, and Surtax in the configured assessment order.", input.Currency),
+            Line("Withholding Tax", withholdingRate, 6, "CIF", tariffWithholding.HasValue ? TariffSource : WithholdingSource, withholdingApplicable, withholdingApplicable ? "Recommended" : "NotApplicable", input.IsManufacturing ? "Not applicable: manufacturing importer/transaction exemption." : withholdingApplicable ? $"{withholdingRate:0.##}% of CIF for commercial imports{(tariffWithholding.HasValue ? " (national tariff rate)" : "")}; an advance income-tax payment." : "Not selected for this import or excluded by the commercial-import setting.", input.Currency),
             Line("Social Welfare Levy", SocialWelfareLevyRate, 7, "CIF", SocialWelfareSource, socialApplicable, socialExempt || surtaxApplies ? "NotApplicable" : surtaxThresholdUnknown ? "ReviewRequired" : "Recommended", socialExempt ? "Exemption selected; verify supporting authority." : surtaxApplies ? "Not applied because the import is already subject to surtax." : surtaxThresholdUnknown ? "Confirm surtax eligibility after the Customs Duty rate is resolved." : "3% of CIF when the import is not subject to surtax, subject to exemptions.", input.Currency),
             Line("Cargo Scanning Fee", CargoScanningFeeRate, 8, "CIF", "Cargo scanning fee rate specified by the business requirement.", true, "Recommended", "0.07% of CIF customs value; assessed separately and excluded from the VAT base.", input.Currency)
         };

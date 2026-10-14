@@ -370,6 +370,30 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("AssessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("AssessedCustomsValue")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<decimal?>("AssessedPayable")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<decimal?>("AssessedTotalTax")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<string>("AssessmentCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("AssessmentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Brand")
                         .IsRequired()
                         .HasColumnType("text");
@@ -384,6 +408,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("FreightAmount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
                     b.Property<string>("ImportPurpose")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -391,6 +419,19 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.Property<Guid>("ImporterId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal?>("InsuranceAmount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<decimal?>("InvoiceAmount")
+                        .HasPrecision(20, 2)
+                        .HasColumnType("numeric(20,2)");
+
+                    b.Property<string>("InvoiceCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
 
                     b.Property<bool>("IsCommercialProduct")
                         .HasColumnType("boolean");
@@ -551,6 +592,250 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsUnique();
 
                     b.ToTable("importer_documents", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeclarationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ImporterId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Link")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeclarationId");
+
+                    b.HasIndex("ImporterId", "CreatedAt");
+
+                    b.ToTable("importer_notifications", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddressLine")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateOnly?>("AgentLicenseExpiry")
+                        .HasColumnType("date");
+
+                    b.Property<string>("AgentLicenseNumber")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("BusinessRegistrationNumber")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("IdNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("IdType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ImporterType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("LegalName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Nationality")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("RegionKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("RegionLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RepresentativeRole")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("ResidencyStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ReviewNote")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Tin")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateOnly?>("TradeLicenseExpiry")
+                        .HasColumnType("date");
+
+                    b.Property<string>("TradeLicenseNumber")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("TradeName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VatNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Woreda")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId")
+                        .IsUnique();
+
+                    b.HasIndex("IdNumber");
+
+                    b.HasIndex("RegionLocationId");
+
+                    b.HasIndex("Tin");
+
+                    b.HasIndex("RegionKey", "VerificationStatus", "SubmittedAt");
+
+                    b.ToTable("importer_profiles", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterProfileDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("importer_profile_documents", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.LocalMarket", b =>
@@ -835,6 +1120,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<Guid>("HsCodeId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("NationalCode")
+                        .HasMaxLength(11)
+                        .HasColumnType("character varying(11)");
+
                     b.Property<string>("SourceReference")
                         .IsRequired()
                         .HasColumnType("text");
@@ -849,6 +1138,8 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasColumnType("character varying(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("NationalCode");
 
                     b.HasIndex("HsCodeId", "Code", "EffectiveDate")
                         .IsUnique();
@@ -960,6 +1251,145 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("price_sources", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.TariffTaxRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)");
+
+                    b.Property<DateTimeOffset>("RetrievedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("TariffLineId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TaxCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaxCode");
+
+                    b.HasIndex("TariffLineId", "TaxCode")
+                        .IsUnique();
+
+                    b.ToTable("tariff_tax_rates", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.TariffTaxType", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("tariff_tax_types", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Code = "DR",
+                            Description = "Customs import duty, percent of CIF value.",
+                            DisplayOrder = 1,
+                            Name = "Duty Rate",
+                            Scope = "IMPORT"
+                        },
+                        new
+                        {
+                            Code = "ER",
+                            Description = "Excise tax, percent of CIF plus customs duty.",
+                            DisplayOrder = 2,
+                            Name = "Excise Rate",
+                            Scope = "IMPORT"
+                        },
+                        new
+                        {
+                            Code = "VAT",
+                            Description = "VAT on imports, percent of CIF plus duty, excise and surtax.",
+                            DisplayOrder = 3,
+                            Name = "Value Added Tax",
+                            Scope = "IMPORT"
+                        },
+                        new
+                        {
+                            Code = "WHR",
+                            Description = "Withholding (advance income) tax, percent of CIF value.",
+                            DisplayOrder = 4,
+                            Name = "With Hold Rate",
+                            Scope = "IMPORT"
+                        },
+                        new
+                        {
+                            Code = "SR",
+                            Description = "Import surtax, percent of CIF plus duty and excise.",
+                            DisplayOrder = 5,
+                            Name = "Surtax Rate",
+                            Scope = "IMPORT"
+                        },
+                        new
+                        {
+                            Code = "EXR",
+                            Description = "Duty charged on exports of the item.",
+                            DisplayOrder = 6,
+                            Name = "Export Duty Rate",
+                            Scope = "EXPORT"
+                        },
+                        new
+                        {
+                            Code = "D2R",
+                            Description = "Duty under the tariff's second schedule.",
+                            DisplayOrder = 7,
+                            Name = "Duty 2nd Schedule Rate",
+                            Scope = "SECOND_SCHEDULE"
+                        },
+                        new
+                        {
+                            Code = "DSR",
+                            Description = "Special rate under the tariff's second schedule.",
+                            DisplayOrder = 8,
+                            Name = "Duty 2nd Schedule Special Rate",
+                            Scope = "SECOND_SCHEDULE"
+                        },
+                        new
+                        {
+                            Code = "DAR",
+                            Description = "Additional rate under the tariff's second schedule.",
+                            DisplayOrder = 9,
+                            Name = "Duty 2nd Schedule Additional Rate",
+                            Scope = "SECOND_SCHEDULE"
+                        });
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.ValuationAuditSnapshot", b =>
@@ -2065,6 +2495,44 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterNotification", b =>
+                {
+                    b.HasOne("SES.Customs.Core.Models.ImporterDeclaration", null)
+                        .WithMany()
+                        .HasForeignKey("DeclarationId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ImporterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterProfile", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SES.Customs.Infrastructure.Context.CustomsLocation", null)
+                        .WithMany()
+                        .HasForeignKey("RegionLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterProfileDocument", b =>
+                {
+                    b.HasOne("SES.Customs.Core.Models.ImporterProfile", null)
+                        .WithMany("Documents")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.LocalMarketObservation", b =>
                 {
                     b.HasOne("SES.Customs.Core.Models.LocalMarketObservation", null)
@@ -2110,6 +2578,21 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasOne("SES.Customs.Core.Models.PriceSource", null)
                         .WithMany()
                         .HasForeignKey("SourceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.TariffTaxRate", b =>
+                {
+                    b.HasOne("SES.Customs.Core.Models.NationalTariffLine", null)
+                        .WithMany("TaxRates")
+                        .HasForeignKey("TariffLineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SES.Customs.Core.Models.TariffTaxType", null)
+                        .WithMany()
+                        .HasForeignKey("TaxCode")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -2242,6 +2725,16 @@ namespace SES.Customs.Infrastructure.Context.Migrations
             modelBuilder.Entity("SES.Customs.Core.Models.ImporterDeclaration", b =>
                 {
                     b.Navigation("Documents");
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterProfile", b =>
+                {
+                    b.Navigation("Documents");
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.NationalTariffLine", b =>
+                {
+                    b.Navigation("TaxRates");
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.ValuationDecision", b =>
