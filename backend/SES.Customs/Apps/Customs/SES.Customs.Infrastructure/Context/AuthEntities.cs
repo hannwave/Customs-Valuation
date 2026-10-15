@@ -25,6 +25,15 @@ public sealed class AuthAccountEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>An account's profile picture, kept apart from the account row so sign-in and lists never load the image.</summary>
+public sealed class AccountPhotoEntity
+{
+    public Guid AccountId { get; set; }
+    public string ContentType { get; set; } = "";
+    public byte[] Content { get; set; } = [];
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class RegistrationRequestEntity
 {
     public Guid Id { get; set; }

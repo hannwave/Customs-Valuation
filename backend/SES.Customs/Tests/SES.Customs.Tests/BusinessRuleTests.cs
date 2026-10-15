@@ -90,29 +90,43 @@ public sealed class BusinessRuleTests
         Assert.Equal(700m, Line(lines, "Cargo Scanning Fee").CalculatedAmount);
         Assert.Equal(1_000_000m, Line(lines, "Cargo Scanning Fee").BaseAmount);
     }
-    [Fact] public void ManufacturingProductMakesAllAssessmentTaxesAndFeesNotApplicable()
+    [Fact] public void ManufacturingInputsPayDutyAndVatButNoWithholding()
     {
-        var manufacturing = Assess(isManufacturing: true);
+        var lines = Assess(isManufacturing: true);
 
-        Assert.All(manufacturing, line =>
-        {
-            Assert.False(line.IsApplicable);
-            Assert.Equal(0m, line.CalculatedAmount);
-            Assert.Equal("NotApplicable", line.Status);
-            Assert.Contains("manufacturing", line.Notes, StringComparison.OrdinalIgnoreCase);
-        });
+        Assert.Equal(100_000m, Line(lines, "Customs Duty").CalculatedAmount);
+        Assert.True(Line(lines, "VAT").IsApplicable);
+        Assert.True(Line(lines, "VAT").CalculatedAmount > 0);
+        var withholding = Line(lines, "Withholding Tax");
+        Assert.False(withholding.IsApplicable);
+        Assert.Equal(0m, withholding.CalculatedAmount);
+        Assert.Equal("Exempt", withholding.Status);
+        Assert.Contains("979/2016", withholding.Notes);
+        Assert.True(Line(lines, "Cargo Scanning Fee").IsApplicable);
     }
-    [Fact] public void QualifyingMachineryGetsOfficerApprovedDutyAndVatExemption()
+    [Fact] public void ManufacturingMachineryIsExemptFromDutyVatAndLevyByDefault()
     {
-        var lines = Assess(duty: "30%", isManufacturing: true, isMachinery: true, exemptions: ["MACHINERY_EQUIPMENT_EXEMPT"]);
+        var lines = Assess(duty: "30%", isManufacturing: true, isMachinery: true);
 
-        Assert.Equal(0m, Line(lines, "Customs Duty").CalculatedAmount);
-        Assert.Equal(0m, Line(lines, "VAT").CalculatedAmount);
-        Assert.Equal("Exempt", Line(lines, "Customs Duty").Status);
+        foreach (var name in new[] { "Customs Duty", "VAT", "Social Welfare Levy" })
+        {
+            Assert.Equal(0m, Line(lines, name).CalculatedAmount);
+            Assert.Equal("Exempt", Line(lines, name).Status);
+            Assert.Contains("517/2022", Line(lines, name).Notes);
+        }
+        Assert.Equal(0m, Line(lines, "Surtax").CalculatedAmount);
+        Assert.Equal(0m, Line(lines, "Withholding Tax").CalculatedAmount);
+        Assert.Equal(700m, Line(lines, "Cargo Scanning Fee").CalculatedAmount);
+    }
+    [Fact] public void OfficerCanSwitchMachineryExemptionOffForGoodsThatDoNotQualify()
+    {
+        var lines = ImportTaxAssessmentCalculator.Calculate(new(
+            new NationalTariffLine { Duty = "30%", SourceReference = "Test tariff" },
+            1_000_000m, 1m, "Pieces (PCS)", "General goods", "", false, true, true, true, true, false, [],
+            [new ImportTaxLineOverride("Customs Duty", "Percentage", 30m, "ETB", 1, "CIF", null, true, "OfficerAdjusted")], 1m, "ETB", "ETB"));
+
+        Assert.Equal(300_000m, Line(lines, "Customs Duty").CalculatedAmount);
         Assert.Equal("Exempt", Line(lines, "VAT").Status);
-        Assert.Contains("evidence", Line(lines, "VAT").Notes, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0m, Line(lines, "Cargo Scanning Fee").CalculatedAmount);
-        Assert.False(Line(lines, "Cargo Scanning Fee").IsApplicable);
     }
     [Fact] public void NonQualifyingMachineryCodeDoesNotSuppressNormalDutyOrVat()
     {

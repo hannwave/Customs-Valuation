@@ -3,17 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { FiAlertTriangle, FiCheckCircle, FiChevronLeft, FiChevronRight, FiClock, FiFileText, FiGrid, FiLogOut, FiMenu, FiPlusCircle, FiShield, FiUserCheck, FiX, FiXCircle } from "react-icons/fi";
+import { FiActivity, FiAlertTriangle, FiCheckCircle, FiChevronLeft, FiChevronRight, FiClock, FiFileText, FiGrid, FiLogOut, FiMenu, FiPlusCircle, FiShield, FiUser, FiUserCheck, FiX, FiXCircle } from "react-icons/fi";
 import { LanguageSelect } from "@/components/AuthShell";
 import { Brand } from "@/components/Brand";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/importer/NotificationBell";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
-import { getImporterProfile, importerApi, importerApiBase, verificationLabels, type DeclarationSummary, type ImporterProfile, type VerificationStatus } from "@/lib/importer";
+import { getImporterAccount, getImporterProfile, importerApi, importerApiBase, loadImporterPhoto, verificationLabels, type DeclarationSummary, type ImporterAccount, type ImporterProfile, type VerificationStatus } from "@/lib/importer";
+import { ToastMessage } from "@/components/Toaster";
 
 type Account = { fullName: string; email: string; role: string };
 type PortalState = {
   account: Account | null;
+  /** Live account details and profile picture (object URL), refreshed when the importer edits them. */
+  accountDetails: ImporterAccount | null;
+  photoUrl: string | null;
+  setAccountDetails: (details: ImporterAccount) => void;
+  reloadPhoto: () => Promise<void>;
   profile: ImporterProfile | null | undefined; // undefined while loading, null when never submitted
   setProfile: (profile: ImporterProfile) => void;
   declarations: DeclarationSummary[] | null;
@@ -39,6 +45,16 @@ export function ImporterShell({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [profile, setProfile] = useState<ImporterProfile | null | undefined>(undefined);
   const [declarations, setDeclarations] = useState<DeclarationSummary[] | null>(null);
+  const [accountDetails, setAccountDetailsState] = useState<ImporterAccount | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const reloadPhoto = useCallback(async () => {
+    const next = await loadImporterPhoto().catch(() => null);
+    setPhotoUrl(current => { if (current) URL.revokeObjectURL(current); return next; });
+  }, []);
+  const setAccountDetails = useCallback((details: ImporterAccount) => {
+    setAccountDetailsState(details);
+    setAccount(current => current ? { ...current, fullName: details.fullName, email: details.email } : current);
+  }, []);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -58,12 +74,13 @@ export function ImporterShell({ children }: { children: ReactNode }) {
         if (user.role !== "Importer") return;
         void getImporterProfile().then(setProfile).catch(reason => { setProfile(null); setError(reason instanceof Error ? reason.message : "Verification status unavailable."); });
         void reloadDeclarations();
+        void getImporterAccount().then(details => { setAccountDetails(details); if (details.hasPhoto) void reloadPhoto(); }).catch(() => undefined);
       })
       .catch(reason => {
         if (reason instanceof Error && reason.message === "expired") { setSessionAccessToken(null); window.location.assign("/login?next=%2Fimporter"); return; }
         setError(reason instanceof Error ? reason.message : "Your account could not be loaded.");
       });
-  }, [reloadDeclarations]);
+  }, [reloadDeclarations, setAccountDetails, reloadPhoto]);
   useEffect(() => setMenuOpen(false), [pathname]);
   // A new notification means an officer changed something: refresh the account and declaration lists.
   const refreshAll = useCallback(() => {
@@ -73,16 +90,18 @@ export function ImporterShell({ children }: { children: ReactNode }) {
 
   const verified = profile?.verificationStatus === "VERIFIED";
   const actionNeeded = declarations?.filter(item => item.status === "INFORMATION_REQUESTED").length ?? 0;
-  const state = useMemo<PortalState>(() => ({ account, profile, setProfile, declarations, reloadDeclarations, verified }), [account, profile, declarations, reloadDeclarations, verified]);
+  const state = useMemo<PortalState>(() => ({ account, accountDetails, photoUrl, setAccountDetails, reloadPhoto, profile, setProfile, declarations, reloadDeclarations, verified }),
+    [account, accountDetails, photoUrl, setAccountDetails, reloadPhoto, profile, declarations, reloadDeclarations, verified]);
   const signOut = () => { setSessionAccessToken(null); window.location.assign("/importer"); };
 
   const nav = [
     { label: "OVERVIEW", links: [{ href: "/importer", label: "Dashboard", icon: FiGrid }] },
     { label: "DECLARATIONS", links: [{ href: "/importer/declarations", label: "My declarations", icon: FiFileText, badge: actionNeeded }, { href: "/importer/declarations/new", label: "New declaration", icon: FiPlusCircle }] },
-    { label: "ACCOUNT", links: [{ href: "/importer/account", label: "Verification & documents", icon: FiUserCheck, badge: profile && profile.verificationStatus !== "VERIFIED" ? 1 : profile === null ? 1 : 0 }] },
+    { label: "ACTIVITY", links: [{ href: "/importer/activity", label: "Activity", icon: FiActivity }] },
+    { label: "ACCOUNT", links: [{ href: "/importer/profile", label: "My profile", icon: FiUser }, { href: "/importer/account", label: "Verification & documents", icon: FiUserCheck, badge: profile && profile.verificationStatus !== "VERIFIED" ? 1 : profile === null ? 1 : 0 }] },
   ];
   const title = pathname === "/importer" ? "Dashboard" : pathname === "/importer/declarations" ? "My declarations" : pathname === "/importer/declarations/new" ? "New declaration"
-    : pathname.startsWith("/importer/declarations/") ? "Declaration details" : pathname === "/importer/account" ? "Verification & documents" : "Importer portal";
+    : pathname.startsWith("/importer/declarations/") ? "Declaration details" : pathname === "/importer/account" ? "Verification & documents" : pathname === "/importer/profile" ? "My profile" : pathname === "/importer/activity" ? "Activity" : "Importer portal";
   const active = nav.flatMap(group => group.links).filter(link => link.href === "/importer" ? pathname === "/importer" : pathname === link.href || pathname.startsWith(`${link.href}/`)).sort((a, b) => b.href.length - a.href.length)[0];
   const status: VerificationStatus | "MISSING" | null = profile === undefined ? null : profile === null ? "MISSING" : profile.verificationStatus;
   const StatusIcon = status && status !== "MISSING" ? statusIcons[status] : FiAlertTriangle;
@@ -102,7 +121,6 @@ export function ImporterShell({ children }: { children: ReactNode }) {
               <Icon aria-hidden="true" /><span className="nav-text">{link.label}</span>{badge > 0 && <span className="nav-badge" aria-label={`${badge} need attention`}>{badge}</span>}{isActive && <FiChevronRight className="nav-arrow" aria-hidden="true" />}
             </Link>; })}
         </div>)}</nav>
-        <div className="sidebar-note"><StatusIcon /><span>{status === "MISSING" ? "Verification needed" : status ? verificationLabels[status] : "Checking status…"}<small>{profile?.regionName ? `Registered in ${profile.regionName}` : "Importer account"}</small></span></div>
         <button type="button" className="signout-button" onClick={signOut} title={collapsed ? "Sign out" : undefined}><FiLogOut /><span>Sign out</span></button>
         <button type="button" className={`sidebar-collapse ${collapsed ? "is-collapsed" : ""}`} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} aria-pressed={collapsed} onClick={() => setCollapsed(!collapsed)}>{collapsed ? <FiChevronRight /> : <FiChevronLeft />}</button>
       </aside>
@@ -117,10 +135,10 @@ export function ImporterShell({ children }: { children: ReactNode }) {
             {status && <span className={`ip-status-pill is-${status.toLowerCase().replaceAll("_", "-")}`}><StatusIcon aria-hidden="true" /><span>{status === "MISSING" ? "Verification needed" : verificationLabels[status]}</span></span>}
             <ThemeToggle />
             <LanguageSelect />
-            <div className="profile-chip"><span className="profile-avatar">{initials}</span><span className="profile-details"><strong>{account?.fullName ?? "Importer"}</strong><small>Importer</small></span></div>
+            <Link href="/importer/profile" className="profile-chip ip-profile-chip" title="My profile"><span className="profile-avatar">{photoUrl ? <img src={photoUrl} alt="" /> : initials}</span><span className="profile-details"><strong>{account?.fullName ?? "Importer"}</strong><small>Importer</small></span></Link>
           </div>
         </header>
-        {error && <div className="service-notice" role="status"><FiAlertTriangle />{error}</div>}
+        <ToastMessage kind="warning" title="Service unavailable" message={error} duration={0} />
         <main id="main-content" tabIndex={-1} className="ip-main">{account ? children : <div className="ip-loading" role="status"><span className="dv-spinner" aria-hidden="true" />Opening your importer portal…</div>}</main>
         <footer className="workspace-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield />Importer access</span></footer>
       </div>

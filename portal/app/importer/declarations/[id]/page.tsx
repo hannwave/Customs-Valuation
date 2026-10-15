@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { HsItem } from "@/components/hs/HsItem";
+import { InvoiceActions } from "@/components/invoice/FinalInvoice";
 import { FiAlertTriangle, FiArrowLeft, FiCheck, FiCheckCircle, FiEdit3, FiFileText, FiXCircle } from "react-icons/fi";
 import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
+import { PageSkeleton } from "@/components/PageSkeleton";
 import { DeclarationPill, PageHeader, shortDate } from "@/components/importer/PortalParts";
+import { splitDescription } from "@/lib/declaration-description";
 import { declarationDocumentLabels, formatMoney, importerApi, purposeLabels, type ImporterDeclaration } from "@/lib/importer";
 
 const treatmentLabels: Record<string, string> = { WITHHOLDING_REVIEW: "Withholding tax review", VAT_EXEMPTION: "VAT exemption review", CUSTOMS_DUTY_EXEMPTION: "Customs duty exemption review", MACHINERY_EXEMPTION: "Machinery / equipment exemption review" };
@@ -36,6 +40,7 @@ function AssessmentNotice({ d }: { d: ImporterDeclaration }) {
   return <section className="ip-card ip-assessment" aria-labelledby="ip-assessment-title">
     <header className="ip-assessment-head"><div><p className="importer-eyebrow">ASSESSMENT NOTICE</p><h2 id="ip-assessment-title">Duties and taxes payable</h2><p>Issued {d.assessedAt ? new Date(d.assessedAt).toLocaleString() : ""}</p></div>
       <div className="ip-assessment-total"><span>Amount payable</span><strong>{formatMoney(d.assessedPayable, currency)}</strong></div></header>
+    <div className="ip-invoice-bar"><div><strong>Final invoice</strong><small>Open, print or download the official assessment invoice for {d.reference}.</small></div><InvoiceActions kind="declaration" id={d.id} compact /></div>
     <dl className="ip-assessment-facts">
       <div><dt>Customs value (CIF)</dt><dd>{formatMoney(d.assessedCustomsValue, currency)}</dd></div>
       <div><dt>Declared price</dt><dd>{formatMoney((d.invoiceAmount ?? 0) + (d.freightAmount ?? 0) + (d.insuranceAmount ?? 0), d.invoiceCurrency)}</dd></div>
@@ -53,7 +58,8 @@ function AssessmentNotice({ d }: { d: ImporterDeclaration }) {
 
 function Detail() {
   const { id } = useParams<{ id: string }>();
-  const submitted = useSearchParams().get("submitted") === "1";
+  const query = useSearchParams();
+  const submitted = query.get("submitted") === "1", edited = query.get("edited") === "1";
   const [declaration, setDeclaration] = useState<ImporterDeclaration | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -62,19 +68,28 @@ function Detail() {
 
   const back = <Link className="iv-secondary" href="/importer/declarations"><FiArrowLeft aria-hidden="true" />All declarations</Link>;
   if (error) return <div className="ip-page"><PageHeader eyebrow="DECLARATION" title="Declaration unavailable" actions={back} /><p className="iv-error" role="alert">{error}</p></div>;
-  if (!declaration) return <div className="ip-page"><p className="ip-empty">Loading declaration…</p></div>;
+  if (!declaration) return <PageSkeleton variant="detail" label="Loading declaration" />;
   const d = declaration;
-  const facts: [string, string][] = [
+  const described = splitDescription(d.description);
+  const brandModel = [d.brand, d.model].filter(Boolean).join(" / ");
+  // Optional details appear only when the importer filled them in.
+  const optional: [string, ReactNode][] = ([["Brand / model", brandModel === "Generic / Generic" ? "No brand (generic goods)" : brandModel], ["Manufacturer", d.manufacturer], ["Serial / part number", d.serialOrPartNumber]] as [string, string][])
+    .filter(([, value]) => value?.trim());
+  const facts: [string, ReactNode][] = [
     ["Country of origin", d.originCountryName], ["Import purpose", purposeLabels[d.importPurpose] ?? d.importPurpose], ["Quantity", `${d.quantity} ${d.unit}`],
-    ["Brand / model", [d.brand, d.model].filter(Boolean).join(" / ") || "—"], ["Manufacturer", d.manufacturer || "—"], ["Serial / part number", d.serialOrPartNumber || "—"],
+    ...described.facts.filter(([label]) => label !== "Invoice terms"), ...optional,
     ["Price paid", d.invoiceAmount != null ? formatMoney(d.invoiceAmount, d.invoiceCurrency) : "—"],
     ["Freight / insurance", d.freightAmount != null || d.insuranceAmount != null ? `${formatMoney(d.freightAmount ?? 0, d.invoiceCurrency)} / ${formatMoney(d.insuranceAmount ?? 0, d.invoiceCurrency)}` : "Included or not declared"],
-    ["Your tariff choice", d.suggestedTariffDescription || "—"], ["Submitted", new Date(d.submittedAt).toLocaleString()],
+    ["Your tariff choice", <HsItem key="suggested" code={d.suggestedTariffCode} description={d.suggestedTariffDescription} empty="—" full />],
+    ...(d.confirmedTariffLineId && d.confirmedTariffLineId !== d.suggestedTariffLineId ? [["Officer's classification", <HsItem key="confirmed" code={d.confirmedTariffCode} description={d.confirmedTariffDescription} full />] as [string, ReactNode]] : []),
+    ["Submitted", new Date(d.submittedAt).toLocaleString()],
   ];
 
   return <div className="ip-page">
-    <PageHeader eyebrow={d.reference} title={d.productName} actions={<>{back}{d.status === "INFORMATION_REQUESTED" && <Link className="iv-primary" href={`/importer/declarations/new?edit=${d.id}`}><FiEdit3 aria-hidden="true" />Update declaration</Link>}</>} />
+    <PageHeader eyebrow={d.reference} title={d.productName} actions={<>{back}{d.canEdit && <Link className="iv-primary" href={`/importer/declarations/new?edit=${d.id}`}><FiEdit3 aria-hidden="true" />{d.status === "SUBMITTED" ? "Edit declaration" : "Update declaration"}</Link>}</>} />
     {submitted && <div className="ip-banner is-success"><FiCheckCircle aria-hidden="true" /><div><strong>Sent to a Customs Officer</strong><p>{d.reference} is now in officer review. We will show any request or decision here.</p></div></div>}
+    {edited && <div className="ip-banner is-success"><FiCheckCircle aria-hidden="true" /><div><strong>Changes saved</strong><p>{d.reference} keeps its place in the queue with your updated details.</p></div></div>}
+    {d.canEdit && d.status === "SUBMITTED" && <div className="ip-banner is-info ip-edit-banner"><FiEdit3 aria-hidden="true" /><div><strong>You can still edit this declaration</strong><p>Change any detail or document until a Customs Officer opens it for review.</p></div><Link className="iv-secondary" href={`/importer/declarations/new?edit=${d.id}`}>Edit</Link></div>}
     <section className="ip-card ip-status-card"><div className="ip-status-row"><DeclarationPill status={d.status} /><span>Last updated {shortDate(d.updatedAt)}</span></div><Tracker status={d.status} />
       {d.reviewNote && <div className={`ip-banner ${d.status === "REJECTED" ? "is-danger" : d.status === "INFORMATION_REQUESTED" ? "is-warning" : "is-info"}`}><FiAlertTriangle aria-hidden="true" /><div><strong>{d.status === "INFORMATION_REQUESTED" ? "The officer needs more information" : "Officer note"}</strong><p>{d.reviewNote}</p></div></div>}
     </section>
@@ -82,7 +97,7 @@ function Detail() {
     <div className="ip-detail-grid">
       <section className="ip-card"><header className="ip-card-head"><h2>Item details</h2></header>
         <dl className="iv-detail-grid">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <h3 className="ip-subtitle">Description</h3><p className="ip-prose">{d.description}</p>
+        {described.details && <><h3 className="ip-subtitle">{described.facts.length ? "Notes for the officer" : "Description"}</h3><p className="ip-prose">{described.details}</p></>}
         {d.specifications && <><h3 className="ip-subtitle">Specifications</h3><p className="ip-prose">{d.specifications}</p></>}
         {d.purposeDetails && <><h3 className="ip-subtitle">Purpose details</h3><p className="ip-prose">{d.purposeDetails}</p></>}
         {d.requestedTreatments.length > 0 && <><h3 className="ip-subtitle">Requested tax treatment</h3><ul className="ip-checks-list">{d.requestedTreatments.map(code => <li key={code}><FiCheck aria-hidden="true" />{treatmentLabels[code] ?? code}</li>)}</ul><p className="ip-note">Requests for officer review only. No exemption has been granted.</p></>}
@@ -98,5 +113,5 @@ function Detail() {
 }
 
 export default function DeclarationDetailPage() {
-  return <Suspense fallback={null}><Detail /></Suspense>;
+  return <Suspense fallback={<PageSkeleton variant="detail" label="Loading declaration" />}><Detail /></Suspense>;
 }

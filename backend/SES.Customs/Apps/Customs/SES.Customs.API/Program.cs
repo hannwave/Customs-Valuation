@@ -32,6 +32,7 @@ builder.Logging.AddSimpleConsole();
 // SerpAPI authenticates through a query parameter, so suppress request-URI
 // information logs to ensure the private key is never written to application logs.
 builder.Logging.AddFilter("System.Net.Http.HttpClient.SerpApiClient", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.OcrClient", LogLevel.Warning);
 var demo = builder.Configuration.GetValue<bool>("Skeleton:UseDemoData");
 if (demo && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo data is permitted only in Development.");
@@ -82,6 +83,22 @@ builder.Services.AddHttpClient<PricesApiClient>((services, client) => {
     if (!string.IsNullOrWhiteSpace(key)) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
 });
 builder.Services.AddHttpClient<HistoricalFxClient>(client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient<SES.Customs.API.Integrations.Commodities.CommodityPriceClient>(client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com/");
+    client.Timeout = TimeSpan.FromSeconds(12);
+    // The public chart endpoint rejects requests without a browser-like user agent.
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; SES-Customs-Valuation/1.0)");
+});
+// OCR triage of importer uploads: a background worker flags each document as healthy, suspicious or unrelated.
+builder.Services.Configure<SES.Customs.API.Integrations.Ocr.OcrOptions>(builder.Configuration.GetSection(SES.Customs.API.Integrations.Ocr.OcrOptions.SectionName));
+builder.Services.AddHttpClient<SES.Customs.API.Integrations.Ocr.OcrClient>((services, client) =>
+{
+    var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SES.Customs.API.Integrations.Ocr.OcrOptions>>().Value;
+    client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromMinutes(Math.Max(1, o.TimeoutMinutes));
+});
+builder.Services.AddHostedService<SES.Customs.API.Services.DocumentScanning.DocumentScanWorker>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
@@ -130,6 +147,14 @@ if (!demo)
     using var migrationScope = app.Services.CreateScope();
     var db = migrationScope.ServiceProvider.GetRequiredService<CustomsDbContext>();
     db.Database.Migrate();
+    // Events recorded before audit categories existed are classified once, in batches.
+    for (var batch = 0; batch < 400; batch++)
+    {
+        var unclassified = db.AuditLogs.Where(a => a.Category == "").OrderBy(a => a.OccurredAt).Take(500).ToList();
+        if (unclassified.Count == 0) break;
+        db.ClassifyAsync(unclassified, CancellationToken.None).GetAwaiter().GetResult();
+        db.SaveChanges();
+    }
 }
 app.UseExceptionHandler(errorApp => errorApp.Run(async context =>
 {
@@ -154,7 +179,13 @@ app.Use(async (context, next) =>
         !context.Request.Path.StartsWithSegments("/api/importer-declarations") &&
         !context.Request.Path.StartsWithSegments("/api/importer-profile") &&
         !context.Request.Path.StartsWithSegments("/api/importer-notifications") &&
-        !context.Request.Path.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase))
+        !context.Request.Path.StartsWithSegments("/api/importer-activity") &&
+        !context.Request.Path.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase) &&
+        // Public tariff descriptions, so importers see a description next to every code.
+        !(HttpMethods.IsGet(context.Request.Method) && context.Request.Path.Equals("/api/tariff/describe", StringComparison.OrdinalIgnoreCase)) &&
+        !(HttpMethods.IsGet(context.Request.Method) && context.Request.Path.StartsWithSegments("/api/invoices/declaration", StringComparison.OrdinalIgnoreCase)) &&
+        // Published ERCA rates for one tariff line, shown in the importer's tariff picker.
+        !(HttpMethods.IsGet(context.Request.Method) && System.Text.RegularExpressions.Regex.IsMatch(context.Request.Path.Value ?? "", "^/api/tariff/lines/[0-9a-fA-F-]{36}/taxes$")))
     {
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await context.Response.WriteAsJsonAsync(new { message = "Importer accounts cannot access customs staff services." });

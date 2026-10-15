@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SES.Customs.API.Security;
 using SES.Customs.API.Services;
+using SES.Customs.API.Services.DocumentScanning;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
 
@@ -34,6 +35,7 @@ public sealed class ImporterProfileController(CustomsDbContext db, WorkspaceAcce
         if (existing is null) db.ImporterProfiles.Add(profile);
         profiles.Audit(profile, account.Id, account.Username, existing is null ? "IMPORTER_VERIFICATION_SUBMITTED" : "IMPORTER_VERIFICATION_RESUBMITTED", null);
         await db.SaveChangesAsync(ct);
+        DocumentScanWorker.Nudge();
         return Ok(ImporterProfileService.View(profile));
     }
 
@@ -64,7 +66,9 @@ public sealed class ImporterVerificationsController(CustomsDbContext db, Workspa
         if (term.Length > 0) query = query.Where(x => x.p.LegalName.ToLower().Contains(term) || x.p.TradeName.ToLower().Contains(term) || x.p.Tin.Contains(term) || x.a.Email.ToLower().Contains(term) || x.a.FullName.ToLower().Contains(term) || x.p.City.ToLower().Contains(term));
         var rows = await query.OrderByDescending(x => x.p.SubmittedAt).Take(500)
             .Select(x => new { x.p.Id, x.p.ImporterType, x.p.VerificationStatus, x.p.LegalName, x.p.TradeName, x.p.Tin, x.p.City, x.p.Phone, x.p.SubmittedAt, x.p.ReviewedAt, applicant = x.a.FullName, x.a.Email }).ToListAsync(ct);
-        return Ok(new { region, counts = ImporterVerification.Statuses.ToDictionary(s => s, s => counts.FirstOrDefault(c => c.status == s)?.count ?? 0), items = rows });
+        var scans = await DocumentScanViews.CountsAsync(db, DocumentScanSources.Verification, rows.Select(x => x.Id).ToList(), ct);
+        return Ok(new { region, counts = ImporterVerification.Statuses.ToDictionary(s => s, s => counts.FirstOrDefault(c => c.status == s)?.count ?? 0),
+            items = rows.Select(x => new { x.Id, x.ImporterType, x.VerificationStatus, x.LegalName, x.TradeName, x.Tin, x.City, x.Phone, x.SubmittedAt, x.ReviewedAt, x.applicant, x.Email, documentScan = DocumentScanViews.Badge(scans.GetValueOrDefault(x.Id)) }) });
     }
 
     [HttpGet("{id:guid}")]
@@ -75,7 +79,27 @@ public sealed class ImporterVerificationsController(CustomsDbContext db, Workspa
         var region = await db.CustomsLocations.AsNoTracking().Where(l => l.Id == profile.RegionLocationId).Select(l => l.Name).FirstOrDefaultAsync(ct);
         var history = await db.AuditLogs.AsNoTracking().Where(x => x.Module == "ImporterVerification" && x.RecordId == profile.Id).OrderByDescending(x => x.OccurredAt).Take(50)
             .Select(x => new { x.OccurredAt, x.Action, x.Username, x.Decision, note = x.Justification }).ToListAsync(ct);
-        return Ok(new { profile = ImporterProfileService.View(profile, region), account, duplicates = await profiles.DuplicatesAsync(profile, ct), history, allowedActions = ImporterVerification.AllowedActions(profile.VerificationStatus) });
+        return Ok(new { profile = ImporterProfileService.View(profile, region), account, duplicates = await profiles.DuplicatesAsync(profile, ct), history, allowedActions = ImporterVerification.AllowedActions(profile.VerificationStatus),
+            documentScans = await DocumentScanViews.ForDocumentsAsync(db, profile.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct) });
+    }
+
+    [HttpGet("{id:guid}/document-scans")]
+    public async Task<IActionResult> DocumentScans(Guid id, CancellationToken ct)
+    {
+        var profile = await Accessible(id, ct);
+        return Ok(await DocumentScanViews.ForDocumentsAsync(db, profile.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct));
+    }
+
+    [HttpPost("{id:guid}/documents/{kind}/rescan")]
+    public async Task<IActionResult> Rescan(Guid id, string kind, CancellationToken ct)
+    {
+        var profile = await Accessible(id, ct);
+        var document = profile.Documents.FirstOrDefault(d => d.Kind == kind.ToUpperInvariant()) ?? throw new WorkspaceException(404, "Document not found.");
+        await DocumentScanViews.RescanAsync(db, document.Id, document.Sha256, ct);
+        access.AuditAccess("DOCUMENT_RESCAN_REQUESTED", "ImporterVerification", profile.Id, profile.RegionLocationId, profile.AccountId, $"{document.Kind.Replace('_', ' ').ToLowerInvariant()} · {document.FileName} · {profile.LegalName}");
+        await db.SaveChangesAsync(ct);
+        DocumentScanWorker.Nudge();
+        return Ok(await DocumentScanViews.ForDocumentsAsync(db, profile.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct));
     }
 
     [HttpGet("{id:guid}/documents/{kind}")]
@@ -83,7 +107,10 @@ public sealed class ImporterVerificationsController(CustomsDbContext db, Workspa
     {
         var profile = await Accessible(id, ct);
         var document = profile.Documents.FirstOrDefault(d => d.Kind == kind.ToUpperInvariant());
-        return document is null ? NotFound(new { message = "Document not found." }) : File(document.Content, document.ContentType);
+        if (document is null) return NotFound(new { message = "Document not found." });
+        access.AuditAccess("DOCUMENT_OPENED", "ImporterVerification", profile.Id, profile.RegionLocationId, profile.AccountId, $"{document.Kind.Replace('_', ' ').ToLowerInvariant()} · {document.FileName} · {profile.LegalName}");
+        await db.SaveChangesAsync(ct);
+        return File(document.Content, document.ContentType);
     }
 
     [HttpPost("{id:guid}/review")]

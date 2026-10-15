@@ -1,17 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FiAlertTriangle, FiCheck, FiChevronRight, FiPauseCircle, FiPlayCircle, FiRefreshCw, FiSearch, FiSlash, FiX, FiMessageSquare } from "react-icons/fi";
+import { FiAlertTriangle, FiArrowRight, FiBriefcase, FiCalendar, FiCheck, FiClock, FiMapPin, FiPauseCircle, FiPlayCircle, FiRefreshCw, FiSearch, FiSlash, FiUser, FiX, FiMessageSquare } from "react-icons/fi";
 import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
+import { ScanAlert, ScanDetail, ScanPill, ScanQueueBadge, useDocumentScans } from "@/components/officer/DocumentScan";
+import type { DocumentScans, ScanBadge } from "@/lib/document-scan";
+import { ToastMessage } from "@/components/Toaster";
+import { PageHeader } from "@/components/importer/PortalParts";
+import { ChangeRequestsPanel } from "@/components/officer/ChangeRequests";
 import {
   documentLabels, idTypeLabels, importerApi, importerTypes, residencyLabels, verificationLabels,
   type ImporterProfile, type ImporterType, type VerificationStatus,
 } from "@/lib/importer";
 
-type Row = { id: string; importerType: ImporterType; verificationStatus: VerificationStatus; legalName: string; tradeName: string; tin: string; city: string; phone: string; submittedAt: string; reviewedAt: string | null; applicant: string; email: string };
+type Row = { id: string; importerType: ImporterType; verificationStatus: VerificationStatus; legalName: string; tradeName: string; tin: string; city: string; phone: string; submittedAt: string; reviewedAt: string | null; applicant: string; email: string; documentScan?: ScanBadge };
 type Listing = { region: string; counts: Record<VerificationStatus, number>; items: Row[] };
 type HistoryEntry = { occurredAt: string; action: string; username: string; decision: string | null; note: string | null };
-type Detail = { profile: ImporterProfile; account: { fullName: string; email: string; createdAt: string }; duplicates: { tinMatches: number; idMatches: number }; history: HistoryEntry[]; allowedActions: string[] };
+type Detail = { profile: ImporterProfile; account: { fullName: string; email: string; createdAt: string }; duplicates: { tinMatches: number; idMatches: number }; history: HistoryEntry[]; allowedActions: string[]; documentScans?: DocumentScans };
 type Action = "VERIFY" | "REQUEST_INFORMATION" | "REJECT" | "SUSPEND" | "REINSTATE";
 
 const statusOrder: VerificationStatus[] = ["PENDING", "INFORMATION_REQUESTED", "VERIFIED", "SUSPENDED", "REJECTED"];
@@ -38,10 +43,15 @@ function StatusPill({ status }: { status: VerificationStatus }) {
 
 export default function ImporterVerificationsPage() {
   const [filter, setFilter] = useState<VerificationStatus | "">("PENDING");
+  const [view, setView] = useState<"importers" | "changes">("importers");
+  const [pendingChanges, setPendingChanges] = useState<number | null>(null);
+  useEffect(() => { void importerApi<{ counts: Record<string, number> }>("/importer-verifications/change-requests?status=PENDING").then(result => setPendingChanges(result.counts.PENDING ?? 0)).catch(() => setPendingChanges(null)); }, []);
   const [search, setSearch] = useState(""); const [query, setQuery] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const { scans, busy: scanBusy, rescan } = useDocumentScans(detail ? `/importer-verifications/${detail.profile.id}/document-scans` : null, detail?.documentScans);
+  const [scanOpen, setScanOpen] = useState<Record<string, boolean>>({});
   const [opening, setOpening] = useState("");
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [note, setNote] = useState("");
@@ -96,46 +106,59 @@ export default function ImporterVerificationsPage() {
   const allChecked = requiredChecks.every(item => checks[item]);
   const actions = (detail?.allowedActions ?? []) as Action[];
 
-  return <div className="iv-admin">
-    <header className="iv-admin-head">
-      <div><p className="importer-eyebrow">CUSTOMS OFFICER{listing?.region && ` · ${listing.region}`}</p><h1>Importer verification</h1>
-        <p>Every importer registered in your region. Open an importer to check their documents, then approve, reject, suspend or reinstate them.</p></div>
-      <button type="button" className="iv-icon-button" onClick={() => void load()} aria-label="Refresh"><FiRefreshCw aria-hidden="true" /></button>
-    </header>
+  const tones: Record<VerificationStatus, string> = { PENDING: "info", INFORMATION_REQUESTED: "warning", VERIFIED: "success", SUSPENDED: "danger", REJECTED: "danger" };
+  const hints: Record<VerificationStatus, string> = { PENDING: "Waiting for your review", INFORMATION_REQUESTED: "Importer is updating", VERIFIED: "Can submit declarations", SUSPENDED: "Temporarily blocked", REJECTED: "Not approved" };
+  const rows = listing?.items ?? [];
 
-    <div className="iv-stats" role="tablist" aria-label="Filter importers by status">
-      {statusOrder.map(status => <button key={status} type="button" role="tab" aria-selected={filter === status} className={`iv-stat is-${status.toLowerCase().replaceAll("_", "-")}${filter === status ? " is-active" : ""}`} onClick={() => setFilter(status)}>
-        <span>{tabLabels[status]}</span><strong>{counts?.[status] ?? "–"}</strong></button>)}
-      <button type="button" role="tab" aria-selected={filter === ""} className={`iv-stat is-all${filter === "" ? " is-active" : ""}`} onClick={() => setFilter("")}><span>All importers</span><strong>{counts ? total : "–"}</strong></button>
+  return <div className="ip-page oc-verify-page">
+    <PageHeader eyebrow={`CUSTOMS OFFICER${listing?.region ? ` · ${listing.region}` : ""}`} title="Importer verification"
+      description="Every importer registered in your region. Open an importer to check their documents, then approve, reject, suspend or reinstate them."
+      actions={<button type="button" className="iv-icon-button" onClick={() => void load()} aria-label="Refresh" disabled={loading}><FiRefreshCw aria-hidden="true" className={loading ? "dc-spin" : ""} /></button>} />
+
+    <div className="oc-segmented vr-view-switch" role="tablist" aria-label="What to review">
+      <button type="button" role="tab" aria-selected={view === "importers"} onClick={() => setView("importers")}>Importer registrations</button>
+      <button type="button" role="tab" aria-selected={view === "changes"} onClick={() => setView("changes")}>Change requests{pendingChanges ? <em>{pendingChanges}</em> : null}</button>
     </div>
 
-    {error && <div className="importer-error" role="alert">{error}</div>}
-    {notice && !detail && <div className="importer-success" role="status">{notice}</div>}
+    {view === "changes" ? <ChangeRequestsPanel onCount={setPendingChanges} /> : <>
+    <div className="ip-stats dc-filters" role="tablist" aria-label="Filter importers by status">
+      {statusOrder.map(status => <button key={status} type="button" role="tab" aria-selected={filter === status} className={`ip-stat is-${tones[status]}${filter === status ? " is-selected" : ""}`} onClick={() => setFilter(status)}>
+        <span>{tabLabels[status]}</span><strong>{counts?.[status] ?? "–"}</strong><small>{hints[status]}</small></button>)}
+      <button type="button" role="tab" aria-selected={filter === ""} className={`ip-stat is-neutral${filter === "" ? " is-selected" : ""}`} onClick={() => setFilter("")}><span>All importers</span><strong>{counts ? total : "–"}</strong><small>Everyone in your region</small></button>
+    </div>
 
-    <section className="iv-table-card">
-      <div className="iv-table-toolbar">
-        <h2>{filter ? tabLabels[filter] : "All importers"} <small>{listing ? `${listing.items.length} shown` : ""}</small></h2>
-        <label className="iv-search"><FiSearch aria-hidden="true" /><input value={search} onChange={event => setSearch(event.target.value)} maxLength={100} placeholder="Search name, TIN, email or city" aria-label="Search importers" />{search && <button type="button" onClick={() => setSearch("")} aria-label="Clear search"><FiX /></button>}</label>
+    <ToastMessage kind="error" message={error} onClear={() => setError("")} />
+
+    <section className="dc-panel">
+      <div className="dc-toolbar">
+        <label className="dc-search">
+          <span className="dc-search-icon"><FiSearch aria-hidden="true" /></span>
+          <input type="search" value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setSearch(""); }} maxLength={100} placeholder="Search by name, TIN, email or city" aria-label="Search importers" />
+          {search && <button type="button" className="dc-search-clear" onClick={() => setSearch("")} aria-label="Clear search"><FiX aria-hidden="true" /></button>}
+        </label>
+        <div className="dc-toolbar-meta"><span className="dc-count" aria-live="polite">{listing ? `${rows.length} ${filter ? tabLabels[filter].toLowerCase() : "importers"}` : "Loading…"}</span></div>
       </div>
-      <div className="iv-table-scroll">
-        <table className="iv-table">
-          <thead><tr><th scope="col">Importer</th><th scope="col">Type</th><th scope="col">TIN</th><th scope="col">City</th><th scope="col">Status</th><th scope="col">Registered</th><th scope="col">Last decision</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>
-            {loading && !listing ? <tr><td colSpan={8} className="iv-table-empty">Loading importers…</td></tr>
-              : listing?.items.length ? listing.items.map(row => <tr key={row.id} className={detail?.profile.id === row.id ? "is-selected" : ""} onClick={() => void open(row.id)}>
-                <td data-label="Importer"><strong>{row.legalName}</strong><small>{row.applicant !== row.legalName ? `${row.applicant} · ` : ""}{row.email}</small></td>
-                <td data-label="Type">{typeTitle(row.importerType)}</td>
-                <td data-label="TIN" className="iv-mono">{row.tin || "—"}</td>
-                <td data-label="City">{row.city}</td>
-                <td data-label="Status"><StatusPill status={row.verificationStatus} /></td>
-                <td data-label="Registered">{shortDate(row.submittedAt)}</td>
-                <td data-label="Last decision">{shortDate(row.reviewedAt)}</td>
-                <td className="iv-table-action"><button type="button" className="iv-open" onClick={event => { event.stopPropagation(); void open(row.id); }} disabled={opening === row.id}>{opening === row.id ? "Opening…" : "Open"}<FiChevronRight aria-hidden="true" /></button></td>
-              </tr>)
-              : <tr><td colSpan={8} className="iv-table-empty">{query ? `No importers match “${query}”.` : `No ${filter ? tabLabels[filter].toLowerCase() : ""} importers in ${listing?.region ?? "your region"}.`}</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      {loading && !listing ? <ul className="dc-list" aria-busy="true">{[0, 1, 2].map(index => <li key={index} className="dc-case is-skeleton"><span /><span /><span /></li>)}</ul>
+        : rows.length ? <ul className="dc-list">{rows.map(row => <li key={row.id} className={`dc-case is-${tones[row.verificationStatus]}${detail?.profile.id === row.id ? " is-selected" : ""}`} onClick={() => void open(row.id)}>
+          <span className="dc-case-icon" aria-hidden="true">{row.importerType === "INDIVIDUAL" ? <FiUser /> : <FiBriefcase />}</span>
+          <div className="dc-case-main">
+            <strong>{row.legalName}</strong>
+            <span className="dc-tariff">{row.applicant !== row.legalName ? `${row.applicant} · ` : ""}{row.email}</span>
+            <span className="dc-tags"><span>{typeTitle(row.importerType)}</span>{row.tin && <span>TIN {row.tin}</span>}{row.city && <span><FiMapPin aria-hidden="true" />{row.city}</span>}</span>
+          </div>
+          <div className="dc-case-status"><StatusPill status={row.verificationStatus} /><ScanQueueBadge badge={row.documentScan ?? null} /></div>
+          <dl className="dc-case-dates">
+            <div><dt><FiCalendar aria-hidden="true" />Registered</dt><dd>{shortDate(row.submittedAt)}</dd></div>
+            <div><dt><FiClock aria-hidden="true" />Last decision</dt><dd>{shortDate(row.reviewedAt)}</dd></div>
+          </dl>
+          <div className="dc-actions">
+            <button type="button" className={`dc-open${row.verificationStatus === "PENDING" ? " is-urgent" : ""}`} onClick={event => { event.stopPropagation(); void open(row.id); }} disabled={opening === row.id}>
+              <span>{opening === row.id ? "Opening…" : row.verificationStatus === "PENDING" ? "Review" : "Open"}</span><i aria-hidden="true"><FiArrowRight /></i></button>
+          </div>
+        </li>)}</ul>
+        : <div className="dc-empty"><FiUser aria-hidden="true" /><strong>{query ? "No importers match" : "Nothing here right now"}</strong>
+          <p>{query ? `Nothing matches “${query}”.` : `No ${filter ? tabLabels[filter].toLowerCase() : ""} importers in ${listing?.region ?? "your region"}.`}</p>
+          {(query || filter) && <button type="button" className="dc-open" onClick={() => { setSearch(""); setFilter(""); }}><span>Show all importers</span><i aria-hidden="true"><FiArrowRight /></i></button>}</div>}
     </section>
 
     {detail && profile && <>
@@ -147,7 +170,7 @@ export default function ImporterVerificationsPage() {
           <button type="button" className="iv-icon-button" onClick={() => setDetail(null)} aria-label="Close"><FiX aria-hidden="true" /></button>
         </header>
         <div className="iv-drawer-body">
-          {notice && <div className="importer-success" role="status">{notice}</div>}
+          <ToastMessage kind="success" message={notice} onClear={() => setNotice("")} />
           {(detail.duplicates.tinMatches > 0 || detail.duplicates.idMatches > 0) && <div className="iv-callout is-warning"><FiAlertTriangle aria-hidden="true" /> <strong>Possible duplicate.</strong> {detail.duplicates.tinMatches > 0 && `${detail.duplicates.tinMatches} other account(s) registered this TIN. `}{detail.duplicates.idMatches > 0 && `${detail.duplicates.idMatches} other account(s) used this identity document.`} Confirm the applicant is authorised.</div>}
 
           <section><h3>Registration details</h3>
@@ -167,10 +190,14 @@ export default function ImporterVerificationsPage() {
           </section>
 
           <section><h3>Documents <small>{profile.documents.length}</small></h3>
-            <ul className="iv-doc-list">{profile.documents.map(document => <li key={document.kind}>
-              <div><strong>{documentLabels[document.kind]?.label ?? document.kind}</strong><small>{document.fileName} · {Math.max(1, Math.round(document.size / 1024))} KB</small></div>
+            <ScanAlert scans={scans} labels={Object.fromEntries(Object.entries(documentLabels).map(([kind, item]) => [kind, item.label]))} />
+            <ul className="iv-doc-list">{profile.documents.map(document => { const scan = scans?.[document.kind]; const flagged = scan?.flag === "SUSPICIOUS" || scan?.flag === "UNRELATED"; const open = scanOpen[document.kind] ?? flagged;
+              return <li key={document.kind}>
+              <div><strong>{documentLabels[document.kind]?.label ?? document.kind}</strong><small>{document.fileName} · {Math.max(1, Math.round(document.size / 1024))} KB</small>
+                <ScanPill scan={scan} open={open} onClick={() => setScanOpen(current => ({ ...current, [document.kind]: !open }))} /></div>
+              {open && <div className="iv-doc-scan"><ScanDetail scan={scan} busy={scanBusy === document.kind} onRescan={() => void rescan(document.kind, `/importer-verifications/${profile.id}/documents/${document.kind}/rescan`)} /></div>}
               <ImporterDocumentPreview path={`/importer-verifications/${profile.id}/documents/${document.kind}`} kind={document.kind} label={documentLabels[document.kind]?.label ?? document.kind} contentType={document.contentType} fileName={document.fileName} />
-            </li>)}</ul>
+            </li>; })}</ul>
           </section>
 
           {detail.history.length > 0 && <section><h3>History</h3>
@@ -183,13 +210,14 @@ export default function ImporterVerificationsPage() {
             {requiredChecks.length > 0 && <fieldset className="iv-checks"><legend>Before approving, confirm</legend>{requiredChecks.map(item => <label key={item}><input type="checkbox" checked={!!checks[item]} onChange={event => setChecks(current => ({ ...current, [item]: event.target.checked }))} />{item}</label>)}</fieldset>}
             <label className="iv-note-field"><span>Reason / note to importer{actions.some(action => actionConfig[action].needsReason) && <small> required to request information, reject or suspend</small>}</span>
               <textarea rows={3} value={note} onChange={event => { setNote(event.target.value); setPanelError(""); }} maxLength={2000} placeholder="Explain exactly what is missing, wrong or why the account is suspended." /></label>
-            {panelError && <p className="iv-error" role="alert">{panelError}</p>}
+            <ToastMessage kind="error" message={panelError} onClear={() => setPanelError("")} />
             <div className="iv-action-row">{actions.map(action => { const config = actionConfig[action]; const Icon = config.icon;
               return <button key={action} type="button" className={`iv-action-btn ${config.tone}`} disabled={busy || (action === "VERIFY" && !allChecked)} onClick={() => void decide(action)}><Icon aria-hidden="true" />{config.label}</button>; })}</div>
             {actions.includes("VERIFY") && !allChecked && <small className="iv-muted">Tick every check to enable approval.</small>}
           </>}
         </footer>
       </aside>
+    </>}
     </>}
   </div>;
 }

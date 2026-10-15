@@ -1,0 +1,63 @@
+/* Portal-wide toaster (components/Toaster.tsx). Overrides the older feedback-toast rules in globals.css. */
+.feedback-viewport {
+  --tt-bg: #ffffff; --tt-ink: #172033; --tt-muted: #5b6678; --tt-line: #e3e8f0; --tt-shadow: 0 18px 44px #0f1f3d24, 0 2px 6px #0f1f3d12;
+  position: fixed; top: 78px; right: 22px; z-index: 2000; width: min(400px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+}
+[data-theme="dark"] .feedback-viewport { --tt-bg: #172235; --tt-ink: #e8eef8; --tt-muted: #a3b0c4; --tt-line: #2a3850; --tt-shadow: 0 18px 44px #00000066, 0 2px 6px #00000040; }
+
+.feedback-viewport .feedback-toast {
+  --tt-tone: #2563eb; --tt-soft: #eaf1ff;
+  position: relative; overflow: hidden; pointer-events: auto;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px;
+  padding: 14px 10px 15px 14px; border: 1px solid var(--tt-line); border-left: 4px solid var(--tt-tone); border-radius: 12px;
+  background: var(--tt-bg); color: var(--tt-ink); box-shadow: var(--tt-shadow);
+  animation: tt-in .26s cubic-bezier(.2, .9, .3, 1.2);
+}
+.feedback-viewport .feedback-toast--error { --tt-tone: #d92d20; --tt-soft: #fdecea; }
+.feedback-viewport .feedback-toast--warning { --tt-tone: #dc8a06; --tt-soft: #fff4dc; }
+.feedback-viewport .feedback-toast--success { --tt-tone: #16a34a; --tt-soft: #e5f7ec; }
+.feedback-viewport .feedback-toast--info { --tt-tone: #2563eb; --tt-soft: #eaf1ff; }
+.feedback-viewport .feedback-toast--notification { --tt-tone: #7c3aed; --tt-soft: #f1eafe; }
+[data-theme="dark"] .feedback-viewport .feedback-toast--error { --tt-tone: #f97066; --tt-soft: #f9706622; }
+[data-theme="dark"] .feedback-viewport .feedback-toast--warning { --tt-tone: #fdb022; --tt-soft: #fdb02222; }
+[data-theme="dark"] .feedback-viewport .feedback-toast--success { --tt-tone: #4ade80; --tt-soft: #4ade8022; }
+[data-theme="dark"] .feedback-viewport .feedback-toast--info { --tt-tone: #60a5fa; --tt-soft: #60a5fa22; }
+[data-theme="dark"] .feedback-viewport .feedback-toast--notification { --tt-tone: #a78bfa; --tt-soft: #a78bfa22; }
+
+.feedback-viewport .feedback-toast-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+  background: var(--tt-soft); color: var(--tt-tone); font-size: 18px;
+}
+.feedback-viewport .feedback-toast-icon svg { color: var(--tt-tone); }
+.feedback-viewport .feedback-toast-copy { min-width: 0; padding-top: 1px; }
+.feedback-viewport .feedback-toast-title { margin: 0; color: var(--tt-ink); font-size: 13.5px; font-weight: 700; line-height: 1.35; }
+.feedback-viewport .feedback-toast-message { margin: 3px 0 0; color: var(--tt-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.feedback-viewport .feedback-toast-link { display: block; color: inherit; text-decoration: none; }
+.feedback-viewport .feedback-toast-link:hover .feedback-toast-title { color: var(--tt-tone); }
+.feedback-viewport .feedback-toast-retry {
+  margin-top: 9px; padding: 5px 11px; border: 1px solid var(--tt-tone); border-radius: 999px;
+  background: transparent; color: var(--tt-tone); font-size: 12px; font-weight: 650; cursor: pointer;
+}
+.feedback-viewport .feedback-toast-retry:hover { background: var(--tt-soft); }
+.feedback-viewport .feedback-toast-tools { display: flex; flex-direction: column; gap: 2px; }
+.feedback-viewport .feedback-toast-dismiss {
+  display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--tt-muted); font-size: 15px; cursor: pointer;
+}
+.feedback-viewport .feedback-toast-dismiss.is-sound { font-size: 13px; opacity: .65; }
+.feedback-viewport .feedback-toast-dismiss:hover { background: var(--tt-soft); color: var(--tt-ink); opacity: 1; }
+.feedback-viewport .feedback-toast-dismiss:focus-visible, .feedback-viewport .feedback-toast-retry:focus-visible { outline: 2px solid var(--tt-tone); outline-offset: 2px; }
+.feedback-viewport .feedback-toast-timer {
+  position: absolute; right: 0; bottom: 0; left: 0; height: 3px; border-radius: 0;
+  background: var(--tt-tone); opacity: .45; transform-origin: left; animation: tt-timeout linear forwards;
+}
+.feedback-viewport .feedback-toast-timer.is-paused { animation-play-state: paused; }
+
+@keyframes tt-in { from { opacity: 0; transform: translateX(24px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes tt-timeout { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@media (max-width: 600px) {
+  .feedback-viewport { top: auto; bottom: 16px; right: 16px; left: 16px; width: auto; flex-direction: column-reverse; }
+}
+@media print { .feedback-viewport { display: none; } }

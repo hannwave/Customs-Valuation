@@ -1,5 +1,6 @@
 "use client";
 
+import { HsItem } from "@/components/hs/HsItem";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -170,7 +171,7 @@ export default function HsCodeDetailPage() {
                     c="blue"
                     mt={2}
                   >
-                    {hsCode.code}
+                    <HsItem code={hsCode.code} description={hsCode.descriptionEn} full />
                   </Text>
                 </Stack>
               </Paper>

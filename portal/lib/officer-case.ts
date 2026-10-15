@@ -1,3 +1,4 @@
+import type { DocumentScans, ScanBadge } from "@/lib/document-scan";
 import { importerApi, type ImporterDeclaration } from "@/lib/importer";
 
 export type TariffRate = { taxCode: string; rate: number };
@@ -18,13 +19,15 @@ export type OfficerCase = {
   history: { occurredAt: string; action: string; username: string; decision: string | null; note: string | null }[];
   allowedActions: string[];
   canValue: boolean;
+  documentScans?: DocumentScans;
 };
 
 export type QueueRow = {
   id: string; reference: string; status: string; productName: string; brand: string; model: string; quantity: number; unit: string;
   originCountryCode: string; originCountryName: string; importerName: string; importerTin: string; importerType: string;
-  hsCode: string; nationalCode: string; hsConfirmed: boolean; branch: string;
+  hsCode: string; hsDescription?: string; nationalCode: string; hsConfirmed: boolean; branch: string;
   invoiceAmount: number | null; invoiceCurrency: string; assessedPayable: number | null; assessmentCurrency: string; submittedAt: string; updatedAt: string;
+  documentScan?: ScanBadge;
 };
 export type Queue = { counts: Record<string, number>; total: number; items: QueueRow[] };
 
@@ -57,4 +60,14 @@ export function reviewDeclaration(id: string, action: string, version: string, o
   });
 }
 
+/** Tariff book text that reads on its own: drops leading dashes and gives "Other" lines their parent HS description. */
+export function readableTariffText(description: string | null | undefined, hsDescription?: string | null) {
+  const clean = (text: string | null | undefined) => (text ?? "").trim().replace(/^[-–—\s]+/, "").replace(/[:;\s]+$/, "");
+  const line = clean(description), parent = clean(hsDescription);
+  if (!line) return parent;
+  if (!/^others?$/i.test(line)) return line;
+  // "Other" under a parent that is itself only "Other" says nothing; leave it empty so the code's description is looked up.
+  return parent && !/^others?$/i.test(parent) ? `${parent} — other` : "";
+}
+export const lineTitle = (line: Pick<TariffLineView, "description" | "hsDescription"> | null | undefined) => line ? readableTariffText(line.description, line.hsDescription) : "";
 export const lineCode = (line: Pick<TariffLineView, "tariffItemNo" | "hsCode"> | null | undefined) => line ? line.tariffItemNo || line.hsCode : "";

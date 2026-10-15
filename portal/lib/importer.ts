@@ -3,6 +3,7 @@ import { getSessionAccessToken } from "@/lib/auth/session";
 export type ImporterDeclaration = {
   id: string; reference: string; status: string; importerId: string; locationId: string;
   suggestedHsCodeId: string; suggestedTariffLineId: string; suggestedTariffDescription: string; confirmedHsCodeId: string | null; confirmedTariffLineId: string | null;
+  suggestedTariffCode?: string | null; confirmedTariffCode?: string | null; confirmedTariffDescription?: string | null;
   originCountryCode: string; originCountryName: string; importPurpose: string; purposeDetails: string;
   isCommercialProduct: boolean; isMachineryOrEquipment: boolean; requestedTreatments: string[];
   brand: string; model: string; productName: string; description: string; manufacturer: string;
@@ -12,6 +13,8 @@ export type ImporterDeclaration = {
   assessmentLines: AssessmentLine[];
   reviewNote: string; submittedAt: string; updatedAt: string; version: string;
   documents: { kind: string; fileName: string; contentType: string; size: number; uploadedAt: string }[];
+  /** True while the importer may still change it: waiting for an officer to open it, or more information requested. */
+  canEdit?: boolean; reviewStartedAt?: string | null;
 };
 
 export type AssessmentLine = { name: string; calculationType: string; rate: number; currency: string; calculationBasis: string; baseAmount: number; amount: number; isApplicable: boolean; status: string };
@@ -125,7 +128,24 @@ export async function getImporterProfile(): Promise<ImporterProfile | null> {
   return response.json() as Promise<ImporterProfile>;
 }
 
-export type DeclarationSummary = { id: string; reference: string; status: string; productName: string; importPurpose: string; originCountryName: string; submittedAt: string; updatedAt: string; version: string; invoiceAmount: number | null; invoiceCurrency: string; assessedPayable: number | null; assessmentCurrency: string };
+/** The goods as the importer knows them: brand and model when given, otherwise the product name. */
+export function declarationTitle(item: { productName: string; brand?: string; model?: string }) {
+  const brand = (item.brand ?? "").trim(), model = (item.model ?? "").trim();
+  if (!model || model === "Generic") return item.productName;
+  return brand && brand !== "Generic" && !model.toLowerCase().startsWith(brand.toLowerCase()) ? `${brand} ${model}` : model;
+}
+
+/** A short version of a tariff book description: the most specific clause, without dashes or a trailing "other". */
+export function tariffSummary(description: string | null | undefined) {
+  const clean = (description ?? "").replace(/^[\s\-–—:]+/, "").replace(/\s*[—–-]+\s*other\.?$/i, "").trim();
+  if (!clean) return "";
+  const parts = clean.split(/;\s*/).map(part => part.trim()).filter(part => part.length > 3 && !/^other\b/i.test(part));
+  const pick = parts.length > 1 ? parts[parts.length - 1] : parts[0] ?? clean;
+  const text = pick.charAt(0).toUpperCase() + pick.slice(1);
+  return text.length > 90 ? `${text.slice(0, 87).replace(/[\s,]+\S*$/, "")}…` : text;
+}
+
+export type DeclarationSummary = { id: string; reference: string; status: string; productName: string; brand?: string; model?: string; suggestedTariffDescription?: string; importPurpose: string; originCountryName: string; submittedAt: string; updatedAt: string; version: string; invoiceAmount: number | null; invoiceCurrency: string; assessedPayable: number | null; assessmentCurrency: string; canEdit?: boolean };
 
 /** Importer-facing wording for declaration review statuses. */
 export const declarationStatus: Record<string, { label: string; tone: "info" | "warning" | "success" | "danger" | "neutral" }> = {
@@ -153,3 +173,44 @@ export type ImporterNotification = { id: string; declarationId: string | null; k
 export const getImporterNotifications = () => importerApi<{ unread: number; items: ImporterNotification[] }>("/importer-notifications");
 export const markNotificationRead = (id: string) => importerApi<unknown>(`/importer-notifications/${id}/read`, { method: "POST" });
 export const markAllNotificationsRead = () => importerApi<unknown>("/importer-notifications/read-all", { method: "POST" });
+
+/** The importer's own sign-in account (name, contact details, picture). Business details live on the verification record. */
+export type ImporterAccount = { id: string; username: string; fullName: string; email: string; phone: string; createdAt: string; lastLoginAt: string | null; updatedAt: string | null; hasPhoto: boolean; photoUpdatedAt: string | null };
+export const getImporterAccount = () => importerApi<ImporterAccount>("/importer-profile/account");
+export const updateImporterAccount = (change: { fullName: string; email: string; phone: string }) =>
+  importerApi<ImporterAccount>("/importer-profile/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+export const changeImporterPassword = (change: { currentPassword: string; newPassword: string; confirmPassword: string }) =>
+  importerApi<{ message: string }>("/importer-profile/account/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) });
+export function uploadImporterPhoto(file: File) {
+  const form = new FormData(); form.append("file", file);
+  return importerApi<{ photoUpdatedAt: string }>("/importer-profile/account/photo", { method: "PUT", body: form });
+}
+export const removeImporterPhoto = () => importerApi<unknown>("/importer-profile/account/photo", { method: "DELETE" });
+/** The profile picture as an object URL (images cannot send the bearer token themselves). */
+export async function loadImporterPhoto(): Promise<string | null> {
+  const token = getSessionAccessToken();
+  if (!token) return null;
+  const response = await fetch(`${importerApiBase}/importer-profile/account/photo`, { headers: { Authorization: `Bearer ${token}` } });
+  return response.ok ? URL.createObjectURL(await response.blob()) : null;
+}
+
+
+/* ---------- Activity (the importer's own audit trail) ---------- */
+export type ImporterActivityItem = {
+  id: string; occurredAt: string; category: "CASE" | "VERIFICATION" | "ACCOUNT" | "SECURITY"; action: string; title: string; tone: "info" | "success" | "warning" | "danger" | "neutral";
+  actor: string; byMe: boolean; note: string | null; declaration: { id: string; reference: string; title: string } | null; link: string | null;
+};
+export type ImporterActivity = { total: number; page: number; pageSize: number; counts: Record<string, number>; items: ImporterActivityItem[] };
+export const getImporterActivity = (category: string, page: number) =>
+  importerApi<ImporterActivity>(`/importer-activity?${new URLSearchParams({ ...(category ? { category } : {}), page: String(page) })}`);
+
+/* ---------- Change of verified details (name, registered name, TIN) ---------- */
+export type IdentityChange = {
+  id: string; accountId: string; status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED"; reason: string; reviewNote: string; reviewedAt: string | null; createdAt: string; version: string;
+  importerName?: string | null; email?: string | null; importerType?: string | null;
+  changes: { field: "FULL_NAME" | "LEGAL_NAME" | "TIN"; label: string; current: string; requested: string }[];
+  document: { fileName: string; contentType: string; size: number; sha256: string };
+};
+export const getMyChangeRequests = () => importerApi<IdentityChange[]>("/importer-profile/change-requests");
+export const requestIdentityChange = (form: FormData) => importerApi<IdentityChange>("/importer-profile/change-requests", { method: "POST", body: form });
+export const cancelIdentityChange = (id: string) => importerApi<IdentityChange>(`/importer-profile/change-requests/${id}`, { method: "DELETE" });

@@ -2,15 +2,22 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FiBriefcase, FiKey, FiLock, FiMail, FiMapPin, FiPhone, FiSave, FiShield, FiUser } from "react-icons/fi";
+import { FiAtSign, FiBriefcase, FiCheck, FiEye, FiEyeOff, FiKey, FiLock, FiMail, FiMapPin, FiPhone, FiShield, FiUser } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { locationLabel, roleLabel, workspaceApi, type SelfProfile } from "@/lib/workspace";
+import { ToastMessage } from "@/components/Toaster";
+import { PageHeader } from "@/components/importer/PortalParts";
+import { PageSkeleton } from "@/components/PageSkeleton";
 
 type ProfileForm = { username: string; email: string; fullName: string; phone: string };
 type PasswordForm = { currentPassword: string; newPassword: string; confirmPassword: string };
 
 const emptyProfile: ProfileForm = { username: "", email: "", fullName: "", phone: "" };
 const emptyPassword: PasswordForm = { currentPassword: "", newPassword: "", confirmPassword: "" };
+const rules: [string, (value: string) => boolean][] = [
+  ["At least 8 characters", value => value.length >= 8], ["An uppercase letter", value => /[A-Z]/.test(value)], ["A lowercase letter", value => /[a-z]/.test(value)],
+  ["A number", value => /\d/.test(value)], ["A symbol", value => /[^A-Za-z0-9]/.test(value)],
+];
 
 export default function ProfilePage() {
   const { t } = useTranslation();
@@ -21,6 +28,7 @@ export default function ProfilePage() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [show, setShow] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -55,54 +63,64 @@ export default function ProfilePage() {
     finally { setBusy(""); }
   }
 
-  if (loading) return <DataState kind="loading" title={t("profileLoading", "Loading profile")} description={t("profileLoadingDescription", "Opening your account details.")} />;
+  if (loading) return <PageSkeleton variant="detail" label={t("profileLoading", "Loading profile")} />;
   if (!profile) return <DataState kind="error" title={t("profileUnavailable", "Profile unavailable")} description={error} onRetry={() => void load()} />;
 
-  return <div className="profile-page">
-    <div className="page-heading">
-      <div><p className="eyebrow">{t("profileEyebrow", "Account")}</p><h1>{t("profileTitle", "My profile")}</h1><p className="lead">{t("profileDescription", "Update your own contact and sign-in details. Administrative fields stay locked to protect access control.")}</p></div>
-      <span className="workspace-tag"><FiShield />{roleLabel(profile.user.role)}</span>
-    </div>
-    {error && <DataState kind="error" compact title={t("profileActionError", "Action could not be completed")} description={error} onRetry={() => void load()} />}
-    {notice && <p className="management-notice" role="status">{notice}</p>}
+  const initials = profile.user.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";
+  const dirty = form.fullName !== profile.user.fullName || form.email !== profile.user.email || form.username !== (profile.user.username ?? "") || form.phone !== (profile.user.phone ?? "");
+  const matches = password.newPassword === password.confirmPassword;
+  const strong = rules.every(([, test]) => test(password.newPassword));
 
-    <div className="profile-grid">
-      <section className="admin-panel profile-panel">
-        <div className="panel-heading"><div><h2>{t("profileEditableDetails", "Editable details")}</h2><p>{t("profileEditableDescription", "These fields belong to your own account only.")}</p></div><FiUser aria-hidden="true" /></div>
-        <form className="management-form" onSubmit={saveProfile}>
-          <label><span>{t("profileFullName", "Full name")}</span><input value={form.fullName} onChange={event => setForm(value => ({ ...value, fullName: event.target.value }))} required /></label>
-          <label><span>{t("profileUsername", "Username")}</span><input value={form.username} onChange={event => setForm(value => ({ ...value, username: event.target.value }))} minLength={3} required /></label>
-          <label><span>{t("profileEmail", "Email")}</span><input type="email" value={form.email} onChange={event => setForm(value => ({ ...value, email: event.target.value }))} required /></label>
-          <label><span>{t("profilePhone", "Phone")}</span><input value={form.phone} onChange={event => setForm(value => ({ ...value, phone: event.target.value }))} /></label>
-          <div className="form-actions"><button className="primary-button" type="submit" disabled={busy === "profile"}><FiSave />{busy === "profile" ? t("profileSaving", "Saving...") : t("profileSaveChanges", "Save changes")}</button></div>
-        </form>
-      </section>
+  return <div className="ip-page pf-page">
+    <PageHeader eyebrow={t("profileEyebrow", "Account").toUpperCase()} title={t("profileTitle", "My profile")} description={t("profileDescription", "Update your own contact and sign-in details. Administrative fields stay locked to protect access control.")} />
+    <ToastMessage kind="error" title={t("profileActionError", "Action could not be completed")} message={error} onClear={() => setError("")} />
+    <ToastMessage kind="success" message={notice} onClear={() => setNotice("")} />
 
-      <section className="admin-panel profile-panel">
-        <div className="panel-heading"><div><h2>{t("profileChangePassword", "Change password")}</h2><p>{t("profileChangePasswordDescription", "Your current password is required before a new one is saved.")}</p></div><FiKey aria-hidden="true" /></div>
-        <form className="management-form" onSubmit={changePassword}>
-          <label className="wide-field"><span>{t("profileCurrentPassword", "Current password")}</span><input type="password" value={password.currentPassword} onChange={event => setPassword(value => ({ ...value, currentPassword: event.target.value }))} autoComplete="current-password" required /></label>
-          <label><span>{t("profileNewPassword", "New password")}</span><input type="password" value={password.newPassword} onChange={event => setPassword(value => ({ ...value, newPassword: event.target.value }))} autoComplete="new-password" required /></label>
-          <label><span>{t("profileConfirmPassword", "Confirm new password")}</span><input type="password" value={password.confirmPassword} onChange={event => setPassword(value => ({ ...value, confirmPassword: event.target.value }))} autoComplete="new-password" required /></label>
-          <div className="password-requirements wide-field"><FiLock /><p>{t("profilePasswordRequirements", "Use at least 8 characters with uppercase, lowercase, number and symbol.")}</p></div>
-          <div className="form-actions"><button className="primary-button" type="submit" disabled={busy === "password"}><FiKey />{busy === "password" ? t("profileChanging", "Changing...") : t("profileChangePassword", "Change password")}</button></div>
-        </form>
-      </section>
-    </div>
-
-    <section className="admin-panel profile-panel">
-      <div className="panel-heading"><div><h2>{t("profileLockedInformation", "Locked account information")}</h2><p>{t("profileLockedDescription", "These fields are controlled by system or customs administrators.")}</p></div><FiLock aria-hidden="true" /></div>
-      <div className="locked-grid">
-        <div className="locked-field"><FiShield /><span>{t("profileRole", "Role")}</span><strong>{roleLabel(profile.user.role)}</strong></div>
-        <div className="locked-field"><FiBriefcase /><span>{t("profileEmployeeNumber", "Employee number")}</span><strong>{profile.user.employeeNumber || t("profileNotRecorded", "Not recorded")}</strong></div>
+    <section className="pf-hero">
+      <div className="pf-avatar-wrap"><span className="pf-avatar is-static" aria-hidden="true"><span>{initials}</span></span></div>
+      <div className="pf-hero-copy">
+        <h2>{profile.user.fullName}</h2>
+        <p>{profile.user.email}</p>
+        <div className="pf-chips">
+          <span className="pf-chip is-success"><FiShield aria-hidden="true" />{roleLabel(profile.user.role)}</span>
+          {profile.location && <span className="pf-chip"><FiMapPin aria-hidden="true" />{locationLabel(profile.location)}</span>}
+          {profile.user.employeeNumber && <span className="pf-chip"><FiBriefcase aria-hidden="true" />{profile.user.employeeNumber}</span>}
+        </div>
       </div>
-      <div className="assignment-lock-list">
-        <h3><FiMapPin /> {t("profileAssignedLocations", "Assigned customs locations")}</h3>
-        {!profile.location ? <DataState kind="empty" compact title={t("profileNoLocationAssignment", "No active location assignment")} description={t("profileLocationAssignmentDescription", "An administrator can assign customs locations from user administration.")} /> : <article className="profile-locked-card">
-          <strong>{locationLabel(profile.location)}</strong>
-          <span>{t("profileExactLocationOnly", "Primary location")}</span>
-        </article>}
-      </div>
+    </section>
+
+    <div className="pf-grid">
+      <form className="pf-card" onSubmit={event => void saveProfile(event)}>
+        <header><span className="pf-card-icon" aria-hidden="true"><FiUser /></span><div><h3>{t("profileEditableDetails", "Personal details")}</h3><p>{t("profileEditableDescription", "These fields belong to your own account only.")}</p></div></header>
+        <label className="pf-field"><span>{t("profileFullName", "Full name")}</span><div><FiUser aria-hidden="true" /><input value={form.fullName} onChange={event => setForm(value => ({ ...value, fullName: event.target.value }))} autoComplete="name" required /></div></label>
+        <label className="pf-field"><span>{t("profileUsername", "Username")}</span><div><FiAtSign aria-hidden="true" /><input value={form.username} onChange={event => setForm(value => ({ ...value, username: event.target.value }))} autoComplete="username" minLength={3} required /></div></label>
+        <label className="pf-field"><span>{t("profileEmail", "Email")}</span><div><FiMail aria-hidden="true" /><input type="email" value={form.email} onChange={event => setForm(value => ({ ...value, email: event.target.value }))} autoComplete="email" required /></div></label>
+        <label className="pf-field"><span>{t("profilePhone", "Phone")} <em>optional</em></span><div><FiPhone aria-hidden="true" /><input type="tel" value={form.phone} onChange={event => setForm(value => ({ ...value, phone: event.target.value }))} autoComplete="tel" placeholder="+251 911 234 567" /></div></label>
+        <footer><div className="pf-actions">
+          {dirty && <button type="button" className="iv-secondary" onClick={() => setForm({ username: profile.user.username ?? "", email: profile.user.email, fullName: profile.user.fullName, phone: profile.user.phone ?? "" })}>Discard</button>}
+          <button className="iv-primary" type="submit" disabled={!dirty || busy === "profile"}>{busy === "profile" ? t("profileSaving", "Saving…") : t("profileSaveChanges", "Save changes")}</button>
+        </div></footer>
+      </form>
+
+      <form className="pf-card" onSubmit={event => void changePassword(event)}>
+        <header><span className="pf-card-icon" aria-hidden="true"><FiKey /></span><div><h3>{t("profileChangePassword", "Password")}</h3><p>{t("profileChangePasswordDescription", "Your current password is required before a new one is saved.")}</p></div>
+          <button type="button" className="pf-show" onClick={() => setShow(value => !value)} aria-pressed={show}>{show ? <FiEyeOff aria-hidden="true" /> : <FiEye aria-hidden="true" />}{show ? "Hide" : "Show"}</button></header>
+        <label className="pf-field"><span>{t("profileCurrentPassword", "Current password")}</span><div><FiLock aria-hidden="true" /><input type={show ? "text" : "password"} value={password.currentPassword} onChange={event => setPassword(value => ({ ...value, currentPassword: event.target.value }))} autoComplete="current-password" required /></div></label>
+        <label className="pf-field"><span>{t("profileNewPassword", "New password")}</span><div><FiLock aria-hidden="true" /><input type={show ? "text" : "password"} value={password.newPassword} onChange={event => setPassword(value => ({ ...value, newPassword: event.target.value }))} autoComplete="new-password" required /></div></label>
+        <ul className="pf-rules" aria-label="Password requirements">{rules.map(([label, test]) => <li key={label} className={test(password.newPassword) ? "is-met" : ""}><FiCheck aria-hidden="true" />{label}</li>)}</ul>
+        <label className="pf-field"><span>{t("profileConfirmPassword", "Confirm new password")}</span><div className={password.confirmPassword && !matches ? "is-invalid" : ""}><FiLock aria-hidden="true" /><input type={show ? "text" : "password"} value={password.confirmPassword} onChange={event => setPassword(value => ({ ...value, confirmPassword: event.target.value }))} autoComplete="new-password" required /></div>
+          {password.confirmPassword && !matches && <small className="is-error">The passwords do not match.</small>}</label>
+        <footer><div className="pf-actions"><button className="iv-primary" type="submit" disabled={busy === "password" || !password.currentPassword || !strong || !matches}>{busy === "password" ? t("profileChanging", "Changing…") : t("profileChangePassword", "Change password")}</button></div></footer>
+      </form>
+    </div>
+
+    <section className="pf-card pf-business">
+      <header><span className="pf-card-icon" aria-hidden="true"><FiLock /></span><div><h3>{t("profileLockedInformation", "Role & assignment")}</h3><p>{t("profileLockedDescription", "These fields are controlled by system or customs administrators.")}</p></div></header>
+      <dl className="pf-facts">
+        <div><dt>{t("profileRole", "Role")}</dt><dd>{roleLabel(profile.user.role)}</dd></div>
+        <div><dt>{t("profileEmployeeNumber", "Employee number")}</dt><dd>{profile.user.employeeNumber || t("profileNotRecorded", "Not recorded")}</dd></div>
+        <div><dt>{t("profileAssignedLocations", "Assigned customs location")}</dt><dd>{profile.location ? locationLabel(profile.location) : t("profileNoLocationAssignment", "No active location assignment")}</dd></div>
+      </dl>
     </section>
   </div>;
 }

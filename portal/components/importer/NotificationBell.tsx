@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FiAlertTriangle, FiBell, FiCheckCircle, FiDollarSign, FiInfo, FiXCircle } from "react-icons/fi";
+import { toast } from "@/lib/toast";
 import { getImporterNotifications, markAllNotificationsRead, markNotificationRead, type ImporterNotification } from "@/lib/importer";
 
 const POLL_MS = 60_000;
@@ -37,7 +38,17 @@ export function NotificationBell({ onChange }: { onChange?: () => void }) {
       const result = await getImporterNotifications();
       setItems(result.items); setUnread(result.unread);
       const newest = result.items[0]?.id ?? null;
-      if (latest.current !== null && newest !== latest.current) onChange?.();
+      if (latest.current !== null && newest !== latest.current) {
+        // Pop up everything that arrived since the last check, newest last, with the notification chime.
+        const seenAt = result.items.findIndex(item => item.id === latest.current);
+        const fresh = (seenAt < 0 ? result.items.slice(0, 3) : result.items.slice(0, seenAt)).filter(item => !item.readAt).slice(0, 3).reverse();
+        fresh.forEach((item, index) => {
+          const tone = kindIcon(item.kind).tone;
+          const kind = tone === "is-danger" ? "error" : tone === "is-warning" ? "warning" : tone === "is-success" ? "success" : "notification";
+          toast.show(kind, item.message || item.title, { title: item.message ? item.title : "New notification", href: item.link || "/importer", key: `notification-${item.id}`, silent: index > 0, onDismiss: undefined });
+        });
+        onChange?.();
+      }
       latest.current = newest ?? "";
     } catch { /* the bell stays quiet when the service is unreachable */ }
   }, [onChange]);

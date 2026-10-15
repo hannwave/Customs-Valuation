@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FiActivity, FiEye, FiFileText, FiGlobe, FiImage, FiRefreshCw, FiSearch, FiShield, FiX } from "react-icons/fi";
+import { FiActivity, FiEye, FiFileText, FiFilter, FiGlobe, FiImage, FiLink, FiRefreshCw, FiSearch, FiShield, FiX } from "react-icons/fi";
 import { DataState } from "@/components/DataState";
 import { getSessionAccessToken } from "@/lib/auth/session";
-import { roleLabel, workspaceApi, type AuditRecord, type ValuationAuditDetails, type ValuationAuditTaxLine, type WorkspaceProfile } from "@/lib/workspace";
+import { normalizeWorkspaceRole, roleLabel, workspaceApi, type AuditRecord, type AuditTariffLines, type ValuationAuditDetails, type ValuationAuditTaxLine, type WorkspaceProfile } from "@/lib/workspace";
+import { AuditSourceTag, DeclarationSummary, ImporterEventBody, auditActionLabel, importerEventTax } from "@/components/audit/ImporterAudit";
+import { HsItem } from "@/components/hs/HsItem";
+import { ToastMessage } from "@/components/Toaster";
+import { PageHeader } from "@/components/importer/PortalParts";
+import { auditCategories, categoryIcon, categoryOf, CaseSummaryCard, ChangeDetailModal, sourceLabels, VerificationDetailModal } from "@/components/audit/AuditViews";
+import { InvoiceActions } from "@/components/invoice/FinalInvoice";
+import type { InvoiceKind } from "@/lib/invoice";
 
 type AuditJson = Record<string, unknown>;
 
@@ -91,8 +98,10 @@ function legacyValuation(record: AuditRecord): ValuationAuditDetails {
   };
 }
 
-function valuationDetails(record: AuditRecord) {
-  return record.valuation ?? legacyValuation(record);
+function valuationDetails(record: AuditRecord): ValuationAuditDetails {
+  if (!record.valuation) return legacyValuation(record);
+  // Snapshot tax lines are stored with PascalCase keys; normalise them like legacy lines.
+  return { ...record.valuation, taxBreakdown: (record.valuation.taxBreakdown ?? []).map(legacyTaxLine) };
 }
 
 function countryFlag(code: string) {
@@ -108,8 +117,14 @@ function money(value: number | null, currency: string, empty = "Not recorded") {
   catch { return `${currency} ${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
 }
 
+const priceSourceLabels: Record<string, string> = {
+  internationalMedian: "International market median", internationalMean: "International market mean", customsBenchmark: "Customs trade benchmark",
+  declaredPrice: "Customer's declared price", originFobCif: "Origin FOB plus freight and insurance (CIF)", custom: "Officer-determined value",
+};
+
 function sourceLabel(value: string) {
   if (!value) return "Source not recorded";
+  if (priceSourceLabels[value]) return priceSourceLabels[value];
   return value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
 }
 
@@ -161,9 +176,16 @@ function AuditDialog({ children, onClose }: { children: React.ReactNode; onClose
   return <dialog ref={ref} className="audit-native-dialog" onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }} aria-labelledby="audit-detail-title">{children}</dialog>;
 }
 
+// Structured payload sections shown elsewhere in the detail view; listing them as raw field diffs only adds noise.
+const structuredAuditFields = /^(tax lines|phase1|phase2|applicable duties taxes)$/i;
+
 function EventChanges({ record }: { record: AuditRecord }) {
-  const changes = auditChanges(record).filter(change => !/tax lines/i.test(change.label));
   const before = parseAuditValue(record.previousValueJson);
+  if (!before || !Object.keys(before).length) return <section className="audit-compact-section"><h3>Recorded changes</h3>
+    <p>Reason: {record.justification || "Not recorded"}</p>
+    <p className="audit-empty-copy">This is the first recorded version of this record, so there is no earlier version to compare. The values recorded at this event are shown below.</p>
+  </section>;
+  const changes = auditChanges(record).filter(change => !structuredAuditFields.test(change.label));
   const after = parseAuditValue(record.newValueJson);
   const oldTax = firstNumber(before?.TotalTax, before?.totalTax);
   const oldCurrency = firstString(before?.TargetCurrency, before?.targetCurrency, before?.CustomsValueCurrency);
@@ -231,25 +253,32 @@ function ProductPhoto({ details }: { details: ValuationAuditDetails }) {
 function ValuationDetailModal({ record, onClose }: { record: AuditRecord; onClose: () => void }) {
   const details = valuationDetails(record);
   const lines = details.taxBreakdown;
+  const declaration = record.importerDeclaration;
+  const fromPortal = record.source === "IMPORTER_PORTAL";
+  // Portal valuations have no shop purchase country; the declared origin is the meaningful country.
+  const countryCode = details.purchaseCountryCode || (fromPortal ? declaration?.originCountryCode ?? "" : "");
+  const countryName = details.purchaseCountryName || (fromPortal ? declaration?.originCountryName ?? "" : "");
   return <AuditDialog onClose={onClose}>
     <section className="audit-detail-modal audit-detail-modal--compact" aria-labelledby="audit-detail-title">
-      <header className="audit-detail-header"><div><span>{record.action.replaceAll("_", " ")}</span><h2 id="audit-detail-title">{record.action.replaceAll("_", " ")}</h2><p>{new Date(record.occurredAt).toLocaleString()} · {record.username || record.userId}</p></div><button type="button" onClick={onClose} aria-label="Close audit details"><FiX /></button></header>
+      <header className="audit-detail-header"><div><span>{fromPortal ? "Importer portal · valuation and tax" : "Valuation search"}</span><h2 id="audit-detail-title">{auditActionLabel(record.action)}</h2><p>{new Date(record.occurredAt).toLocaleString()} · {record.username || record.userId}</p></div><button type="button" onClick={onClose} aria-label="Close audit details"><FiX /></button></header>
       <div className="audit-detail-body">
-        <p>Case <a href={`/audit/cases/${record.caseReference || details.valuationDecisionId}`}>{record.caseReference || details.valuationDecisionId}</a> · {details.productName}</p>
+        <CaseSummaryCard record={record} />
+        <p>Case <a href={`/audit/cases/${record.caseReference || details.valuationDecisionId}`}>{declaration?.reference || record.caseReference || details.valuationDecisionId}</a> · {details.productName || declaration?.productName}</p>
+        {fromPortal && <p className="audit-portal-banner"><FiFileText aria-hidden="true" /><span>This valuation was made for a declaration filed on the importer portal{declaration ? <> (<strong>{declaration.reference}</strong>)</> : null}. The commercial invoice stands in for the customer receipt, and finalising it notifies the importer.</span></p>}
+        {fromPortal && declaration && <section className="audit-compact-section"><h3>Importer&apos;s declaration</h3><DeclarationSummary declaration={declaration} /></section>}
         <EventChanges record={record} />
         <div className="audit-detail-summary">
-          <span><small>HS code</small><strong>{details.hsCode || "Not recorded"}</strong></span>
-          <span><small>Country where bought</small><strong>{countryFlag(details.purchaseCountryCode)} {details.purchaseCountryName || "Not recorded"}</strong></span>
+          <span className="audit-hs-cell"><small>Item / HS code</small><strong><HsItem code={details.hsCode} description={details.hsDescription} empty="Not recorded" full /></strong></span>
+          <span><small>{fromPortal ? "Country of origin" : "Country where bought"}</small><strong>{countryFlag(countryCode)} {countryName || "Not recorded"}</strong></span>
           <span><small>Selected price</small><strong>{money(details.selectedPriceAmount || null, details.selectedPriceCurrency)}</strong><em>{sourceLabel(details.valuationMethod || details.selectedPriceSource)}</em></span>
           <span><small>Total tax due</small><strong>{money(details.totalTaxDue, details.taxCurrency, "Pending assessment")}</strong></span>
           <span><small>Officer</small><strong>{details.officerName || "Not recorded"}</strong><em>{details.officerLocationName || "Office not recorded"}</em></span>
-          <span><small>Product origin</small><strong>{details.originCountry || "Not recorded"}</strong></span>
+          {fromPortal ? <span><small>Declared invoice price</small><strong>{declaration?.invoiceAmount != null ? money(declaration.invoiceAmount, declaration.invoiceCurrency) : "Not recorded"}</strong></span> : <span><small>Product origin</small><strong>{details.originCountry || "Not recorded"}</strong></span>}
         </div>
-        {details.hsDescription && <p className="audit-hs-description">{details.hsDescription}</p>}
 
         <section className="audit-compact-section"><div className="audit-section-title"><h3>Tax calculation</h3><strong>{money(details.totalTaxDue, details.taxCurrency, "Not assessed")}</strong></div>{lines.length ? <div className="audit-tax-breakdown">{lines.map((line, index) => <div key={`${line.name}-${index}`}><span><strong>{line.name}{!line.isApplicable ? " · Not applied" : ""}</strong><small>{line.calculationType === "Percentage" ? `${line.value}% × ${line.baseAmount} / 100` : `${line.value} × ${line.baseAmount}`} · {sourceLabel(line.calculationBasis)} · {line.sourceReference || "Source not recorded"}</small></span><b>{money(line.calculatedAmount, line.currency || details.taxCurrency)}</b></div>)}</div> : <p className="audit-empty-copy">Tax lines have not been recorded for this event.</p>}</section>
         <section className="audit-compact-section"><div className="audit-section-title"><h3>Decision record</h3><span>{record.recordId.slice(0, 8)}</span></div><dl className="audit-decision-meta"><div><dt>Valuation method</dt><dd>{sourceLabel(details.valuationMethod)}</dd></div><div><dt>Price source</dt><dd>{sourceLabel(details.selectedPriceSource)}</dd></div><div><dt>Reason</dt><dd>{record.justification || firstString(details.decisionDetails.justification) || "Not recorded"}</dd></div><div><dt>Supervisor</dt><dd>{record.supervisorName || "Not assigned"}</dd></div></dl></section>
-        <section className="audit-media-section"><div><h3>Product photo</h3><ProductPhoto details={details} /></div><div><h3>Customer receipt</h3><ReceiptPreview record={record} details={details} /></div></section>
+        <section className={`audit-media-section${fromPortal && !details.productPhotoUrl ? " is-single" : ""}`}>{!(fromPortal && !details.productPhotoUrl) && <div><h3>Product photo</h3><ProductPhoto details={details} /></div>}<div><h3>{fromPortal ? "Commercial invoice" : "Customer receipt"}</h3><ReceiptPreview record={record} details={details} /></div></section>
       </div>
     </section>
   </AuditDialog>;
@@ -259,15 +288,22 @@ function GenericDetailModal({ record, onClose }: { record: AuditRecord; onClose:
   const [documentError, setDocumentError] = useState("");
   const changes = auditChanges(record);
   const document = documentName(record);
-  return <AuditDialog onClose={onClose}><section className="audit-detail-modal audit-detail-modal--compact" aria-labelledby="audit-detail-title"><header className="audit-detail-header"><div><span>{record.module}</span><h2 id="audit-detail-title">{record.action.replaceAll("_", " ")}</h2><p>{new Date(record.occurredAt).toLocaleString()} · {record.username || record.userId}</p></div><button type="button" onClick={onClose} aria-label="Close audit details"><FiX /></button></header><div className="audit-detail-body"><div className="audit-detail-summary"><span><small>Record</small><strong>{record.recordId.slice(0, 8)}</strong></span><span><small>Reason</small><strong>{record.justification || record.decision || "Not recorded"}</strong></span>{document && <span><small>Document</small><button className="audit-file-link" type="button" onClick={() => { setDocumentError(""); void openOfficialLetter(record).catch(reason => setDocumentError(reason.message)); }}>{document}</button>{documentError && <p role="alert">{documentError}</p>}</span>}</div><section className="audit-compact-section"><h3>What changed</h3>{changes.length ? <div className="audit-change-list">{changes.map(change => <div key={change.label}><strong>{change.label}</strong><span>{change.before}</span><b>→</b><span>{change.after}</span></div>)}</div> : <p className="audit-empty-copy">No field changes were recorded.</p>}</section></div></section></AuditDialog>;
+  return <AuditDialog onClose={onClose}><section className="audit-detail-modal audit-detail-modal--compact" aria-labelledby="audit-detail-title"><header className="audit-detail-header"><div><span>{record.module}</span><h2 id="audit-detail-title">{auditActionLabel(record.action)}</h2><p>{new Date(record.occurredAt).toLocaleString()} · {record.username || record.userId}</p></div><button type="button" onClick={onClose} aria-label="Close audit details"><FiX /></button></header><div className="audit-detail-body"><div className="audit-detail-summary"><span><small>Record</small><strong>{record.recordId.slice(0, 8)}</strong></span><span><small>Reason</small><strong>{record.justification || record.decision || "Not recorded"}</strong></span>{document && <span><small>Document</small><button className="audit-file-link" type="button" onClick={() => { setDocumentError(""); void openOfficialLetter(record).catch(reason => setDocumentError(reason.message)); }}>{document}</button>{documentError && <p role="alert">{documentError}</p>}</span>}</div><section className="audit-compact-section"><h3>What changed</h3>{changes.length ? <div className="audit-change-list">{changes.map(change => <div key={change.label}><strong>{change.label}</strong><span>{change.before}</span><b>→</b><span>{change.after}</span></div>)}</div> : <p className="audit-empty-copy">No field changes were recorded.</p>}</section></div></section></AuditDialog>;
 }
 
-type AuditPageResult = { items: AuditRecord[]; total: number; availableTotal: number; page: number; pageSize: number };
+function ImporterDetailModal({ record, tariffLines, onClose }: { record: AuditRecord; tariffLines: AuditTariffLines; onClose: () => void }) {
+  return <AuditDialog onClose={onClose}><section className="audit-detail-modal audit-detail-modal--compact" aria-labelledby="audit-detail-title">
+    <header className="audit-detail-header"><div><span>Importer portal{record.importerDeclaration ? ` · ${record.importerDeclaration.reference}` : ""}</span><h2 id="audit-detail-title">{auditActionLabel(record.action)}</h2><p>{new Date(record.occurredAt).toLocaleString()} · {record.username || record.userId}{record.branchName ? ` · ${record.branchName}` : ""}</p></div><button type="button" onClick={onClose} aria-label="Close audit details"><FiX /></button></header>
+    <div className="audit-detail-body"><CaseSummaryCard record={record} /><ImporterEventBody record={record} tariffLines={tariffLines} /></div>
+  </section></AuditDialog>;
+}
+
+type AuditPageResult = { items: AuditRecord[]; total: number; availableTotal: number; page: number; pageSize: number; tariffLines?: AuditTariffLines };
 
 export function AuditHistory({ caseId = "" }: { caseId?: string }) {
   const [profile, setProfile] = useState<WorkspaceProfile | null>(null);
   const [result, setResult] = useState<AuditPageResult>({ items: [], total: 0, availableTotal: 0, page: 1, pageSize: 20 });
-  const [filters, setFilters] = useState({ search: "", category: "", eventType: "", caseId, from: "", to: "", officer: "", region: "", branch: "" });
+  const [filters, setFilters] = useState({ search: "", category: "", source: "", eventType: "", caseId, from: "", to: "", officer: "", region: "", branch: "" });
   const [comparison, setComparison] = useState<AuditRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<AuditRecord | null>(null);
   const [page, setPage] = useState(1);
@@ -275,6 +311,7 @@ export function AuditHistory({ caseId = "" }: { caseId?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [documentError, setDocumentError] = useState("");
+  const [linkedTariffLines, setLinkedTariffLines] = useState<AuditTariffLines>({});
   useEffect(() => {
     const showError = (event: Event) => setDocumentError((event as CustomEvent<string>).detail);
     window.addEventListener("audit-document-error", showError);
@@ -300,43 +337,107 @@ export function AuditHistory({ caseId = "" }: { caseId?: string }) {
     if (!eventId) return;
     let active = true;
     void workspaceApi<AuditPageResult>(`/audit?eventId=${encodeURIComponent(eventId)}${caseId ? `&caseId=${encodeURIComponent(caseId)}` : ""}`)
-      .then(data => { if (active) { setSelectedRecord(data.items[0] ?? null); if (!data.items.length) setDocumentError("This event was not found or is outside your authorized history."); } })
+      .then(data => { if (active) { setSelectedRecord(data.items[0] ?? null); setLinkedTariffLines(data.tariffLines ?? {}); if (!data.items.length) setDocumentError("This event was not found or is outside your authorized history."); } })
       .catch(reason => { if (active) setDocumentError(String(reason)); });
     return () => { active = false; };
   }, [caseId]);
   const updateFilter = (key: keyof typeof filters, value: string) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); };
   const activeFilters = Object.entries(filters).filter(([, value]) => value);
   const isValuation = (record: AuditRecord) => Boolean(record.valuation) || ["Valuation", "Valuations", "EthiopianImportTaxAssessment"].includes(record.module);
+  const isImporterEvent = (record: AuditRecord) => record.module === "ImporterDeclarations";
+  const recordedTax = (record: AuditRecord) => {
+    const portalTax = importerEventTax(record);
+    if (portalTax) return money(portalTax.value, portalTax.currency);
+    return isValuation(record) ? money(valuationDetails(record).totalTaxDue, valuationDetails(record).taxCurrency, "—") : "—";
+  };
   const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
-  return <div className="management-page audit-page">
-    <div className="page-heading"><div><h1>{caseId ? "Case history" : "Audit trail"}</h1><p className="lead">{caseId || "Recorded decisions, adjustments, reviews, and supporting evidence."}</p>{caseId && <a href="/audit">All audit records</a>}</div><button className="secondary-button" type="button" onClick={() => setRevision(value => value + 1)}><FiRefreshCw />Refresh</button></div>
-    {profile && <div className="role-banner"><FiShield /><strong>{roleLabel(profile.user.role)}</strong><span>{result.total} matching events</span></div>}
-    {documentError && <p role="alert">{documentError} <button onClick={() => setDocumentError("")}>Dismiss</button></p>}
-    <div className="audit-filters">
-      <label><span>Search</span><input type="search" value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Product, HS code, officer, reason" /></label>
-      <label><span>Category</span><select value={filters.category} onChange={event => updateFilter("category", event.target.value)}><option value="">All events</option><option value="valuations">Valuations — all phases and reviews</option><option value="changes">Other changes</option></select></label>
-      {!caseId && <label><span>Case reference</span><input value={filters.caseId} onChange={event => updateFilter("caseId", event.target.value)} placeholder="Full case ID" /></label>}
-      <label><span>Event type (exact)</span><input value={filters.eventType} onChange={event => updateFilter("eventType", event.target.value)} placeholder="VALUATION_REVIEWED" /></label>
-      <label><span>From date</span><input type="date" value={filters.from} onChange={event => updateFilter("from", event.target.value)} /></label>
-      <label><span>Through date</span><input type="date" min={filters.from} value={filters.to} onChange={event => updateFilter("to", event.target.value)} /></label>
-      {(["officer", "region", "branch"] as const).map(key => <label key={key}><span>{key}</span><input value={filters[key]} onChange={event => updateFilter(key, event.target.value)} /></label>)}
-    </div>
-    {activeFilters.length > 0 && <div className="audit-active-filters">{activeFilters.map(([key, value]) => <span className="badge" key={key}>{key}: {value}</span>)}<button type="button" onClick={() => { setFilters({ search: "", category: "", eventType: "", caseId, from: "", to: "", officer: "", region: "", branch: "" }); setPage(1); }}>Clear filters</button></div>}
+  // Each role sees the views that hold events it may read; the server applies the same scope.
+  const role = normalizeWorkspaceRole(profile?.user.role) ?? "";
+  const categories: [string, string][] = [["", "All events"], ...auditCategories.filter(item => !role || item.roles.includes(role)).map(item => [item.key, item.label] as [string, string])];
+  const advanced = activeFilters.filter(([key]) => !["search", "category", "source", "caseId"].includes(key) || (key === "caseId" && !caseId)).length;
+  const clearAll = () => { setFilters({ search: "", category: "", source: "", eventType: "", caseId, from: "", to: "", officer: "", region: "", branch: "" }); setPage(1); };
+  return <div className="ip-page audit-page">
+    <PageHeader eyebrow={profile ? roleLabel(profile.user.role).toUpperCase() : "ACTIVITY"} title={caseId ? "Case history" : "Audit trail"}
+      description={caseId ? `Every recorded event for case ${caseId}.` : "Recorded decisions, adjustments, reviews and supporting evidence."}
+      actions={<>{caseId && <a className="iv-secondary" href="/audit">All audit records</a>}<button type="button" className="iv-icon-button" onClick={() => setRevision(value => value + 1)} aria-label="Refresh" disabled={loading}><FiRefreshCw aria-hidden="true" className={loading ? "dc-spin" : ""} /></button></>} />
+    <ToastMessage kind="error" message={documentError} onClear={() => setDocumentError("")} />
+    <section className="dc-panel au-filters">
+      <div className="dc-toolbar">
+        <label className="dc-search">
+          <span className="dc-search-icon"><FiSearch aria-hidden="true" /></span>
+          <input type="search" value={filters.search} onChange={event => updateFilter("search", event.target.value)} onKeyDown={event => { if (event.key === "Escape") updateFilter("search", ""); }} placeholder="Search product, HS code, declaration, officer or reason" aria-label="Search audit events" />
+          {filters.search && <button type="button" className="dc-search-clear" onClick={() => updateFilter("search", "")} aria-label="Clear search"><FiX aria-hidden="true" /></button>}
+        </label>
+        <div className="dc-toolbar-meta"><span className="dc-count" aria-live="polite">{loading ? "Searching…" : `${result.total} event${result.total === 1 ? "" : "s"}`}</span></div>
+      </div>
+      <div className="au-filter-row">
+        <div className="au-chips" role="radiogroup" aria-label="Event category">{categories.map(([value, label]) => <button key={value || "all"} type="button" role="radio" aria-checked={filters.category === value} className={`au-chip${filters.category === value ? " is-selected" : ""}`} onClick={() => { updateFilter("category", value); if (value !== "CASE") updateFilter("source", ""); }}>{label}</button>)}</div>
+        {filters.category === "CASE" && <div className="au-chips is-sub" role="radiogroup" aria-label="Case source">{([["", "All sources"], ["VALUATION_SEARCH", "Valuation search"], ["IMPORTER_PORTAL", "Importer portal"]] as [string, string][]).map(([value, label]) =>
+          <button key={value || "any"} type="button" role="radio" aria-checked={filters.source === value} className={`au-chip is-small${filters.source === value ? " is-selected" : ""}`} onClick={() => updateFilter("source", value)}>{label}</button>)}</div>}
+        <details className="au-more" open={advanced > 0}>
+          <summary><FiFilter aria-hidden="true" />More filters{advanced > 0 && <span className="au-more-count">{advanced}</span>}</summary>
+          <div className="au-more-grid">
+            {!caseId && <label className="au-field"><span>Case reference</span><input value={filters.caseId} onChange={event => updateFilter("caseId", event.target.value)} placeholder="Full case ID" /></label>}
+            <label className="au-field"><span>Event type</span><input value={filters.eventType} onChange={event => updateFilter("eventType", event.target.value)} placeholder="e.g. VALUATION_REVIEWED" /></label>
+            <label className="au-field"><span>From</span><input type="date" value={filters.from} onChange={event => updateFilter("from", event.target.value)} /></label>
+            <label className="au-field"><span>Through</span><input type="date" min={filters.from} value={filters.to} onChange={event => updateFilter("to", event.target.value)} /></label>
+            {(["officer", "region", "branch"] as const).map(key => <label key={key} className="au-field"><span>{key[0].toUpperCase() + key.slice(1)}</span><input value={filters[key]} onChange={event => updateFilter(key, event.target.value)} placeholder={key === "officer" ? "Name or username" : `Any ${key}`} /></label>)}
+          </div>
+        </details>
+        {activeFilters.filter(([key]) => key !== "caseId" || !caseId).length > 0 && <button type="button" className="au-clear" onClick={clearAll}><FiX aria-hidden="true" />Clear filters</button>}
+      </div>
+    </section>
     {caseId && <section className="assessment-change-summary"><h2>Compare recorded events ({comparison.length}/2)</h2><p>Select two events, including events on different pages.</p>
-      {comparison.map(record => <p key={record.id}>{new Date(record.occurredAt).toLocaleString()} · {record.action.replaceAll("_", " ")} · {money(valuationDetails(record).totalTaxDue, valuationDetails(record).taxCurrency)}</p>)}
+      {comparison.map(record => <p key={record.id}>{new Date(record.occurredAt).toLocaleString()} · {auditActionLabel(record.action)} · {recordedTax(record)}</p>)}
       {comparison.length === 2 && <EventChanges record={{ ...comparison[1], previousValueJson: comparison[0].newValueJson }} />}
       {comparison.length > 0 && <button onClick={() => setComparison([])}>Clear comparison</button>}
     </section>}
-    <section className="admin-panel audit-panel" aria-busy={loading}>
+    <section className="dc-panel audit-panel" aria-busy={loading}>
       {loading ? <DataState kind="loading" compact title="Loading events" description="Searching your authorized history." /> : error ? <DataState kind="error" compact title="Audit history unavailable" description={error} onRetry={() => setRevision(value => value + 1)} /> : result.total === 0 ? <DataState kind="empty" compact title={result.availableTotal === 0 ? "No records exist" : "No records match"} description={result.availableTotal === 0 ? "Events will appear when activity is recorded in your authorized scope." : "Change or clear the filters to see other events."} /> : <>
-      <p>{caseId ? "Chronological history · oldest first" : "Most recent events first"}</p>
-      <div className="table-wrap"><table className="audit-event-table"><thead><tr><th>Action / reason</th><th>Officer / recorded</th><th>Case reference</th><th>Recorded tax due</th><th>Details</th></tr></thead><tbody>{result.items.map(record => {
-        const details = valuationDetails(record);
+      <p className="au-order">{caseId ? "Chronological · oldest first" : "Most recent first"}</p>
+      <ul className="au-list">{result.items.map(record => {
         const reference = record.caseReference;
-        return <tr key={record.id}><td><strong>{record.action.replaceAll("_", " ")}</strong><small>{record.justification || "Reason not recorded"}</small></td><td>{record.username || record.userId}<small>{new Date(record.occurredAt).toLocaleString()}</small></td><td>{reference ? <a href={`/audit/cases/${reference}`}>{reference}</a> : <span>{record.recordId}</span>}</td><td className="amount-cell">{isValuation(record) ? money(details.totalTaxDue, details.taxCurrency) : "—"}</td><td>{caseId && <label><input type="checkbox" checked={comparison.some(item => item.id === record.id)} disabled={comparison.length === 2 && !comparison.some(item => item.id === record.id)} onChange={event => setComparison(current => event.target.checked ? [...current, record].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id)) : current.filter(item => item.id !== record.id))} /> Compare</label>}<button className="audit-view-button" onClick={() => setSelectedRecord(record)} aria-label={`Inspect ${record.action}`}><FiEye /></button><a href={`${reference ? `/audit/cases/${reference}` : "/audit"}?event=${record.id}`}>Event link</a></td></tr>;
-      })}</tbody></table></div>
+        const declaration = record.importerDeclaration;
+        const reason = record.justification || (isImporterEvent(record) ? declaration?.productName : valuationDetails(record).productName) || "Reason not recorded";
+        const category = categoryOf(record);
+        const Icon = categoryIcon(record);
+        const isCase = category === "CASE";
+        const who = isCase ? null : record.importerProfile ? { name: record.importerProfile.legalName, line: record.importerProfile.tin ? `TIN ${record.importerProfile.tin}` : "Importer" }
+          : record.subject ? { name: record.subject.name || record.subject.username, line: roleLabel(record.subject.role) } : null;
+        const summary = isCase ? reason : record.justification || (record.subject && record.subject.id !== record.userId ? `For ${record.subject.name || record.subject.username}` : "") || sourceLabels[record.source ?? ""] || "";
+        const tax = recordedTax(record);
+        const compared = comparison.some(item => item.id === record.id);
+        // Final assessments link to their invoice: importer-portal declarations and valuation-search valuations.
+        const invoice: { kind: InvoiceKind; id: string } | null = record.action === "IMPORTER_DECLARATION_ASSESSED" && declaration ? { kind: "declaration", id: declaration.id }
+          : record.action === "ETHIOPIAN_IMPORT_TAX_ASSESSMENT_COMPLETED" && record.valuation?.valuationDecisionId ? { kind: "valuation", id: record.valuation.valuationDecisionId } : null;
+        return <li key={record.id} className={`au-row is-${category.toLowerCase()}${compared ? " is-compared" : ""}`}>
+          <span className="au-icon" aria-hidden="true"><Icon /></span>
+          <div className="au-main"><strong>{auditActionLabel(record.action)}</strong><small>{summary}</small>{isCase ? <AuditSourceTag record={record} /> : <span className="au-tag">{auditCategories.find(item => item.key === category)?.label}</span>}{invoice && <div className="au-invoice"><span>Final invoice</span><InvoiceActions kind={invoice.kind} id={invoice.id} compact /></div>}</div>
+          <div className="au-who"><strong>{record.username || record.userId}</strong>{record.actorRole && <em>{roleLabel(record.actorRole)}</em>}<small>{new Date(record.occurredAt).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</small></div>
+          {isCase ? <>
+            <div className="au-case">{reference ? <a href={`/audit/cases/${reference}`} title={reference}>{declaration?.reference ?? reference}</a> : <span title={record.recordId}>{record.recordId.slice(0, 8)}</span>}{declaration && <small>{declaration.importerName || "Importer"}</small>}</div>
+            <div className="au-tax">{tax !== "—" ? <><small>Tax due</small><b>{tax}</b></> : <small>No tax recorded</small>}</div>
+          </> : <>
+            <div className="au-case is-person">{who ? <><strong>{who.name}</strong><small>{who.line}</small></> : <small>{record.module}</small>}</div>
+            <div className="au-tax"><small>{record.branchName || record.regionName || sourceLabels[record.source ?? ""] || ""}</small></div>
+          </>}
+          <div className="au-actions">
+            {caseId && <label className="au-compare"><input type="checkbox" checked={compared} disabled={comparison.length === 2 && !compared} onChange={event => setComparison(current => event.target.checked ? [...current, record].sort((x, y) => x.occurredAt.localeCompare(y.occurredAt) || x.id.localeCompare(y.id)) : current.filter(item => item.id !== record.id))} />Compare</label>}
+            <a className="au-link" href={`${reference ? `/audit/cases/${reference}` : "/audit"}?event=${record.id}`} aria-label="Copyable link to this event" title="Link to this event"><FiLink aria-hidden="true" /></a>
+            <button type="button" className="dc-open" onClick={() => setSelectedRecord(record)} aria-label={`Inspect ${auditActionLabel(record.action)}`}><span>Details</span><i aria-hidden="true"><FiEye /></i></button>
+          </div>
+        </li>;
+      })}</ul>
       <div className="audit-pagination"><span>Showing {(result.page - 1) * result.pageSize + 1}–{Math.min(result.page * result.pageSize, result.total)} of {result.total}</span><button disabled={result.page <= 1} onClick={() => setPage(result.page - 1)}>Previous</button><strong>Page {result.page} of {pages}</strong><button disabled={result.page >= pages} onClick={() => setPage(result.page + 1)}>Next</button></div></>}
     </section>
-    {selectedRecord && (isValuation(selectedRecord) ? <ValuationDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} /> : <GenericDetailModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />)}
+    {selectedRecord && (() => {
+      const close = () => setSelectedRecord(null);
+      const category = categoryOf(selectedRecord);
+      if (category === "CASE") return isImporterEvent(selectedRecord) ? <ImporterDetailModal record={selectedRecord} tariffLines={{ ...linkedTariffLines, ...(result.tariffLines ?? {}) }} onClose={close} />
+        : <ValuationDetailModal record={selectedRecord} onClose={close} />;
+      if (category === "VERIFICATION" && selectedRecord.action !== "DOCUMENT_OPENED" && !selectedRecord.action.endsWith("_DOCUMENT_SCANNED")) return <VerificationDetailModal record={selectedRecord} onClose={close} />;
+      if (category === "REFERENCE") return <GenericDetailModal record={selectedRecord} onClose={close} />;
+      return <ChangeDetailModal record={selectedRecord} onClose={close} />;
+    })()}
   </div>;
 }

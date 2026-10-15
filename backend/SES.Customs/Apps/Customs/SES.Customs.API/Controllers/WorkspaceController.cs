@@ -323,7 +323,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(Regex.IsMatch(username, "^[a-zA-Z0-9_.-]{3,120}$") && fullName.Length > 0 && System.Net.Mail.MailAddress.TryCreate(email, out _), "Provide a valid username, name and email.");
         Validate(employeeNumber.Length > 0 && employeeNumber.Length <= 80, "Provide an employee or staff ID.");
         Validate(Regex.IsMatch(password, "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$"), "Use a strong password with 8+ characters, uppercase, lowercase, number and symbol.");
-        Validate(reason.Length >= 10, "Explain the account creation in at least 10 characters.");
         var (responsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
         Validate(invalidResponsibilities.Length == 0, "Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
         Validate(role != AccessRules.Officer || responsibilities.Length > 0, "Select at least one responsibility for a Customs Officer.");
@@ -348,7 +347,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be changed here.");
         Validate(new[] { "ACTIVE", "PENDING_VALIDATION", "SUSPENDED", "INACTIVE", "LOCKED" }.Contains(input.Status), "Invalid account status.");
-        Validate((input.Reason ?? "").Trim().Length >= 10, "Explain this change in at least 10 characters.");
         await RequireEmployeeLocation(input.LocationId, user.Role, ct);
         var (requestedResponsibilities, invalidResponsibilities) = NormalizeResponsibilities(input.Responsibilities);
         Validate(invalidResponsibilities.Length == 0, "Use only supported responsibilities: Valuation, Inspection, Import, Export or Transit.");
@@ -383,7 +381,6 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         await access.RequireEmployee(user, ct);
         Validate(AccessRules.NormalizeRole(user.Role) != AccessRules.SystemAdmin && id != access.UserId, "System administrators and your own account cannot be archived here.");
         var reason = (input.Reason ?? "").Trim();
-        Validate(reason.Length >= 10, "Explain the archive in at least 10 characters.");
         var before = PublicUser(user);
         var now = DateTimeOffset.UtcNow;
         user.Active = false; user.Status = "INACTIVE"; user.ArchivedAt = now; user.ArchivedBy = access.UserId; user.ArchiveReason = reason; user.UpdatedAt = now; user.Version = Guid.NewGuid();
@@ -490,14 +487,20 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         string? fobCifCalculationJson = null;
         if (string.Equals(form.SelectedPriceSource?.Trim(), "originFobCif", StringComparison.OrdinalIgnoreCase))
         {
-            Validate(form.ImporterDeclarationId.HasValue, "An approved importer declaration is required for origin-country FOB valuation.");
-            var declaration = await db.ImporterDeclarations.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Id == form.ImporterDeclarationId!.Value, ct);
-            Validate(declaration is not null && declaration.Status == "ASSESSMENT_READY" && declaration.LocationId == form.LocationId,
-                "The importer declaration must be approved for valuation in the selected office.");
-            var certificate = await db.ImporterDocuments.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.DeclarationId == declaration!.Id && x.Kind == "CERTIFICATE_OF_ORIGIN", ct);
-            Validate(certificate is not null, "A Certificate of Origin is required for origin-country FOB valuation.");
+            // FOB plus freight and insurance is the standard basis. An importer declaration must be approved and carry its
+            // Certificate of Origin; an officer's own valuation search records the FOB invoice it was given.
+            ImporterDeclaration? declaration = null;
+            ImporterDocument? certificate = null;
+            if (form.ImporterDeclarationId.HasValue)
+            {
+                declaration = await db.ImporterDeclarations.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.Id == form.ImporterDeclarationId.Value, ct);
+                Validate(declaration is not null && declaration.Status == "ASSESSMENT_READY" && declaration.LocationId == form.LocationId,
+                    "The importer declaration must be approved for valuation in the selected office.");
+                certificate = await db.ImporterDocuments.AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.DeclarationId == declaration!.Id && x.Kind == "CERTIFICATE_OF_ORIGIN", ct);
+                Validate(certificate is not null, "A Certificate of Origin is required for origin-country FOB valuation.");
+            }
             Validate(form.FobPriceAmount is > 0 and <= 1_000_000_000_000_000m,
                 "Enter a positive FOB amount within the supported range.");
             Validate(form.FreightAmount.HasValue && form.InsuranceAmount.HasValue,
@@ -516,9 +519,9 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             fobCifCalculationJson = JsonSerializer.Serialize(new
             {
                 basis = "FOB + freight + insurance",
-                originCountryCode = declaration!.OriginCountryCode,
-                originCountryName = declaration.OriginCountryName,
-                certificateOfOrigin = new { certificate!.FileName, certificate.ContentType, certificate.Sha256, certificate.UploadedAt },
+                originCountryCode = declaration?.OriginCountryCode ?? purchaseCountryCode,
+                originCountryName = declaration?.OriginCountryName ?? purchaseCountryName,
+                certificateOfOrigin = certificate is null ? null : new { certificate.FileName, certificate.ContentType, certificate.Sha256, certificate.UploadedAt },
                 fobAmount = form.FobPriceAmount.Value,
                 freightAmount = freight,
                 insuranceAmount = insurance,
@@ -550,8 +553,57 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     {
         var decision = await VisibleDecisions().AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
         if (decision.ReceiptData is not { Length: > 0 }) return NotFound(new { message = "No receipt was captured for this legacy valuation record." });
+        access.AuditAccess("DOCUMENT_OPENED", "Valuations", decision.Id, decision.LocationId, null, $"commercial invoice or receipt · {decision.ReceiptFileName}");
+        await db.SaveChangesAsync(ct);
         return File(decision.ReceiptData, decision.ReceiptContentType, decision.ReceiptFileName);
     }
+    private static readonly string[] DecisionDocumentKinds = ["PACKING_LIST", "CERTIFICATE_OF_ORIGIN"];
+
+    /// <summary>Attaches the packing list or certificate of origin to the officer's own valuation (the receipt is sent on creation).</summary>
+    [HttpPost("decisions/{id:guid}/documents"), RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadDecisionDocument(Guid id, [FromForm] string kind, IFormFile file, CancellationToken ct)
+    {
+        access.Require(AccessRules.Officer);
+        var normalized = (kind ?? "").Trim().ToUpperInvariant();
+        Validate(DecisionDocumentKinds.Contains(normalized), "Upload a packing list or certificate of origin.");
+        Validate(file is { Length: > 0 } && file.Length <= MaximumReceiptBytes, "The document must be a PDF, JPG or PNG of 8 MB or smaller.");
+        Validate(ReceiptTypes.Contains(file!.ContentType), "Document format must be PDF, JPG, or PNG.");
+        var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        await using var stream = new MemoryStream();
+        await file.CopyToAsync(stream, ct);
+        var bytes = stream.ToArray();
+        Validate(IsValidReceiptSignature(bytes, file.ContentType), "The document content does not match its declared PDF or image format.");
+        var existing = await db.ValuationDecisionDocuments.SingleOrDefaultAsync(d => d.ValuationDecisionId == decision.Id && d.Kind == normalized, ct);
+        var document = existing ?? new ValuationDecisionDocument { Id = Guid.NewGuid(), ValuationDecisionId = decision.Id, Kind = normalized };
+        document.FileName = Path.GetFileName(file.FileName); document.ContentType = file.ContentType; document.Size = bytes.LongLength;
+        document.Sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(); document.Content = bytes;
+        document.UploadedAt = DateTimeOffset.UtcNow; document.UploadedBy = access.UserId.ToString();
+        if (existing is null) db.ValuationDecisionDocuments.Add(document);
+        await db.SaveChangesAsync(ct);
+        return Ok(new { document.Kind, document.FileName, document.ContentType, document.Size, document.Sha256, document.UploadedAt });
+    }
+
+    [HttpGet("decisions/{id:guid}/documents")]
+    public async Task<IActionResult> DecisionDocuments(Guid id, CancellationToken ct)
+    {
+        var decision = await VisibleDecisions().AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        var documents = await db.ValuationDecisionDocuments.AsNoTracking().Where(d => d.ValuationDecisionId == decision.Id)
+            .Select(d => new { d.Kind, d.FileName, d.ContentType, d.Size, d.UploadedAt }).ToListAsync(ct);
+        return Ok(new { receipt = decision.ReceiptData is { Length: > 0 } ? new { decision.ReceiptFileName, decision.ReceiptContentType } : null, documents });
+    }
+
+    [HttpGet("decisions/{id:guid}/documents/{kind}")]
+    public async Task<IActionResult> DecisionDocument(Guid id, string kind, CancellationToken ct)
+    {
+        var decision = await VisibleDecisions().AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found.");
+        var normalized = kind.Trim().ToUpperInvariant();
+        var document = await db.ValuationDecisionDocuments.AsNoTracking().SingleOrDefaultAsync(d => d.ValuationDecisionId == decision.Id && d.Kind == normalized, ct);
+        if (document is null) return NotFound(new { message = "Document not found." });
+        access.AuditAccess("DOCUMENT_OPENED", "Valuations", decision.Id, decision.LocationId, null, $"{document.Kind.Replace('_', ' ').ToLowerInvariant()} · {document.FileName}");
+        await db.SaveChangesAsync(ct);
+        return File(document.Content, document.ContentType, document.FileName);
+    }
+
     [HttpGet("audit/{auditId:guid}/receipt")]
     public async Task<IActionResult> AuditReceipt(Guid auditId, CancellationToken ct)
     {
@@ -587,7 +639,7 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         Validate(purchaseCountryName is not null, "Select a valid country where the item was bought.");
         Validate((input.SelectedPriceSource?.Trim().Length ?? 0) is > 0 and <= 80, "Record the selected price source.");
         if (string.Equals(input.SelectedPriceSource?.Trim(), "originFobCif", StringComparison.OrdinalIgnoreCase))
-            Validate(!string.IsNullOrWhiteSpace(fobCifCalculationJson) && fobCifCalculationJson != "{}", "Origin-country FOB values must be calculated from an approved declaration and Certificate of Origin.");
+            Validate(!string.IsNullOrWhiteSpace(fobCifCalculationJson) && fobCifCalculationJson != "{}", "FOB-based customs values must be calculated from the FOB amount, freight and insurance.");
         else
             Validate(fobCifCalculationJson is null, "An FOB calculation may only be saved with the origin-country FOB price source.");
         Validate((input.ValuationMethod?.Trim().Length ?? 0) is > 0 and <= 120, "Record the valuation method.");
@@ -663,7 +715,8 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var decision = await VisibleDecisions().SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new WorkspaceException(404, "Decision not found in your assigned location.");
         Validate(decision.Status == "Submitted" && decision.Version == input.Version && (input.Outcome is "Approved" or "Returned"), "Only a current submitted decision may be approved or returned.");
         var reviewNote = input.Justification?.Trim() ?? "";
-        Validate(reviewNote.Length >= 10, "A review justification is required.");
+        // Approving needs no note; returning a valuation must tell the officer what to fix.
+        Validate(input.Outcome != "Returned" || reviewNote.Length >= 10, "Explain what the officer must correct before returning the valuation.");
         var before = JsonSerializer.SerializeToElement(decision); decision.Status = input.Outcome; decision.ReviewedBy = access.UserId.ToString(); decision.ReviewedAt = DateTimeOffset.UtcNow; decision.ReviewJustification = reviewNote; decision.Version = Guid.NewGuid();
         var audit = access.Audit("VALUATION_REVIEWED", "Valuations", id, before, decision, reviewNote, decision.LocationId);
         var officer = Guid.TryParse(decision.OfficerSubjectId, out var officerId) ? await db.AuthAccounts.AsNoTracking().SingleOrDefaultAsync(user => user.Id == officerId, ct) : null;
@@ -676,33 +729,34 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
     public async Task<IActionResult> Audit(CancellationToken ct, int page = 1, int pageSize = 20,
         string? search = null, string? category = null, string? eventType = null,
         Guid? caseId = null, DateTimeOffset? from = null, DateTimeOffset? to = null,
-        string? officer = null, string? region = null, string? branch = null, Guid? eventId = null)
+        string? officer = null, string? region = null, string? branch = null, Guid? eventId = null, string? source = null)
     {
         var subject = access.UserId.ToString();
-        var administratorBranchId = access.Role == AccessRules.CustomsAdmin
-            ? await db.AuthAccounts.AsNoTracking().Where(u => u.Id == access.UserId).Select(u => u.PrimaryLocationId).SingleOrDefaultAsync(ct)
-            : null;
-        var scopedDecisionIds = access.Role == AccessRules.CustomsAdmin
-            ? await db.ValuationDecisions.AsNoTracking().Where(d => d.LocationId.HasValue && administratorBranchId.HasValue && d.LocationId == administratorBranchId.Value).Select(d => d.Id).ToListAsync(ct)
-            : new List<Guid>();
-        var scopedPhase2Ids = access.Role == AccessRules.CustomsAdmin ? await db.ValuationPhase2s.AsNoTracking().Where(p => scopedDecisionIds.Contains(p.ValuationDecisionId)).Select(p => p.Id).ToListAsync(ct) : new List<Guid>();
-        var query = db.AuditLogs.AsNoTracking().Where(a => access.IsSystem || access.Role == AccessRules.CustomsAdmin && ((administratorBranchId.HasValue && a.LocationId == administratorBranchId.Value) || (a.Module == "EthiopianImportTaxAssessment" && scopedPhase2Ids.Contains(a.RecordId))) || access.Role == AccessRules.Officer && a.UserId == subject);
-        if (access.Role == AccessRules.CustomsAdmin)
-        {
-            var officers = db.AuthAccounts.Where(u => u.Role.Replace("_", "").Replace(" ", "").ToUpper() == "CUSTOMSOFFICER").Select(u => u.Id.ToString());
-            query = query.Where(a => officers.Contains(a.UserId));
-        }
+        var query = await ScopedAudit(subject, ct);
         Validate(!from.HasValue || !to.HasValue || from.Value < to.Value, "The end date must follow the start date.");
-        Validate(string.IsNullOrEmpty(category) || category == "valuations" || category == "changes", "Choose a valid audit category.");
+        var categories = (category ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(c => c.ToUpperInvariant()).ToArray();
+        Validate(categories.All(c => AuditTaxonomy.Categories.Contains(c) || c is "VALUATIONS" or "IMPORTER" or "CHANGES"), "Choose a valid audit category.");
         var availableTotal = await query.CountAsync(ct);
         if (caseId.HasValue)
         {
-            var assessments = db.ValuationPhase2s.Where(p => p.ValuationDecisionId == caseId.Value).Select(p => p.Id);
-            var snapshots = db.ValuationAuditSnapshots.Where(s => s.ValuationDecisionId == caseId.Value).Select(s => s.AuditLogId);
-            query = query.Where(a => a.RecordId == caseId.Value || assessments.Contains(a.RecordId) || snapshots.Contains(a.Id));
+            // A case is a valuation decision or an importer declaration; a declaration that was valued shares one history with its decision.
+            var caseDecisionIds = db.ValuationDecisions.Where(d => d.Id == caseId.Value || d.ImporterDeclarationId == caseId.Value).Select(d => d.Id);
+            var caseDeclarationIds = db.ValuationDecisions.Where(d => d.Id == caseId.Value && d.ImporterDeclarationId != null).Select(d => d.ImporterDeclarationId!.Value);
+            var assessments = db.ValuationPhase2s.Where(p => caseDecisionIds.Contains(p.ValuationDecisionId)).Select(p => p.Id);
+            var snapshots = db.ValuationAuditSnapshots.Where(s => caseDecisionIds.Contains(s.ValuationDecisionId)).Select(s => s.AuditLogId);
+            query = query.Where(a => a.RecordId == caseId.Value || caseDecisionIds.Contains(a.RecordId) || assessments.Contains(a.RecordId) || snapshots.Contains(a.Id)
+                || (a.Module == ImporterDeclarationsModule && caseDeclarationIds.Contains(a.RecordId)));
         }
+        if (categories.Length > 0)
+        {
+            var wanted = categories.Select(c => c switch { "VALUATIONS" or "IMPORTER" => AuditTaxonomy.Case, "CHANGES" => AuditTaxonomy.Staff, _ => c }).Distinct().ToArray();
+            query = query.Where(a => wanted.Contains(a.Category));
+            if (categories.Contains("IMPORTER")) query = query.Where(a => a.Source == AuditTaxonomy.ImporterPortal);
+            if (categories.Contains("VALUATIONS")) query = query.Where(a => a.Source == AuditTaxonomy.ValuationSearch);
+        }
+        if (!string.IsNullOrWhiteSpace(source)) query = query.Where(a => a.Source == source.ToUpperInvariant());
         if (eventId.HasValue) query = query.Where(a => a.Id == eventId.Value);
-        query = SES.Customs.API.Queries.AuditHistoryQuery.Filter(query, category, eventType, from, to, officer);
+        query = SES.Customs.API.Queries.AuditHistoryQuery.Filter(query, null, eventType, from, to, officer);
         if (!string.IsNullOrWhiteSpace(branch) || !string.IsNullOrWhiteSpace(region))
         {
             var regions = db.CustomsLocations.Where(l => region == null || l.Name.Contains(region) || (l.DisplayName != null && l.DisplayName.Contains(region))).Select(l => l.Id);
@@ -729,6 +783,35 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
         var phase2Ids = records.Where(r => r.Module == "EthiopianImportTaxAssessment").Select(r => r.RecordId).ToArray();
         var phase2Locations = await db.ValuationPhase2s.AsNoTracking().Where(p => phase2Ids.Contains(p.Id)).Join(db.ValuationDecisions.AsNoTracking(), p => p.ValuationDecisionId, d => d.Id, (p, d) => new { p.Id, d.LocationId }).ToDictionaryAsync(x => x.Id, x => x.LocationId, ct);
         var phase2Details = await db.ValuationPhase2s.AsNoTracking().Include(p => p.TaxLines).Where(p => phase2Ids.Contains(p.Id)).ToListAsync(ct);
+        Guid? DecisionFor(AuditLog record) => valuationSnapshots.TryGetValue(record.Id, out var snapshot) ? snapshot.ValuationDecisionId
+            : phase2Details.FirstOrDefault(p => p.Id == record.RecordId)?.ValuationDecisionId
+            ?? (record.Module is "Valuation" or "Valuations" ? record.RecordId : null);
+        var recordDecisionIds = records.Select(DecisionFor).OfType<Guid>().Distinct().ToArray();
+        var decisionDeclarations = await db.ValuationDecisions.AsNoTracking().Where(d => recordDecisionIds.Contains(d.Id) && d.ImporterDeclarationId != null)
+            .ToDictionaryAsync(d => d.Id, d => d.ImporterDeclarationId!.Value, ct);
+        Guid? DeclarationFor(AuditLog record) => record.Module == ImporterDeclarationsModule ? record.RecordId
+            : DecisionFor(record) is Guid decisionId && decisionDeclarations.TryGetValue(decisionId, out var declarationId) ? declarationId : null;
+        var declarationIds = records.Select(DeclarationFor).OfType<Guid>().Distinct().ToArray();
+        var declarations = await db.ImporterDeclarations.AsNoTracking().Where(d => declarationIds.Contains(d.Id))
+            .Select(d => new { d.Id, d.ImporterId, d.Reference, d.Status, d.ProductName, d.Brand, d.Model, d.Quantity, d.Unit, d.OriginCountryCode, d.OriginCountryName, d.ImportPurpose,
+                d.InvoiceAmount, d.InvoiceCurrency, d.FreightAmount, d.InsuranceAmount, d.SuggestedTariffLineId, d.ConfirmedTariffLineId, d.SubmittedAt })
+            .ToDictionaryAsync(d => d.Id, ct);
+        var importerIds = declarations.Values.Select(d => d.ImporterId).Distinct().ToArray();
+        var importers = await db.ImporterProfiles.AsNoTracking().Where(p => importerIds.Contains(p.AccountId))
+            .Select(p => new { p.AccountId, p.LegalName, p.TradeName, p.Tin }).ToDictionaryAsync(p => p.AccountId, ct);
+        var declarationCases = (await db.ValuationDecisions.AsNoTracking().Where(d => d.ImporterDeclarationId != null && declarationIds.Contains(d.ImporterDeclarationId.Value))
+            .Select(d => new { d.Id, DeclarationId = d.ImporterDeclarationId!.Value, d.RecordedAt }).ToListAsync(ct))
+            .GroupBy(d => d.DeclarationId).ToDictionary(g => g.Key, g => g.OrderByDescending(d => d.RecordedAt).First().Id);
+        // Importer events store tariff lines as ids; resolve them, and the declarations' own lines, to readable codes.
+        var tariffLineIds = records.Where(r => r.Module == ImporterDeclarationsModule).SelectMany(r => TariffLineIds(r.PreviousValueJson).Concat(TariffLineIds(r.NewValueJson)))
+            .Concat(declarations.Values.SelectMany(d => new[] { d.SuggestedTariffLineId, d.ConfirmedTariffLineId }).OfType<Guid>()).Distinct().ToArray();
+        var tariffLines = await db.NationalTariffLines.AsNoTracking().Where(t => tariffLineIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.TariffItemNo, t.Code, t.DescriptionEn }).ToListAsync(ct);
+        var subjectAccountIds = records.Where(r => r.SubjectUserId.HasValue).Select(r => r.SubjectUserId!.Value).Distinct().ToArray();
+        var subjectAccounts = await db.AuthAccounts.AsNoTracking().Where(a => subjectAccountIds.Contains(a.Id)).Select(a => new { a.Id, a.FullName, a.Username, a.Role, a.Email }).ToDictionaryAsync(a => a.Id, ct);
+        var verificationProfileIds = records.Where(r => r.Module == "ImporterVerification").Select(r => r.RecordId).Distinct().ToArray();
+        var verificationProfiles = await db.ImporterProfiles.AsNoTracking().Where(p => verificationProfileIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.AccountId, p.LegalName, p.TradeName, p.Tin, p.ImporterType, p.VerificationStatus }).ToDictionaryAsync(p => p.Id, ct);
         return Ok(new { total, availableTotal, page, pageSize, items = records.Select(record =>
         {
             var resolvedLocationId = record.LocationId ?? (phase2Locations.TryGetValue(record.RecordId, out var phase2LocationId) ? phase2LocationId : null);
@@ -738,16 +821,33 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
             valuationSnapshots.TryGetValue(record.Id, out var valuationSnapshot);
             var newValueJson = record.NewValueJson;
             // Historical values must come from the event, never from today's assessment.
-            var caseReference = valuationSnapshot?.ValuationDecisionId
-                ?? phase2Details.FirstOrDefault(p => p.Id == record.RecordId)?.ValuationDecisionId
-                ?? ((record.Module == "Valuation" || record.Module == "Valuations") ? (Guid?)record.RecordId : null);
+            var declarationId = DeclarationFor(record);
+            var declaration = declarationId is Guid knownDeclaration && declarations.TryGetValue(knownDeclaration, out var foundDeclaration) ? foundDeclaration : null;
+            var importer = declaration is not null && importers.TryGetValue(declaration.ImporterId, out var foundImporter) ? foundImporter : null;
+            var caseReference = DecisionFor(record)
+                ?? (record.Module == ImporterDeclarationsModule ? declarationCases.TryGetValue(record.RecordId, out var linkedDecision) ? linkedDecision : record.RecordId : null);
             return new
             {
                 record.Id, record.UserId, record.Username, record.OccurredAt, record.Action, record.Module, record.RecordId, record.LocationId, caseReference,
-                record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification,
+                record.PreviousValueJson, NewValueJson = newValueJson, record.Decision, record.Justification, record.IpDeviceInformation,
                 regionName = region?.DisplayName ?? region?.Name,
                 branchName = location?.LocationType == "BRANCH" ? location.DisplayName ?? location.Name : null,
                 supervisorName = supervisor?.FullName ?? supervisor?.Username,
+                source = !string.IsNullOrEmpty(record.Source) ? record.Source : declarationId.HasValue ? "IMPORTER_PORTAL" : record.Module is "Valuation" or "Valuations" or "EthiopianImportTaxAssessment" ? "VALUATION_SEARCH" : null,
+                record.Category, record.ActorRole,
+                subject = record.SubjectUserId is Guid subjectId && subjectAccounts.TryGetValue(subjectId, out var subjectAccount)
+                    ? new { subjectAccount.Id, name = subjectAccount.FullName, subjectAccount.Username, subjectAccount.Email, role = AccessRules.NormalizeRole(subjectAccount.Role) ?? subjectAccount.Role } : null,
+                importerProfile = verificationProfiles.TryGetValue(record.RecordId, out var profileForEvent)
+                    ? new { profileForEvent.Id, profileForEvent.AccountId, profileForEvent.LegalName, profileForEvent.TradeName, profileForEvent.Tin, profileForEvent.ImporterType, currentStatus = profileForEvent.VerificationStatus } : null,
+                importerDeclaration = declaration is null ? null : new
+                {
+                    declaration.Id, declaration.Reference, currentStatus = declaration.Status, declaration.ProductName, declaration.Brand, declaration.Model, declaration.Quantity, declaration.Unit,
+                    declaration.OriginCountryCode, declaration.OriginCountryName, declaration.ImportPurpose, declaration.InvoiceAmount, declaration.InvoiceCurrency,
+                    declaration.FreightAmount, declaration.InsuranceAmount, declaration.SuggestedTariffLineId, declaration.ConfirmedTariffLineId, declaration.SubmittedAt,
+                    importerName = importer is null ? null : string.IsNullOrWhiteSpace(importer.TradeName) || importer.TradeName == importer.LegalName ? importer.LegalName : importer.LegalName + " (" + importer.TradeName + ")",
+                    importerTin = importer?.Tin,
+                    valuationDecisionId = declarationCases.TryGetValue(declaration.Id, out var declarationCase) ? declarationCase : (Guid?)null
+                },
                 valuation = valuationSnapshot is null ? null : new
                 {
                     valuationSnapshot.ValuationDecisionId,
@@ -784,7 +884,47 @@ public sealed class WorkspaceController(CustomsDbContext db, WorkspaceAccess acc
                     decisionDetails = JsonSerializer.Deserialize<JsonElement>(valuationSnapshot.DecisionDetailsJson)
                 }
             };
-        }).ToArray() });
+        }).ToArray(), tariffLines = tariffLines.ToDictionary(t => t.Id.ToString(), t => new { code = string.IsNullOrWhiteSpace(t.TariffItemNo) ? t.Code : t.TariffItemNo, description = t.DescriptionEn }) });
+    }
+
+    /// <summary>
+    /// Which audit events the signed-in staff member may see. System administrators: everything. Customs administrators: every event in
+    /// their region (officers' case work, importer verifications, personnel and branch changes). Customs officers: their own actions plus
+    /// the full history of every case and importer they handled. Importers read their own activity from /api/importer-activity.
+    /// </summary>
+    private async Task<IQueryable<AuditLog>> ScopedAudit(string subject, CancellationToken ct)
+    {
+        var all = db.AuditLogs.AsNoTracking();
+        if (access.IsSystem) return all;
+        if (access.Role == AccessRules.CustomsAdmin)
+        {
+            var region = (await access.Locations(ct)).ToList();
+            return all.Where(a => a.UserId == subject || (a.RegionLocationId.HasValue && region.Contains(a.RegionLocationId.Value)) || (a.LocationId.HasValue && region.Contains(a.LocationId.Value)));
+        }
+        if (access.Role != AccessRules.Officer) throw new WorkspaceException(403, "Your role cannot read the audit trail.");
+        var touched = db.AuditLogs.Where(a => a.UserId == subject && a.Category != AuditTaxonomy.Security).Select(a => a.RecordId);
+        var cases = db.ValuationDecisions.Where(d => touched.Contains(d.Id) || (d.ImporterDeclarationId != null && touched.Contains(d.ImporterDeclarationId.Value)));
+        var caseIds = cases.Select(d => d.Id);
+        var declarationIds = cases.Where(d => d.ImporterDeclarationId != null).Select(d => d.ImporterDeclarationId!.Value);
+        var assessmentIds = db.ValuationPhase2s.Where(p => caseIds.Contains(p.ValuationDecisionId)).Select(p => p.Id);
+        return all.Where(a => a.UserId == subject
+            || (a.Category != AuditTaxonomy.Security && (touched.Contains(a.RecordId) || caseIds.Contains(a.RecordId) || declarationIds.Contains(a.RecordId) || assessmentIds.Contains(a.RecordId))));
+    }
+
+    private const string ImporterDeclarationsModule = "ImporterDeclarations";
+
+    private static IEnumerable<Guid> TariffLineIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            var root = JsonSerializer.Deserialize<JsonElement>(json);
+            if (root.ValueKind != JsonValueKind.Object) return [];
+            return new[] { "SuggestedTariffLineId", "ConfirmedTariffLineId" }
+                .Select(name => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.TryGetGuid(out var id) ? id : (Guid?)null)
+                .OfType<Guid>().ToArray();
+        }
+        catch (JsonException) { return []; }
     }
 
     private static string? ProductName(string? evidenceNotes)

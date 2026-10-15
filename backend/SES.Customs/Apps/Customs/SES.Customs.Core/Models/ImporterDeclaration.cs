@@ -45,6 +45,9 @@ public sealed class ImporterDeclaration
     public string ReviewNote { get; set; } = "";
     public Guid? ReviewedById { get; set; }
     public DateTimeOffset? ReviewedAt { get; set; }
+    /// <summary>When an officer first opened the submission; until then the importer may still edit it.</summary>
+    public DateTimeOffset? ReviewStartedAt { get; set; }
+    public Guid? ReviewStartedById { get; set; }
     public DateTimeOffset SubmittedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public Guid Version { get; set; } = Guid.NewGuid();

@@ -81,12 +81,16 @@ $env:Skeleton__UseDemoData = "false"
 dotnet run --project backend/SES.Customs/Apps/Customs/SES.Customs.API/SES.Customs.API.csproj --no-launch-profile
 ```
 
-Portal terminal:
+Portal terminal, for everyday use (a production build: pages open instantly and links are preloaded):
 
 ```powershell
 Set-Location portal
-npm run dev
+$env:NODE_ENV = "production"
+npm run build
+npm run start -- -p 3000
 ```
+
+Rebuild and restart after pulling or changing portal code. While editing portal code, use `npm run dev` instead; it reloads changes automatically but compiles each page the first time you open it, so the first visit to a page takes a few seconds. If the machine sets `NODE_ENV=production` globally, set `$env:NODE_ENV = "development"` before `npm run dev`.
 
 Open `http://127.0.0.1:3000` and verify `http://127.0.0.1:5080/health/live` returns `ok`.
 

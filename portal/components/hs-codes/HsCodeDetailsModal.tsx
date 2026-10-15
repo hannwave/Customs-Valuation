@@ -1,5 +1,6 @@
 "use client";
 
+import { HsItem } from "@/components/hs/HsItem";
 import {
   Badge,
   Button,
@@ -141,7 +142,7 @@ export function HsCodeDetailsModal({
                     letterSpacing: "0.6px",
                   }}
                 >
-                  {hsCode.code || t("hsCatalogue.noCode", "No HS code assigned")}
+                  <HsItem code={hsCode.code} description={description} empty={t("hsCatalogue.noCode", "No HS code assigned")} full />
                 </span>
 
                 {revision?.status && (
@@ -166,7 +167,7 @@ export function HsCodeDetailsModal({
                   color: "var(--navy)",
                 }}
               >
-                {hsCode.code || t("hsCatalogue.noCode", "No HS code assigned")}
+                <HsItem code={hsCode.code} description={description} empty={t("hsCatalogue.noCode", "No HS code assigned")} full />
               </Title>
 
               <Text

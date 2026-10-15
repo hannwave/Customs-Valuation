@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { FiAlertTriangle, FiCheckCircle, FiEdit3, FiZap } from "react-icons/fi";
 import { HsPicker } from "@/components/officer/HsPicker";
 import { importerApi, type TariffOption } from "@/lib/importer";
-import { lineCode, type TariffLineView } from "@/lib/officer-case";
+import { lineCode, lineTitle, readableTariffText, type TariffLineView } from "@/lib/officer-case";
+import { HsItem } from "@/components/hs/HsItem";
 
 const rateLabels: [string, string][] = [["DR", "Duty"], ["ER", "Excise"], ["VAT", "VAT"], ["WHR", "Withholding"], ["SR", "Surtax"], ["D2R", "2nd sched."]];
 
@@ -56,10 +57,9 @@ export function HsClassificationCard({ line, source, productName, description, e
     </header>
     {line ? <div className="oc-hs-current">
       <div className="oc-hs-code-block">
-        <strong className="oc-hs-code">{lineCode(line)}</strong>
+        <strong className="oc-hs-desc"><HsItem code={lineCode(line)} description={lineTitle(line)} full /></strong>
         <span className={`oc-hs-source is-${source}`}>{source === "officer" ? <FiCheckCircle aria-hidden="true" /> : source === "pending" ? <FiEdit3 aria-hidden="true" /> : <FiZap aria-hidden="true" />}{sourceLabel}</span>
       </div>
-      <p className="oc-hs-desc">{line.description.toLowerCase() === "other" && line.hsDescription ? `${line.hsDescription} — other` : line.description}</p>
       <p className="oc-muted">{line.sectionNumber && `Section ${line.sectionNumber} · `}Chapter {line.chapter}{line.chapterName ? ` ${line.chapterName}` : ""}{line.heading ? ` · Heading ${line.heading}` : ""}{line.nationalCode ? <> · ERCA <span className="oc-mono">{line.nationalCode}</span></> : null}</p>
       {line.retired && <p className="oc-callout is-warning"><FiAlertTriangle aria-hidden="true" />This tariff line is no longer in the current ERCA tariff book. Choose its replacement.</p>}
       {rates.length > 0 && <div className="hs-tax-rates oc-rate-strip" aria-label="Tariff rates">{rateLabels.map(([code, label]) => { const rate = rates.find(item => item.taxCode === code);
@@ -68,7 +68,7 @@ export function HsClassificationCard({ line, source, productName, description, e
     {editable && alternatives.length > 0 && <div className="oc-hs-alternatives">
       <span>Other likely lines for “{productName}”</span>
       <div>{alternatives.map(item => <button key={item.tariffLineId} type="button" onClick={() => choose(item, "")} disabled={busy} title={item.hsDescription}>
-        <b className="oc-mono">{item.tariffItemNo || item.hsCode}</b><span>{item.description.toLowerCase() === "other" ? `${item.hsDescription} — other` : item.description}</span></button>)}</div>
+        <HsItem code={item.tariffItemNo || item.hsCode} description={readableTariffText(item.description, item.hsDescription)} /></button>)}</div>
     </div>}
     {picking && <HsPicker title="Choose the correct tariff line" productName={productName} description={description} currentLineId={line?.tariffLineId} askNote={askNote} busy={busy}
       onSelect={choose} onClose={() => setPicking(false)} />}

@@ -14,6 +14,8 @@ import { Brand } from "@/components/Brand";
 import { getSessionAccessToken, setSessionAccessToken } from "@/lib/auth/session";
 import { normalizeWorkspaceRole, roleLabel, workspaceApi, type WorkspaceNotifications, type WorkspaceProfile, type WorkspaceRole } from "@/lib/workspace";
 import { clearValuationSession, readValuationSession } from "@/lib/valuation-session";
+import { ToastMessage } from "@/components/Toaster";
+import { toast } from "@/lib/toast";
 
 type NavLink = { href: string; key: string; label: string; icon: typeof FiGrid; notificationKey?: keyof WorkspaceNotifications };
 type NavGroup = { label: string; links: NavLink[] };
@@ -48,13 +50,11 @@ function navForRole(role: WorkspaceRole, hasValuationSession = false): NavGroup[
     { label: "MONITORING", links: [{ href: "/analytics", key: "analytics", label: "Staff analytics", icon: FiBarChart2 }, { href: "/audit", key: "audit", label: "Audit activity", icon: FiActivity }] },
     accountGroup,
   ];
-  const sessionGroups = hasValuationSession ? [
-    { label: "PRICE ANALYSIS", links: evidenceLinks },
-    { label: "ACTIVITY", links: [{ href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
-  ] : [];
+  const sessionGroups = hasValuationSession ? [{ label: "PRICE ANALYSIS", links: evidenceLinks }] : [];
   return [
     { label: "OPERATIONS", links: [{ href: "/dashboard", key: "dashboard", label: "Valuation search", icon: FiGrid }, { href: "/importer-review", key: "importerReview", label: "Importer submissions", icon: FiFileText }, { href: "/importer-verifications", key: "importerVerifications", label: "Importer verification", icon: FiUserCheck }, { href: "/hs-codes", key: "hsCodes", label: "HS code search", icon: FiBookOpen }] },
     ...sessionGroups,
+    { label: "ACTIVITY", links: [{ href: "/audit", key: "audit", label: "My activity", icon: FiActivity }] },
     accountGroup,
   ];
 }
@@ -70,7 +70,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const [hasValuationSession, setHasValuationSession] = useState(false);
   const [notifications, setNotifications] = useState<WorkspaceNotifications | null>(null);
   const isAuthPage = pathname === "/login" || pathname === "/signup" || pathname === "/employee-registration";
-  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact" || pathname === "/importer" || pathname.startsWith("/importer/") || pathname === "/document-viewer";
+  const isPublicLanding = pathname === "/" || pathname === "/about" || pathname === "/contact" || pathname === "/importer" || pathname.startsWith("/importer/") || pathname === "/document-viewer" || pathname === "/invoice-viewer";
 
   useEffect(() => { document.documentElement.lang = i18n.resolvedLanguage ?? "en"; }, [i18n.resolvedLanguage]);
   useEffect(() => {
@@ -81,14 +81,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     setAuthorized(true);
+  }, [pathname, isAuthPage, isPublicLanding]);
+  // The profile is loaded once per session (and on "profile-updated"), not on every route change,
+  // so navigation never waits on or repeats this request. A failed load is retried on the next navigation.
+  const profileLoaded = Boolean(profile);
+  useEffect(() => {
+    if (!authorized || isAuthPage || isPublicLanding || profileLoaded) return;
+    let cancelled = false;
     setProfileError("");
     void workspaceApi<WorkspaceProfile>("/me")
       .then(current => {
+        if (cancelled) return;
         const role = normalizeWorkspaceRole(current.user.role);
         setProfile(role ? { ...current, user: { ...current.user, role } } : current);
       })
-      .catch(error => setProfileError(error instanceof Error ? error.message : "Profile unavailable."));
-  }, [pathname, isAuthPage, isPublicLanding]);
+      .catch(error => { if (!cancelled) setProfileError(error instanceof Error ? error.message : "Profile unavailable."); });
+    return () => { cancelled = true; };
+  }, [authorized, isAuthPage, isPublicLanding, profileLoaded, pathname]);
   useEffect(() => {
     if (isAuthPage || isPublicLanding || !authorized) return;
     const refreshProfile = () => {
@@ -111,7 +120,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     const refreshNotifications = () => {
       void workspaceApi<WorkspaceNotifications>("/notifications")
-        .then(current => { if (!cancelled) setNotifications(current); })
+        .then(current => {
+          if (cancelled) return;
+          setNotifications(previous => {
+            if (previous && current.pendingOfficerApplications > previous.pendingOfficerApplications) {
+              const added = current.pendingOfficerApplications - previous.pendingOfficerApplications;
+              toast.notification(`${added} new Customs Officer application${added === 1 ? "" : "s"} waiting for review.`, { title: "New officer application", href: "/administration", key: "officer-applications" });
+            }
+            return current;
+          });
+        })
         .catch(() => { if (!cancelled) setNotifications(null); });
     };
     refreshNotifications();
@@ -210,7 +228,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      {profileError && <div className="service-notice" role="status"><FiInfo />{profileError} Refresh the page after the API is available.</div>}
+      <ToastMessage kind="warning" title="Service unavailable" message={profileError ? `${profileError} Refresh the page after the API is available.` : ""} duration={0} />
       <main id="main-content" tabIndex={-1}>{children}</main>
       <footer className="workspace-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield />{profile ? `${roleLabel(profile.user.role)} access` : "Valuation decision support"}</span></footer>
     </div>

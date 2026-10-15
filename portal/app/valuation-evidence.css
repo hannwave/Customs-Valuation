@@ -1,0 +1,134 @@
+/* Shared price evidence (importer case + valuation search). Uses the --iv-* tokens, which have dark-mode values. */
+.ve { display: grid; gap: 14px; }
+.ve-weight { max-width: 360px; }
+.ve-badge { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--iv-accent-soft); color: var(--iv-accent-strong); font-size: 11px; font-style: normal; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; vertical-align: 2px; }
+.ve-loading { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--iv-border); border-top-color: var(--iv-accent); border-radius: 50%; animation: ve-spin .8s linear infinite; vertical-align: middle; }
+@keyframes ve-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ve-loading { animation: none; } }
+.ve-viewer { display: grid; gap: 12px; padding-top: 6px; }
+.ve-viewer > .oc-segmented { width: fit-content; max-width: 100%; overflow-x: auto; }
+.ve-panel { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface-2); }
+.ve-panel .oc-muted { margin: 0; }
+.ve-figure { display: grid; gap: 4px; }
+.ve-figure > span { color: var(--iv-muted); font-size: 12.5px; }
+.ve-figure strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; color: var(--iv-text); font-size: 24px; font-variant-numeric: tabular-nums; }
+.ve-figure strong small { color: var(--iv-muted); font-size: 13px; font-weight: 600; }
+.ve-figure em { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-style: normal; font-weight: 800; }
+.ve-figure em.is-up { background: var(--iv-success-soft); color: var(--iv-success); }
+.ve-figure em.is-down { background: var(--iv-danger-soft); color: var(--iv-danger); }
+.ve-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.ve-facts > div { padding: 8px 10px; border: 1px solid var(--iv-border); border-radius: 9px; background: var(--iv-surface); }
+.ve-facts dt { color: var(--iv-muted); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.ve-facts dd { margin: 2px 0 0; color: var(--iv-text); font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+.ve-spark { width: 100%; height: 70px; }
+.ve-spark polyline { fill: none; stroke: var(--iv-accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.oc-offers-list { list-style: none; display: grid; max-height: 380px; margin: 0; padding: 0; overflow-y: auto; }
+.oc-offers-list li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--iv-border); font-size: 13px; color: var(--iv-text); }
+.oc-offers-list li:not(:has(img)) { grid-template-columns: minmax(0, 1fr) auto auto; }
+.oc-offers-list li img { width: 44px; height: 44px; border-radius: 8px; object-fit: contain; background: #fff; }
+.oc-offers-list li strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oc-offers-list li small { color: var(--iv-muted); }
+.oc-offers-list li a { color: var(--iv-accent); }
+.oc-link { padding: 0; border: 0; background: none; color: var(--iv-accent); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+@media (max-width: 760px) { .ve-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Global base market board on the valuation search. */
+.vb-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.vb-tile { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); color: var(--iv-text); }
+.vb-tile > span { color: var(--iv-muted); font-size: 12px; font-weight: 700; }
+.vb-tile strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.vb-tile small { color: var(--iv-muted); font-size: 12px; }
+.vb-tile em { font-size: 12px; font-style: normal; font-weight: 800; }
+.vb-tile em.is-up { color: var(--iv-success); }
+.vb-tile em.is-down { color: var(--iv-danger); }
+.vb-tile .ve-spark { height: 36px; }
+
+/* Phase 2: purpose of import and what still blocks confirmation. */
+.phase2-purpose { display: grid; gap: 10px; margin: 14px 0; padding: 14px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); }
+.phase2-purpose legend { padding: 0 6px; color: var(--iv-text); font-size: 14px; font-weight: 800; }
+.phase2-purpose legend small { margin-left: 8px; color: var(--iv-muted); font-size: 12px; font-weight: 600; }
+.phase2-purpose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.phase2-purpose-row select { min-width: 260px; min-height: 40px; padding: 8px 11px; border: 1px solid var(--iv-border-strong); border-radius: 9px; background: var(--iv-surface); color: var(--iv-text); font: inherit; }
+.phase2-purpose-note { margin: 0; padding: 10px 12px; border: 1px solid var(--iv-success-border); border-radius: 10px; background: var(--iv-success-soft); color: var(--iv-text); font-size: 13.5px; line-height: 1.5; }
+.phase2-blockers { display: grid; gap: 4px; margin: 10px 0 0; padding: 10px 12px 10px 28px; border: 1px solid var(--iv-warning-border); border-radius: 10px; background: var(--iv-warning-soft); color: var(--iv-text); font-size: 13px; line-height: 1.45; }
+
+/* Valuation search page. */
+.vs-page { display: grid; gap: 18px; }
+.vs-heading { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.vs-heading h1 { margin: 4px 0; }
+.vs-heading .lead { margin: 0; max-width: 760px; }
+.vs-board { overflow: hidden; }
+.vs-board-toggle { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 20px; border: 0; background: none; color: var(--iv-text); font: inherit; text-align: left; cursor: pointer; }
+.vs-board-toggle > svg:first-child { flex: none; font-size: 20px; color: var(--iv-accent); }
+.vs-board-toggle span { flex: 1; display: grid; gap: 2px; }
+.vs-board-toggle strong { font-size: 16px; }
+.vs-board-toggle small { color: var(--iv-muted); font-size: 13px; }
+.vs-board-toggle .is-open { transform: rotate(180deg); }
+.vs-required { color: var(--iv-warning); font-weight: 700; }
+
+/* Phase 2 table: keep the reason short in the amount column; the full text is in "Calculation and changes". */
+.tax-line-assessment-status small { display: -webkit-box; max-width: 180px; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; }
+.phase2-reference-tax-table td:last-child, .phase2-reference-tax-table td:nth-last-child(2) { min-width: 140px; }
+.phase2-reference-tax-table td .tax-line-assessment-status { min-width: 130px; }
+
+/* Customs value step: the price references shown big at the top, each a selectable card with its details. */
+.ve-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.ve-card { --tone: var(--iv-accent); position: relative; display: grid; align-content: start; gap: 6px; min-width: 0; padding: 16px 16px 12px; border: 1.5px solid var(--iv-border); border-radius: 14px; background: var(--iv-surface); color: var(--iv-text); cursor: pointer; overflow: hidden; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.ve-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--tone); }
+.ve-card.is-paid { --tone: #6b5bd2; }
+.ve-card.is-fob { --tone: var(--iv-success); }
+.ve-card.is-market { --tone: var(--iv-accent); }
+.ve-card.is-base { --tone: #c47a12; }
+.ve-card:hover { border-color: color-mix(in srgb, var(--tone) 60%, var(--iv-border)); transform: translateY(-1px); box-shadow: var(--iv-shadow); }
+.ve-card:focus-visible { outline: 2px solid var(--tone); outline-offset: 2px; }
+.ve-card.is-selected { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 7%, var(--iv-surface)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 22%, transparent); }
+.ve-card.is-unavailable .ve-card-value { color: var(--iv-muted); }
+.ve-card header { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ve-card-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--tone) 14%, var(--iv-surface)); color: var(--tone); }
+.ve-card-title { flex: 1; min-width: 0; overflow: hidden; color: var(--iv-text); font-size: 13.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.ve-card .ve-badge { margin: 0; flex: none; background: color-mix(in srgb, var(--tone) 14%, var(--iv-surface)); color: var(--tone); }
+.ve-card-check { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border: 1.5px solid var(--iv-border-strong); border-radius: 999px; color: var(--iv-on-accent); font-size: 12px; }
+.ve-card.is-selected .ve-card-check { border-color: var(--tone); background: var(--tone); }
+.ve-card-value { margin-top: 6px; color: var(--iv-text); font-size: 26px; font-weight: 850; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.ve-card-unit { color: var(--iv-muted); font-size: 12.5px; font-weight: 650; }
+.ve-card-facts { display: grid; gap: 4px; margin: 6px 0 0; padding-top: 8px; border-top: 1px dashed var(--iv-border); }
+.ve-card-facts > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.ve-card-facts dt { flex: none; color: var(--iv-muted); }
+.ve-card-facts dd { min-width: 0; margin: 0; overflow: hidden; color: var(--iv-text); font-weight: 700; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.ve-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--iv-border); }
+.ve-card-diff { color: var(--iv-muted); font-size: 12px; font-weight: 750; }
+.ve-card-diff.is-up { color: var(--iv-success); }
+.ve-card-diff.is-down { color: var(--iv-danger); }
+.ve-card-reason { color: var(--iv-warning); font-size: 12px; font-weight: 650; }
+.ve-card-more { flex: none; color: var(--tone); font-size: 12px; font-weight: 800; }
+.ve-card.is-viewing .ve-card-more { text-decoration: underline; }
+
+.ve-compare { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface-2); }
+.ve-compare-row { --tone: var(--iv-accent); display: grid; grid-template-columns: minmax(120px, 200px) minmax(0, 1fr) auto; align-items: center; gap: 12px; font-size: 12.5px; }
+.ve-compare-row.is-paid { --tone: #6b5bd2; } .ve-compare-row.is-fob { --tone: var(--iv-success); } .ve-compare-row.is-base { --tone: #c47a12; }
+.ve-compare-row span { overflow: hidden; color: var(--iv-muted); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.ve-compare-row b { color: var(--iv-text); font-variant-numeric: tabular-nums; }
+.ve-compare-row.is-selected span, .ve-compare-row.is-selected b { color: var(--tone); }
+.ve-compare-track { height: 10px; border-radius: 999px; background: var(--iv-border); overflow: hidden; }
+.ve-compare-track i { display: block; height: 100%; border-radius: inherit; background: var(--tone); }
+
+.ve-other { display: grid; gap: 8px; }
+.ve-other-title { color: var(--iv-muted); font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.ve-chosen { display: grid; gap: 2px; padding: 14px 18px; border: 1.5px solid var(--iv-accent); border-radius: 14px; background: var(--iv-accent-soft); }
+.ve-chosen span { color: var(--iv-muted); font-size: 12.5px; font-weight: 700; }
+.ve-chosen strong { color: var(--iv-accent-strong); font-size: 24px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.ve-chosen small { color: var(--iv-muted); font-size: 12.5px; }
+.ve-chosen.is-empty { border-style: dashed; background: var(--iv-surface-2); }
+.ve-chosen.is-empty strong { color: var(--iv-muted); }
+.ve-panel .oc-search-row { margin-bottom: 4px; }
+[data-theme="dark"] .ve-card.is-paid, [data-theme="dark"] .ve-compare-row.is-paid { --tone: #a596ff; }
+[data-theme="dark"] .ve-card.is-base, [data-theme="dark"] .ve-compare-row.is-base { --tone: #f0b44c; }
+@media (max-width: 760px) { .ve-compare-row { grid-template-columns: 1fr auto; } .ve-compare-track { grid-column: 1 / -1; grid-row: 2; } .ve-card-value { font-size: 22px; } }
+/* The form column is narrow: two cards per row, full titles, amounts on one line. */
+.ve-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ve-hero.is-1 { grid-template-columns: minmax(0, 1fr); }
+.ve-hero.is-3 > .ve-card:last-child { grid-column: 1 / -1; }
+.ve-card-title { white-space: normal; line-height: 1.25; }
+.ve-card-value { font-size: clamp(20px, 2.1vw, 26px); white-space: nowrap; overflow-wrap: normal; }
+.ve-card .ve-badge { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .ve-hero, .ve-hero.is-3 { grid-template-columns: minmax(0, 1fr); } }

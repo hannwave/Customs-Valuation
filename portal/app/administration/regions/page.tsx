@@ -6,6 +6,7 @@ import { DataState } from "@/components/DataState";
 import LocationCoordinatesFieldset from "@/components/LocationCoordinatesFieldset";
 import { coordinateValidationMessage, hasRecordedEthiopianCoordinates, parseCoordinate } from "@/lib/location-coordinates";
 import { workspaceApi, type CustomsLocation, type LocationStatus, type WorkspaceProfile } from "@/lib/workspace";
+import { ToastMessage } from "@/components/Toaster";
 
 type LocationHistory = { id: string; changedAt: string; changedBy: string; changeReason: string };
 type RegionForm = {
@@ -173,8 +174,8 @@ export default function RegionsPage() {
         </span>
       </div>
 
-      {error && <DataState kind="error" compact title="Action failed" description={error} onRetry={() => void load()} />}
-      {notice && <p className="management-notice" role="status">{notice}</p>}
+      <ToastMessage kind="error" title="Action failed" message={error} onClear={() => setError("")} action={{ label: "Try again", onClick: () => void load() }} />
+      <ToastMessage kind="success" message={notice} onClear={() => setNotice("")} />
 
       <section className="admin-panel">
         <div className="panel-heading">

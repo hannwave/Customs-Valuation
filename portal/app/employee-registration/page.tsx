@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { FiArrowRight, FiCheck, FiLock, FiMapPin, FiShield } from "react-icons/fi";
 import { AuthShell } from "@/components/AuthShell";
+import { ToastMessage } from "@/components/Toaster";
 
 type LocationOption = { id: string; officialCode: string; name: string; displayName: string; locationType: string; parentLocationId: string | null; region: string; zone: string };
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
@@ -33,7 +34,7 @@ export default function EmployeeRegistrationPage() {
   return <AuthShell signup compact>{sent ? <div className="registration-success" role="status"><span className="form-heading-icon"><FiCheck /></span><p className="eyebrow">APPLICATION SUBMITTED</p><h1>Your application is in review</h1><p className="lead">A System Administrator will review your Customs Administrator application. Your password and username remain private.</p><Link className="primary-link" href="/login">Back to sign in <FiArrowRight /></Link></div> : <form className="auth-form signup-form paper-form" onSubmit={submit} aria-busy={busy}>
     <p className="eyebrow">EMPLOYEE APPLICATION</p><h1>Apply as a Customs Administrator</h1><p className="auth-subtitle">Complete the application in order: your details, your region, then your assigned branch.</p>
     <div className="paper-form-note"><FiShield aria-hidden="true" /><div><strong>System Administrator review</strong><p>Your application is reviewed before access is activated. Your password and username are never shown to the reviewer.</p></div></div>
-    {error && <p className="auth-error" role="alert">{error}</p>}
+    <ToastMessage kind="error" message={error} onClear={() => setError("")} />
     <div className="form-grid">
       <div className="wide form-section-label"><span>1</span><div><strong>Employee details</strong><small>Identify yourself using your official staff information.</small></div></div>
       <div className="field-group"><label htmlFor="fullName">Full name<span className="required-mark"> *</span></label><input id="fullName" name="fullName" required autoComplete="name" /></div>

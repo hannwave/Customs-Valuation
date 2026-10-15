@@ -31,7 +31,12 @@ public sealed class AuthController(AuthService auth, IConfiguration configuratio
     {
         if (string.IsNullOrWhiteSpace(request.Identity) || string.IsNullOrWhiteSpace(request.Password)) return BadRequest(new { message = "Username/email and password are required." });
         var user = await auth.FindAsync(request.Identity, ct);
-        if (user is null || !AuthService.Verify(user, request.Password)) return Unauthorized(new { message = "Invalid username or password." });
+        if (user is null || !AuthService.Verify(user, request.Password))
+        {
+            // A wrong password for a known account is a security event; unknown identities are not recorded.
+            if (user is not null) await auth.RecordFailedSignInAsync(user.Id, HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
+            return Unauthorized(new { message = "Invalid username or password." });
+        }
         if (!user.Active || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
             return StatusCode(StatusCodes.Status403Forbidden, new { code = "ACCOUNT_PENDING_VALIDATION", message = $"This account is {LoginStatus(user.Status)}. A System Administrator must validate the officer account before sign-in." });
         await auth.RecordLoginAsync(user.Id, ct);

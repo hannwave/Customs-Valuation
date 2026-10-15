@@ -2,6 +2,7 @@
 import { Badge, Card, Divider, Box, SimpleGrid, Stack, Text, Group, rem, } from "@mantine/core";
 import { useTranslation } from "react-i18next";
 import type { HsCode, HsRevision, } from "@/lib/types/customs";
+import { HsItem } from "@/components/hs/HsItem";
 
 interface HsCodeDetailsProps {
   hsCode: HsCode;
@@ -136,7 +137,7 @@ export function HsCodeDetails({
               overflowWrap: "anywhere",
             }}
           >
-            {hsCode.code}
+            <HsItem code={hsCode.code} description={description} full />
           </Text>
         </Box>
 

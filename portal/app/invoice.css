@@ -1,0 +1,159 @@
+/* Customs assessment invoice. Colour on screen and in the downloaded PDF; the print stylesheet turns it black and white. */
+.fi-viewer .fi-stage { display: block; overflow: auto; padding: 28px 16px 48px; }
+
+.fi-paper {
+  --fi-navy: #16325c; --fi-gold: #c49116; --fi-ink: #1e293b; --fi-muted: #68768a; --fi-panel: #eef2f8; --fi-line: #dde4ee;
+  position: relative; display: grid; gap: 16px; width: min(794px, 100%); margin: 0 auto; padding: 48px 52px 30px;
+  border-radius: 4px; background: #ffffff; color: var(--fi-ink); box-shadow: 0 18px 50px #0f2a4a33;
+  font-family: Arial, Helvetica, "Noto Sans Ethiopic", Nyala, sans-serif; font-size: 13px; line-height: 1.4;
+}
+.fi-flag { position: absolute; top: 34px; right: 52px; display: flex; }
+.fi-flag i { width: 22px; height: 4px; background: #078930; }
+.fi-flag i:nth-child(2) { background: #fcd116; }
+.fi-flag i:nth-child(3) { background: #da121a; }
+
+.fi-brand { display: flex; align-items: center; gap: 26px; }
+.fi-logo { display: grid; justify-items: center; flex: none; width: 104px; color: #1e3a8a; text-align: center; }
+.fi-logo img { width: 92px; height: auto; }
+.fi-logo small { display: block; font-size: 11px; font-weight: 700; line-height: 1.1; }
+.fi-logo small + small { font-size: 6.5px; letter-spacing: .04em; }
+.fi-brand-name p[lang="am"] { margin: 0; color: var(--fi-navy); font-family: "Noto Sans Ethiopic", Nyala, Ebrima, "Abyssinica SIL", sans-serif; font-size: 30px; font-weight: 600; line-height: 1.15; }
+.fi-brand-name h2 { margin: 4px 0 6px; color: var(--fi-navy); font-size: 23px; font-weight: 700; letter-spacing: .01em; }
+.fi-tagline { margin: 0; color: var(--fi-muted); font-size: 9.5px; letter-spacing: .06em; }
+.fi-tagline span { margin: 0 8px; }
+.fi-rule { position: relative; height: 1.5px; margin-top: 4px; background: var(--fi-navy); }
+.fi-rule::before { content: ""; position: absolute; left: 0; top: -1.5px; width: 80px; height: 4px; background: var(--fi-gold); }
+
+.fi-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--fi-line); }
+.fi-eyebrow, .fi-label { color: var(--fi-muted); font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.fi-eyebrow { margin: 6px 0 2px; }
+.fi-title h1 { margin: 0; color: var(--fi-navy); font-size: 34px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
+.fi-ref { margin: 6px 0 0; color: var(--fi-muted); font-size: 11.5px; }
+.fi-status { display: grid; justify-items: end; gap: 16px; }
+.fi-pill { padding: 6px 22px; border-radius: 999px; background: #def5e8; color: #15803d; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.fi-paper.is-provisional .fi-pill { background: #fcf1d6; color: #a16207; }
+.fi-status strong { color: var(--fi-navy); font-size: 16px; }
+
+.fi-parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.fi-parties.is-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fi-parties > div { display: grid; gap: 6px; align-content: start; }
+.fi-parties strong { color: var(--fi-ink); font-size: 14px; }
+.fi-parties small { color: var(--fi-muted); font-size: 12.5px; }
+
+.fi-section { display: flex; align-items: center; gap: 12px; margin: 6px 0 -2px; color: var(--fi-navy); font-size: 15px; font-weight: 700; }
+.fi-section span { display: grid; place-items: center; width: 28px; height: 22px; border-radius: 4px; background: var(--fi-panel); font-size: 10px; }
+
+.fi-goods { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; padding: 18px 20px; border-radius: 8px; background: var(--fi-panel); }
+.fi-goods-main { display: grid; gap: 6px; align-content: start; }
+.fi-goods-main strong { color: var(--fi-navy); font-size: 19px; }
+.fi-goods-main p { margin: 2px 0 0; color: var(--fi-ink); font-size: 12.5px; }
+.fi-goods-main small, .fi-goods-side > small { color: var(--fi-muted); font-size: 11.5px; }
+.fi-goods-side { display: grid; gap: 6px; align-content: start; padding-left: 24px; border-left: 1px solid var(--fi-line); }
+.fi-code { color: var(--fi-navy); font-size: 23px; font-weight: 700; letter-spacing: .01em; }
+.fi-goods-side dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 0; }
+.fi-goods-side dl div { display: grid; gap: 6px; }
+.fi-goods-side dd { margin: 0; font-size: 13.5px; }
+
+.fi-values { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--fi-line); border-radius: 8px; }
+.fi-values > div { display: grid; gap: 6px; padding: 16px 20px; }
+.fi-values > div + div { border-left: 1px solid var(--fi-line); }
+.fi-values p { display: flex; align-items: baseline; gap: 12px; margin: 0; }
+.fi-values em { color: var(--fi-muted); font-size: 12px; font-style: normal; font-weight: 700; }
+.fi-values b { color: var(--fi-navy); font-size: 27px; letter-spacing: -.01em; }
+.fi-values small { color: var(--fi-muted); font-size: 11px; }
+
+.fi-taxes { width: 100%; border-collapse: collapse; }
+.fi-taxes th { padding: 11px 14px; background: var(--fi-navy); color: #ffffff; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+.fi-taxes th:nth-child(3), .fi-taxes th:nth-child(4), .fi-taxes td:nth-child(3), .fi-taxes td:nth-child(4) { text-align: right; }
+.fi-taxes td { padding: 11px 14px; border-bottom: 1px solid var(--fi-line); color: var(--fi-muted); font-size: 12.5px; vertical-align: middle; }
+.fi-taxes tbody tr:nth-child(odd) td { background: #f8fafd; }
+.fi-taxes td strong { display: block; color: var(--fi-ink); font-size: 13.5px; }
+.fi-taxes td small { display: block; margin-top: 2px; color: var(--fi-gold); font-size: 8.5px; letter-spacing: .06em; text-transform: uppercase; }
+.fi-taxes td:last-child { color: var(--fi-ink); font-weight: 700; }
+
+.fi-total { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-radius: 8px; background: var(--fi-navy); color: #ffffff; }
+.fi-total > div { display: grid; gap: 4px; padding-left: 14px; border-left: 3px solid var(--fi-gold); }
+.fi-total span { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.fi-total small { color: #cbd5e1; font-size: 11px; }
+.fi-total b { font-size: 30px; letter-spacing: -.01em; white-space: nowrap; }
+.fi-note { margin: -4px 0 0; color: var(--fi-muted); font-size: 11px; }
+.fi-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--fi-line); color: var(--fi-muted); font-size: 10px; }
+.fi-footer span:first-child { color: var(--fi-navy); font-weight: 700; letter-spacing: .05em; }
+.fi-paper.is-provisional .fi-footer span:first-child { color: #a16207; }
+
+/* Action buttons used in lists. */
+.fi-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fi-actions-label { margin-right: 4px; color: var(--iv-muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.fi-actions button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--iv-border); border-radius: 999px;
+  background: var(--iv-surface); color: var(--iv-text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: border-color .15s, color .15s, background-color .15s;
+}
+.fi-actions button:hover:not(:disabled) { border-color: var(--iv-accent); background: var(--iv-accent-soft); color: var(--iv-accent); }
+.fi-actions button:disabled { opacity: .6; cursor: progress; }
+.fi-actions.is-compact button { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.au-invoice { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--iv-muted); font-size: 12px; font-weight: 700; }
+.ip-invoice-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface-2); }
+.ip-invoice-bar > div:first-child { display: grid; gap: 2px; }
+.ip-invoice-bar strong { color: var(--iv-text); font-size: 14px; }
+.ip-invoice-bar small { color: var(--iv-muted); font-size: 12.5px; }
+
+@media (max-width: 680px) {
+  .fi-paper { padding: 28px 18px 20px; }
+  .fi-flag { right: 18px; top: 16px; }
+  .fi-brand { gap: 12px; }
+  .fi-logo { width: 64px; } .fi-logo img { width: 58px; }
+  .fi-brand-name p[lang="am"] { font-size: 20px; } .fi-brand-name h2 { font-size: 15px; }
+  .fi-title { flex-direction: column; } .fi-status { justify-items: start; }
+  .fi-title h1 { font-size: 26px; }
+  .fi-parties, .fi-parties.is-3, .fi-goods, .fi-values { grid-template-columns: 1fr; }
+  .fi-goods-side { padding-left: 0; border-left: 0; border-top: 1px solid var(--fi-line); padding-top: 12px; }
+  .fi-values > div + div { border-left: 0; border-top: 1px solid var(--fi-line); }
+  .fi-taxes th:nth-child(2), .fi-taxes td:nth-child(2) { display: none; }
+  .fi-total { flex-direction: column; align-items: flex-start; } .fi-total b { font-size: 24px; }
+}
+
+/* Print: the black-and-white version of the same invoice. */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html:has(.fi-viewer), body:has(.fi-viewer), .fi-viewer .fi-stage { background: #fff !important; }
+  .fi-viewer { display: block; height: auto; background: #fff !important; }
+  .fi-viewer .dv-bar, .feedback-viewport { display: none !important; }
+  .fi-viewer .fi-stage { display: block; height: auto; overflow: visible; padding: 0; }
+  .fi-paper {
+    --fi-navy: #000; --fi-gold: #000; --fi-ink: #000; --fi-muted: #333; --fi-panel: #fff; --fi-line: #000;
+    width: 100%; margin: 0; padding: 0; gap: 14px; border-radius: 0; box-shadow: none; color: #000;
+  }
+  .fi-flag { display: none; }
+  .fi-logo img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fi-logo { color: #000; }
+  .fi-rule { height: 1.5px; background: #000; }
+  .fi-rule::before { display: none; }
+  .fi-title { border-bottom-color: #999; }
+  .fi-pill, .fi-paper.is-provisional .fi-pill { border: 1.5px solid #000; border-radius: 4px; background: #fff; color: #000; }
+  .fi-section span { border: 1.5px solid #000; background: #fff; }
+  .fi-goods { border: 1px solid #000; background: #fff; }
+  .fi-goods-side { border-left-color: #999; }
+  .fi-values { border-color: #000; }
+  .fi-values > div + div { border-left-color: #999; }
+  .fi-taxes th { border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; background: #fff; color: #000; }
+  .fi-taxes td, .fi-taxes tbody tr:nth-child(odd) td { border-bottom-color: #bbb; background: #fff; color: #222; }
+  .fi-taxes td small { color: #000; }
+  .fi-total { border: 1.5px solid #000; background: #fff; color: #000; }
+  .fi-total > div { border-left: 0; padding-left: 0; }
+  .fi-total small { color: #333; }
+  .fi-footer { border-top-color: #999; }
+  .fi-footer span:first-child, .fi-paper.is-provisional .fi-footer span:first-child { color: #000; }
+  /* Compact rhythm so a normal assessment prints on one A4 page. */
+  .fi-paper { gap: 10px; font-size: 12px; }
+  .fi-brand { gap: 18px; } .fi-logo { width: 84px; } .fi-logo img { width: 70px; }
+  .fi-brand-name p[lang="am"] { font-size: 24px; } .fi-brand-name h2 { margin: 2px 0 4px; font-size: 19px; }
+  .fi-title { padding-bottom: 10px; } .fi-title h1 { font-size: 28px; } .fi-status { gap: 10px; }
+  .fi-parties { gap: 10px; } .fi-parties > div { gap: 3px; } .fi-parties strong { font-size: 12.5px; } .fi-parties small { font-size: 11px; }
+  .fi-section { margin: 2px 0 -4px; font-size: 13px; }
+  .fi-goods { gap: 16px; padding: 12px 16px; } .fi-goods-main strong { font-size: 16px; } .fi-code { font-size: 19px; }
+  .fi-values > div { padding: 10px 16px; } .fi-values b { font-size: 21px; }
+  .fi-taxes th { padding: 7px 12px; } .fi-taxes td { padding: 6px 12px; font-size: 11.5px; } .fi-taxes td strong { font-size: 12px; }
+  .fi-total { padding: 12px 18px; } .fi-total b { font-size: 24px; }
+  .fi-footer { margin-top: 4px; padding-top: 8px; }
+  .fi-section, .fi-goods, .fi-values, .fi-total, .fi-taxes tr { break-inside: avoid; }
+}

@@ -30,7 +30,8 @@ public sealed class HistoricalFxClient(HttpClient http, IMemoryCache cache, ICon
         // 1. Use the National Bank of Ethiopia provider through Frankfurter.
         // Frankfurter returns rows as quote units per ETB when ETB is the base;
         // the application stores the inverse (ETB per one unit of currency).
-        var frankfurterRates = await TryFetchFrankfurterRatesAsync(date, ct);
+        // The first request after start-up sometimes stalls until the client timeout; one retry recovers it.
+        var frankfurterRates = await TryFetchFrankfurterRatesAsync(date, ct) ?? await TryFetchFrankfurterRatesAsync(date, ct);
         if (frankfurterRates is not null && frankfurterRates.Count > 1)
         {
             cache.Set(key, frankfurterRates, TimeSpan.FromMinutes(30));
@@ -40,7 +41,8 @@ public sealed class HistoricalFxClient(HttpClient http, IMemoryCache cache, ICon
         // Do not silently substitute another provider. A customs conversion must
         // remain tied to the selected NBE/Frankfurter publication.
         var missing = new Dictionary<string, decimal> { ["ETB"] = 1 };
-        cache.Set(key, missing, TimeSpan.FromMinutes(5));
+        // Keep a failure only briefly so a transient outage does not block conversions for minutes.
+        cache.Set(key, missing, TimeSpan.FromSeconds(30));
         return missing;
     }
 

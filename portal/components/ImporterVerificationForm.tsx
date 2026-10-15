@@ -8,6 +8,7 @@ import {
   type ImporterDocumentKind, type ImporterProfile, type ImporterRegion, type ImporterType,
 } from "@/lib/importer";
 import { idNumberHint, idNumberMaxLength, idNumberProblem, phoneProblem, restrictIdNumber, restrictPhone, restrictTin, tinProblem } from "@/lib/importer-validation";
+import { ToastMessage } from "@/components/Toaster";
 
 type Mode = "register" | "verify";
 type Draft = {
@@ -261,7 +262,7 @@ export function ImporterVerificationForm({ mode, existing, onRegistered, onSubmi
         <span>I declare that the information and documents I have provided are true, complete and belong to me or the business I represent. I understand that false declarations may lead to refusal and penalties under the Customs Proclamation.</span></label>
     </div>}
 
-    {error && <p className="iv-error" role="alert">{error}</p>}
+    <ToastMessage kind="error" message={error} onClear={() => setError("")} />
     <div className="iv-nav">
       {step > 0 ? <button type="button" className="iv-secondary" onClick={() => { setError(""); setStep(step - 1); }}><FiArrowLeft aria-hidden="true" />Back</button> : <span />}
       <button type="submit" className="iv-primary" disabled={busy}>{step < steps.length - 1 ? <>Continue<FiArrowRight aria-hidden="true" /></> : busy ? "Submitting…" : mode === "register" ? "Create account and submit" : "Submit for verification"}</button>

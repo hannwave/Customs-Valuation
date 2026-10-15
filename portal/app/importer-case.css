@@ -319,3 +319,90 @@
 .ip-assessment-table td:last-child, .ip-assessment-table th:last-child { text-align: right; white-space: nowrap; }
 .ip-assessment-table tfoot th, .ip-assessment-table tfoot td { border-bottom: 0; background: var(--iv-surface-2); font-size: 15px; font-weight: 800; text-transform: none; letter-spacing: 0; color: var(--iv-text); }
 @media (max-width: 760px) { .ip-tracker.is-five { grid-template-columns: 1fr; } .ip-assessment-facts { grid-template-columns: 1fr; } }
+
+/* Audit trail: source tags and importer-portal event details. */
+.audit-source { display: inline-flex; align-items: center; gap: 6px; width: fit-content; margin-top: 8px; padding: 3px 9px; border: 1px solid var(--iv-border); border-radius: 999px; background: var(--iv-surface-2); color: var(--iv-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.audit-source.is-portal { border-color: var(--iv-accent-soft); background: var(--iv-accent-soft); color: var(--iv-accent-strong); }
+.audit-source svg { flex: 0 0 auto; }
+.audit-portal-banner { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border: 1px solid var(--iv-accent-soft); border-radius: 10px; background: var(--iv-accent-soft); color: var(--iv-text); font-size: 14px; line-height: 1.5; }
+.audit-portal-banner svg { flex: 0 0 auto; margin-top: 3px; color: var(--iv-accent-strong); }
+.audit-native-dialog .audit-detail-summary--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.audit-native-dialog .audit-detail-summary em { white-space: normal; }
+.audit-status-change { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; font-size: 14px; color: var(--iv-muted); }
+.audit-status-change b { padding: 4px 10px; border: 1px solid var(--iv-border); border-radius: 999px; background: var(--iv-surface-2); color: var(--iv-text); font-weight: 700; }
+.audit-status-change b.is-current { border-color: var(--iv-success-border); background: var(--iv-success-soft); color: var(--iv-success); }
+.audit-note { margin: 0; color: var(--iv-text); font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.audit-case-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0; font-size: 14px; }
+.audit-case-links a { color: var(--iv-accent-strong); font-weight: 700; }
+.audit-case-links span { color: var(--iv-muted); font-size: 13px; }
+.audit-media-section.is-single { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 720px) { .audit-native-dialog .audit-detail-summary--two { grid-template-columns: 1fr; } }
+
+/* The audit detail dialog was styled for light mode only; follow the theme tokens in dark mode. */
+[data-theme="dark"] .audit-native-dialog, [data-theme="dark"] .audit-native-dialog .audit-detail-modal, [data-theme="dark"] .audit-native-dialog .audit-detail-body, [data-theme="dark"] .audit-native-dialog .audit-detail-header { background: var(--iv-surface); color: var(--iv-text); border-color: var(--iv-border); }
+[data-theme="dark"] .audit-native-dialog .audit-detail-header h2, [data-theme="dark"] .audit-native-dialog h3, [data-theme="dark"] .audit-native-dialog p, [data-theme="dark"] .audit-native-dialog .audit-detail-summary strong,
+[data-theme="dark"] .audit-native-dialog .audit-tax-breakdown strong, [data-theme="dark"] .audit-native-dialog .audit-decision-meta dd, [data-theme="dark"] .audit-native-dialog .audit-change-list strong { color: var(--iv-text); }
+[data-theme="dark"] .audit-native-dialog small, [data-theme="dark"] .audit-native-dialog em, [data-theme="dark"] .audit-native-dialog .audit-detail-header p, [data-theme="dark"] .audit-native-dialog .audit-detail-header span,
+[data-theme="dark"] .audit-native-dialog .audit-decision-meta dt, [data-theme="dark"] .audit-native-dialog .audit-empty-copy, [data-theme="dark"] .audit-native-dialog .audit-change-list > div { color: var(--iv-muted); }
+[data-theme="dark"] .audit-native-dialog .audit-detail-summary { background: var(--iv-border); border-color: var(--iv-border); }
+[data-theme="dark"] .audit-native-dialog .audit-detail-summary > span, [data-theme="dark"] .audit-native-dialog .audit-compact-section, [data-theme="dark"] .audit-native-dialog .audit-media-section > div { background: var(--iv-surface); border-color: var(--iv-border); }
+[data-theme="dark"] .audit-native-dialog .audit-detail-header > button { background: var(--iv-surface-2); border-color: var(--iv-border); color: var(--iv-text); }
+[data-theme="dark"] .audit-native-dialog .audit-hs-description, [data-theme="dark"] .audit-native-dialog .audit-media-empty { background: var(--iv-surface-2); border-color: var(--iv-border); color: var(--iv-muted); }
+[data-theme="dark"] .audit-native-dialog .audit-tax-breakdown, [data-theme="dark"] .audit-native-dialog .audit-tax-breakdown > div, [data-theme="dark"] .audit-native-dialog .audit-decision-meta > div, [data-theme="dark"] .audit-native-dialog .audit-change-list > div { border-color: var(--iv-border); }
+[data-theme="dark"] .audit-native-dialog .audit-tax-breakdown b, [data-theme="dark"] .audit-native-dialog .audit-section-title > strong { color: var(--iv-success); }
+[data-theme="dark"] .audit-native-dialog a, [data-theme="dark"] .audit-native-dialog .audit-receipt-preview a { color: var(--iv-accent); }
+[data-theme="dark"] .audit-native-dialog table th { background: var(--iv-surface-2); color: var(--iv-muted); }
+[data-theme="dark"] .audit-native-dialog table td { border-color: var(--iv-border); color: var(--iv-text); }
+
+/* Valuation search: choosing the national tariff line under an HS code. */
+.phase2-line-choice { display: grid; gap: 10px; margin: 14px 0; padding: 14px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); }
+.phase2-line-choice.needs-choice { border-color: var(--iv-warning-border); background: var(--iv-warning-soft); }
+.phase2-line-choice legend { padding: 0 6px; color: var(--iv-text); font-size: 14px; font-weight: 800; }
+.phase2-line-choice legend small { margin-left: 8px; color: var(--iv-muted); font-size: 12px; font-weight: 600; }
+.phase2-line-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.phase2-line-options button { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--iv-border); border-radius: 10px; background: var(--iv-surface); color: var(--iv-text); text-align: left; cursor: pointer; }
+.phase2-line-options button:hover { border-color: var(--iv-accent); }
+.phase2-line-options button.is-selected { border-color: var(--iv-accent); box-shadow: 0 0 0 2px var(--iv-accent-soft); background: var(--iv-accent-soft); }
+.phase2-line-options strong { font-family: ui-monospace, monospace; font-size: 14px; }
+.phase2-line-options span { color: var(--iv-muted); font-size: 13px; line-height: 1.35; }
+.phase2-line-options b { color: var(--iv-accent-strong); font-size: 13px; }
+
+/* Tax step: manufacturing incentive panel. */
+.oc-incentive { display: flex; gap: 14px; align-items: flex-start; border-color: var(--iv-success-border); background: var(--iv-success-soft); }
+.oc-incentive > svg { flex: 0 0 auto; margin-top: 2px; font-size: 22px; color: var(--iv-success); }
+.oc-incentive h3 { margin: 0 0 4px; color: var(--iv-text); font-size: 16px; }
+.oc-incentive p { margin: 0 0 6px; color: var(--iv-text); font-size: 14px; line-height: 1.55; }
+.oc-incentive small { color: var(--iv-muted); font-size: 13px; }
+.oc-incentive-lines { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.oc-incentive-lines span { padding: 2px 9px; border: 1px solid var(--iv-success-border); border-radius: 999px; background: var(--iv-surface); color: var(--iv-success); font-size: 12px; font-weight: 700; }
+.oc-incentive-lines b { margin-left: 4px; color: var(--iv-success); font-size: 13px; }
+
+/* Tariff search bar (importer declaration + officer valuation search): one clean frame, focus ring on the frame only. */
+.oc-search { min-height: 46px; gap: 4px; padding: 0 6px 0 5px; border: 1.5px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); transition: border-color .15s, box-shadow .15s; }
+.oc-search:hover { border-color: var(--iv-border-strong); }
+.oc-search:focus-within { border-color: var(--iv-accent); box-shadow: 0 0 0 4px var(--iv-accent-soft); }
+.oc-search > svg { flex: none; box-sizing: content-box; width: 16px; height: 16px; margin: 0; padding: 9px; border-radius: 9px; background: var(--iv-accent-soft); color: var(--iv-accent); }
+.oc-search input, .ip-page .importer-form .oc-search input { flex: 1; min-width: 0; height: 42px; padding: 0 8px; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--iv-text); font: inherit; font-size: 14.5px; }
+.oc-search input:focus, .oc-search input:focus-visible { outline: 0; border: 0; box-shadow: none; }
+.oc-search input::placeholder { color: var(--iv-muted); }
+.oc-search input::-webkit-search-cancel-button { display: none; }
+.oc-search button { flex: none; width: 30px; height: 30px; margin: 0; border-radius: 999px; background: var(--iv-surface-2); }
+.oc-search button:hover { background: var(--iv-danger-soft); color: var(--iv-danger); }
+.ip-page .importer-form .oc-search input:focus-visible, .tariff-browser .oc-search input:focus-visible { outline: 0; border: 0; box-shadow: none; }
+.ip-page .importer-form label.oc-search { gap: 4px; }
+
+/* Tariff line action: pinned under the detail pane and repeated under the selected result, so it is never scrolled away. */
+.tariff-browser .oc-hs-detail, .ip-tariff-browser .oc-hs-detail { gap: 0; padding: 0; overflow: hidden; }
+.tariff-browser .oc-hs-detail > .hs-detail-placeholder { padding: 20px 22px; }
+.oc-hs-detail-scroll { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; padding: 20px 22px 16px; overflow-y: auto; }
+.oc-hs-detail-foot {
+  display: grid; gap: 10px; flex: none; padding: 14px 22px 16px; border-top: 1px solid var(--iv-border);
+  background: var(--iv-surface); box-shadow: 0 -10px 22px -16px #0f2a4a59;
+}
+.oc-hs-detail-foot .oc-hs-choose { width: 100%; margin-top: 0; min-height: 48px; font-size: 15px; }
+.oc-hs-detail-foot .oc-field { margin: 0; }
+.hs-tree-pick { display: flex; justify-content: flex-end; padding: 0 12px 12px; border: 1px solid var(--iv-accent); border-top: 0; border-radius: 0 0 12px 12px; background: var(--iv-accent-soft); }
+.oc-hs-list .hs-tree-branch.is-selected:has(.hs-tree-pick) > .hs-tree-row { border-bottom-color: transparent; border-radius: 12px 12px 0 0; }
+.hs-tree-pick .oc-hs-choose { margin-top: 0; min-height: 40px; padding-inline: 18px; box-shadow: 0 6px 16px color-mix(in srgb, var(--iv-accent) 28%, transparent); animation: hs-pick-in .2s ease-out; }
+@keyframes hs-pick-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 820px) { .tariff-browser .oc-hs-detail { max-height: none; } .oc-hs-detail-scroll { max-height: 38vh; } }

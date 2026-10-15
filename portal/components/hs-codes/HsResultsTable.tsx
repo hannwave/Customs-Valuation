@@ -1,5 +1,6 @@
 "use client";
 
+import { HsItem } from "@/components/hs/HsItem";
 import {
   Badge,
   Button,
@@ -307,7 +308,7 @@ export function HsResultsTable({
                           "nowrap",
                       }}
                     >
-                      {item.code || "No HS code assigned"}
+                      <HsItem code={item.code} description={item.descriptionEn} empty="No HS code assigned" />
                     </span>
                   </Table.Td>
 

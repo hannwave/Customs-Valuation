@@ -85,6 +85,16 @@ public sealed class WorkspaceAccess(CustomsDbContext db, IHttpContextAccessor ht
         }
         return location.OfficialCode.Trim().ToUpperInvariant();
     }
+    /// <summary>Records that someone opened or downloaded a document or an invoice. The caller saves.</summary>
+    public void AuditAccess(string action, string module, Guid recordId, Guid? location, Guid? subjectUserId, string detail)
+    {
+        db.AuditLogs.Add(new AuditLog {
+            Id = Guid.NewGuid(), UserId = UserId.ToString(), Username = http.HttpContext?.User.Identity?.Name ?? "", Action = action, Module = module, RecordId = recordId,
+            LocationId = location, SubjectUserId = subjectUserId, OccurredAt = DateTimeOffset.UtcNow, Justification = detail,
+            IpDeviceInformation = $"{http.HttpContext?.Connection.RemoteIpAddress} | {http.HttpContext?.Request.Headers.UserAgent}"
+        });
+    }
+
     public AuditLog Audit(string action, string module, Guid id, object? before, object? after, string reason, Guid? location = null)
     {
         var audit = new AuditLog {

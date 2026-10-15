@@ -7,7 +7,7 @@ import { downloadDocument, fetchDocumentBlob } from "@/components/ImporterDocume
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 // Documents are only fetched from the Customs API's document endpoints.
-const allowedSources = /^\/(importer-declarations\/[0-9a-f-]{36}\/documents|importer-verifications\/[0-9a-f-]{36}\/documents|importer-profile\/documents)\/[A-Z_]+$/i;
+const allowedSources = /^\/((importer-declarations\/[0-9a-f-]{36}\/documents|importer-verifications\/[0-9a-f-]{36}\/documents|importer-profile\/documents)\/[A-Z_]+|(importer-verifications|importer-profile)\/change-requests\/[0-9a-f-]{36}\/document)$/i;
 const zoomSteps = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
 function Viewer() {

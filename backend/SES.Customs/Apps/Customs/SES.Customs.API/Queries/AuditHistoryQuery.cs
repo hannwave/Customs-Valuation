@@ -9,7 +9,7 @@ public static class AuditHistoryQuery
         string? eventType, DateTimeOffset? from, DateTimeOffset? to, string? officer)
     {
         if (category == "valuations") query = query.Where(a => a.Module == "Valuation" || a.Module == "Valuations" || a.Module == "EthiopianImportTaxAssessment");
-        if (category == "changes") query = query.Where(a => a.Module != "Valuation" && a.Module != "Valuations" && a.Module != "EthiopianImportTaxAssessment");
+        if (category == "changes") query = query.Where(a => a.Module != "Valuation" && a.Module != "Valuations" && a.Module != "EthiopianImportTaxAssessment" && a.Module != "ImporterDeclarations");
         if (from.HasValue) query = query.Where(a => a.OccurredAt >= from.Value);
         if (to.HasValue) query = query.Where(a => a.OccurredAt < to.Value);
         if (!string.IsNullOrWhiteSpace(eventType)) query = query.Where(a => a.Action == eventType);

@@ -1,3 +1,4 @@
+using SES.Customs.API.Integrations.Hs;
 using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -8,11 +9,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using SES.Customs.API.Security;
 using SES.Customs.API.Services;
+using SES.Customs.API.Services.DocumentScanning;
 using SES.Customs.Core.Models;
 using SES.Customs.Infrastructure.Context;
 
 namespace SES.Customs.API.Controllers;
 
+/// <summary>Declaration upload. Optional text fields are nullable: an empty form value binds as null, not "".</summary>
 public sealed class ImporterSubmissionForm
 {
     public Guid? ExpectedVersion { get; set; }
@@ -20,17 +23,17 @@ public sealed class ImporterSubmissionForm
     public Guid SuggestedTariffLineId { get; set; }
     public string OriginCountryCode { get; set; } = "";
     public string ImportPurpose { get; set; } = "";
-    public string PurposeDetails { get; set; } = "";
+    public string? PurposeDetails { get; set; }
     public bool IsCommercialProduct { get; set; }
     public bool IsMachineryOrEquipment { get; set; }
     public string[] RequestedTreatments { get; set; } = [];
-    public string Brand { get; set; } = "";
-    public string Model { get; set; } = "";
+    public string? Brand { get; set; }
+    public string? Model { get; set; }
     public string ProductName { get; set; } = "";
     public string Description { get; set; } = "";
-    public string Manufacturer { get; set; } = "";
-    public string SerialOrPartNumber { get; set; } = "";
-    public string Specifications { get; set; } = "";
+    public string? Manufacturer { get; set; }
+    public string? SerialOrPartNumber { get; set; }
+    public string? Specifications { get; set; }
     public decimal Quantity { get; set; }
     public string Unit { get; set; } = "";
     public decimal? InvoiceAmount { get; set; }
@@ -105,7 +108,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         {
             "sections" => Ok(matches.GroupBy(x => x.SectionNumber).OrderBy(x => { var position = Array.IndexOf(SectionOrder, x.Key); return position < 0 ? int.MaxValue : position; }).Select(g => new { code = g.Key, name = g.First().SectionName, count = g.Count() }).ToArray()),
             "chapters" => Ok(matches.GroupBy(x => x.Chapter).OrderBy(x => x.Key).Select(g => new { code = g.Key, name = g.First().ChapterName, count = g.Count() }).ToArray()),
-            "headings" => Ok(matches.GroupBy(x => x.Heading).OrderBy(x => x.Key).Select(g => new { code = g.Key, name = g.First().Heading, count = g.Count() }).ToArray()),
+            "headings" => Ok(matches.GroupBy(x => x.Heading).OrderBy(x => x.Key).Select(g => new { code = g.Key, name = HsNomenclature.Heading(g.Key) ?? g.First().HsDescription, count = g.Count() }).ToArray()),
             "tariffs" or "search" => Ok(new { total = matches.Length, items = ordered.Take(stage == "search" ? 80 : 100).Select(x => new { x.TariffLineId, x.HsCodeId, x.HsCode, x.HsDescription, x.TariffItemNo, x.Description, x.SectionNumber, x.SectionName, x.Chapter, x.ChapterName, x.Heading }).ToArray() }),
             _ => BadRequest(new { message = "Unknown catalogue stage." })
         };
@@ -135,6 +138,10 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                           join hs in db.HsCodes.AsNoTracking() on line.HsCodeId equals hs.Id
                           where hs.RevisionId == revision && line.EffectiveDate <= today && (line.EndDate == null || line.EndDate >= today)
                           select new { HsCodeId = hs.Id, TariffLineId = line.Id, hs.Code, HsDescription = hs.DescriptionEn, hs.SectionNumber, hs.SectionName, hs.ChapterNumber, hs.ChapterName, hs.HeadingNumber, line.TariffItemNo, line.DescriptionEn }).ToListAsync(ct);
+        // Placeholder lines (an HS code with no tariff item or rates, left from before the ERCA import) cannot be taxed;
+        // hide them wherever the HS code also has real national tariff lines.
+        var rated = rows.Where(x => !string.IsNullOrWhiteSpace(x.TariffItemNo)).Select(x => x.HsCodeId).ToHashSet();
+        rows = rows.Where(x => !string.IsNullOrWhiteSpace(x.TariffItemNo) || !rated.Contains(x.HsCodeId)).ToList();
         return rows.Select(x => {
             var code = x.Code ?? "";
             var digits = new string(code.Where(char.IsDigit).ToArray());
@@ -171,9 +178,10 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         var profiles = await db.ImporterProfiles.AsNoTracking().Where(p => importerIds.Contains(p.AccountId)).Select(p => new { p.AccountId, p.LegalName, p.Tin, p.ImporterType }).ToListAsync(ct);
         var accounts = await db.AuthAccounts.AsNoTracking().Where(a => importerIds.Contains(a.Id)).Select(a => new { a.Id, a.FullName }).ToListAsync(ct);
         var lineIds = rows.Select(x => x.ConfirmedTariffLineId ?? x.SuggestedTariffLineId).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
-        var lines = await db.NationalTariffLines.AsNoTracking().Where(l => lineIds.Contains(l.Id)).Select(l => new { l.Id, l.NationalCode, l.TariffItemNo, l.Code }).ToListAsync(ct);
+        var lines = await db.NationalTariffLines.AsNoTracking().Where(l => lineIds.Contains(l.Id)).Select(l => new { l.Id, l.NationalCode, l.TariffItemNo, l.Code, l.DescriptionEn }).ToListAsync(ct);
         var locationIds = rows.Select(x => x.LocationId).Distinct().ToList();
         var branches = await db.CustomsLocations.AsNoTracking().Where(l => locationIds.Contains(l.Id)).Select(l => new { l.Id, l.DisplayName, l.Name, l.OfficialCode }).ToListAsync(ct);
+        var scans = await DocumentScanViews.CountsAsync(db, DocumentScanSources.Declaration, rows.Select(x => x.Id).ToList(), ct);
         var items = rows.Select(x =>
         {
             var profile = profiles.FirstOrDefault(p => p.AccountId == x.ImporterId);
@@ -184,9 +192,10 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                 x.Id, x.Reference, x.Status, x.ProductName, x.Brand, x.Model, x.Quantity, x.Unit, x.OriginCountryCode, x.OriginCountryName,
                 importerName = profile?.LegalName ?? accounts.FirstOrDefault(a => a.Id == x.ImporterId)?.FullName ?? "",
                 importerTin = profile?.Tin ?? "", importerType = profile?.ImporterType ?? "",
-                hsCode = line?.TariffItemNo ?? line?.Code ?? "", nationalCode = line?.NationalCode ?? "", hsConfirmed = x.ConfirmedTariffLineId.HasValue,
+                hsCode = line?.TariffItemNo ?? line?.Code ?? "", hsDescription = line?.DescriptionEn ?? "", nationalCode = line?.NationalCode ?? "", hsConfirmed = x.ConfirmedTariffLineId.HasValue,
                 branch = branch is null ? "" : string.IsNullOrWhiteSpace(branch.DisplayName) ? branch.Name : branch.DisplayName,
-                x.InvoiceAmount, x.InvoiceCurrency, x.AssessedPayable, x.AssessmentCurrency, x.SubmittedAt, x.UpdatedAt
+                x.InvoiceAmount, x.InvoiceCurrency, x.AssessedPayable, x.AssessmentCurrency, x.SubmittedAt, x.UpdatedAt,
+                documentScan = DocumentScanViews.Badge(scans.GetValueOrDefault(x.Id))
             };
         }).ToList();
         var counts = QueueStatuses.ToDictionary(code => code, code => items.Count(item => item.Status == code));
@@ -205,6 +214,13 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
     {
         access.Require(AccessRules.Officer);
         var declaration = await Accessible(id, ct);
+        if (declaration.Status == "SUBMITTED" && declaration.ReviewStartedAt is null)
+        {
+            // From the first time an officer opens the submission, the importer can no longer edit it.
+            declaration.ReviewStartedAt = DateTimeOffset.UtcNow; declaration.ReviewStartedById = access.UserId;
+            Audit(declaration, "IMPORTER_DECLARATION_REVIEW_STARTED", null, null);
+            await DatabaseConnectionRetry.ExecuteWriteAfterDnsFailureAsync(() => db.SaveChangesAsync(ct), ct);
+        }
         var profile = await db.ImporterProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.AccountId == declaration.ImporterId, ct);
         var account = await db.AuthAccounts.AsNoTracking().Where(a => a.Id == declaration.ImporterId).Select(a => new { a.FullName, a.Email }).FirstOrDefaultAsync(ct);
         var branch = await db.CustomsLocations.AsNoTracking().Where(l => l.Id == declaration.LocationId).Select(l => new { l.Id, l.DisplayName, l.Name, l.OfficialCode, l.Region }).FirstOrDefaultAsync(ct);
@@ -230,6 +246,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                 decision.RecordedAt, decision.SubmittedAt, decision.Justification, ownedByMe = decision.OfficerSubjectId == access.UserId.ToString() },
             assessment,
             history,
+            documentScans = await DocumentScanViews.ForDocumentsAsync(db, declaration.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct),
             allowedActions = AllowedActions(declaration.Status),
             canValue = officerLocation == declaration.LocationId
         });
@@ -264,14 +281,50 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
     };
 
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> Get(Guid id, CancellationToken ct) => Ok(Detail(await Accessible(id, ct)));
+    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
+    {
+        var declaration = await Accessible(id, ct);
+        // The importer sees the tariff code next to its description, for their choice and the officer's confirmed line.
+        var ids = new[] { declaration.SuggestedTariffLineId, declaration.ConfirmedTariffLineId }.Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
+        var tariffs = (await TariffCatalog(ct)).Where(x => ids.Contains(x.TariffLineId))
+            .ToDictionary(x => x.TariffLineId, x => (Code: string.IsNullOrEmpty(x.TariffItemNo) ? x.HsCode : x.TariffItemNo, Description: TariffDescriptions.ForCode(x.Description, x.HsDescription, string.IsNullOrEmpty(x.TariffItemNo) ? x.HsCode : x.TariffItemNo)));
+        return Ok(Detail(declaration, tariffs));
+    }
 
     [HttpGet("{id:guid}/documents/{kind}")]
     public async Task<IActionResult> Document(Guid id, string kind, CancellationToken ct)
     {
         var declaration = await Accessible(id, ct);
         var document = declaration.Documents.FirstOrDefault(x => x.Kind == kind.ToUpperInvariant());
-        return document is null ? NotFound(new { message = "Document not found." }) : File(document.Content, document.ContentType);
+        if (document is null) return NotFound(new { message = "Document not found." });
+        if (access.Role != AccessRules.Importer)
+        {
+            access.AuditAccess("DOCUMENT_OPENED", "ImporterDeclarations", declaration.Id, declaration.LocationId, declaration.ImporterId, $"{document.Kind.Replace('_', ' ').ToLowerInvariant()} · {document.FileName} · {declaration.Reference}");
+            await db.SaveChangesAsync(ct);
+        }
+        return File(document.Content, document.ContentType);
+    }
+
+    /// <summary>The OCR checks of the current documents, so the case page can follow a scan while it runs.</summary>
+    [HttpGet("{id:guid}/document-scans")]
+    public async Task<IActionResult> DocumentScans(Guid id, CancellationToken ct)
+    {
+        access.Require(AccessRules.Officer);
+        var declaration = await Accessible(id, ct);
+        return Ok(await DocumentScanViews.ForDocumentsAsync(db, declaration.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct));
+    }
+
+    [HttpPost("{id:guid}/documents/{kind}/rescan")]
+    public async Task<IActionResult> Rescan(Guid id, string kind, CancellationToken ct)
+    {
+        access.Require(AccessRules.Officer);
+        var declaration = await Accessible(id, ct);
+        var document = declaration.Documents.FirstOrDefault(x => x.Kind == kind.ToUpperInvariant()) ?? throw new WorkspaceException(404, "Document not found.");
+        await DocumentScanViews.RescanAsync(db, document.Id, document.Sha256, ct);
+        access.AuditAccess("DOCUMENT_RESCAN_REQUESTED", "ImporterDeclarations", declaration.Id, declaration.LocationId, declaration.ImporterId, $"{document.Kind.Replace('_', ' ').ToLowerInvariant()} · {document.FileName} · {declaration.Reference}");
+        await db.SaveChangesAsync(ct);
+        DocumentScanWorker.Nudge();
+        return Ok(await DocumentScanViews.ForDocumentsAsync(db, declaration.Documents.Select(d => (d.Id, d.Kind, d.Sha256)), ct));
     }
 
     [HttpPost, RequestSizeLimit(32_000_000)]
@@ -305,19 +358,25 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         if (form.FreightAmount is < 0m or > MaxMoney || form.InsuranceAmount is < 0m or > MaxMoney)
             return BadRequest(new { message = "Freight and insurance must be zero or a positive amount." });
         var commercialProduct = form.IsCommercialProduct || purpose == "COMMERCIAL_RESALE";
-        if (commercialProduct && (form.Brand.Trim().Length is < 1 or > 120 || form.Model.Trim().Length is < 1 or > 120))
+        if (commercialProduct && ((form.Brand ?? "").Trim().Length is < 1 or > 120 || (form.Model ?? "").Trim().Length is < 1 or > 120))
             return BadRequest(new { message = "Brand and model are required for a commercial product." });
-        if (form.PurposeDetails.Length > 1000 || form.Manufacturer.Length > 200 || form.SerialOrPartNumber.Length > 200 || form.Specifications.Length > 2000)
+        if ((form.PurposeDetails ?? "").Length > 1000 || (form.Manufacturer ?? "").Length > 200 || (form.SerialOrPartNumber ?? "").Length > 200 || (form.Specifications ?? "").Length > 2000)
             return BadRequest(new { message = "One or more detail fields exceed the allowed length." });
         var requested = (form.RequestedTreatments ?? []).Distinct(StringComparer.Ordinal).ToArray();
         if (requested.Any(x => !Treatments.Contains(x)) || (purpose != "MANUFACTURING" && requested.Length > 0))
             return BadRequest(new { message = "Special tax treatment may be requested only for manufacturing imports." });
         ImporterDeclaration declaration;
+        object? before = null;
+        var editingSubmitted = false;
         if (id.HasValue)
         {
             declaration = await db.ImporterDeclarations.Include(x => x.Documents).FirstOrDefaultAsync(x => x.Id == id && x.ImporterId == access.UserId, ct) ?? throw new WorkspaceException(404, "Declaration not found.");
-            if (declaration.Status != "INFORMATION_REQUESTED" || declaration.Version != form.ExpectedVersion)
-                return Conflict(new { message = "This declaration cannot be edited now. Refresh to see its current review status." });
+            if (!Editable(declaration))
+                return Conflict(new { message = declaration.Status == "SUBMITTED" ? "A Customs Officer has started reviewing this declaration, so it can no longer be edited." : "This declaration cannot be edited now. Refresh to see its current review status." });
+            if (declaration.Version != form.ExpectedVersion)
+                return Conflict(new { message = "This declaration changed since you opened it. Refresh and try again." });
+            editingSubmitted = declaration.Status == "SUBMITTED";
+            before = AuditState(declaration);
         }
         else
         {
@@ -341,19 +400,23 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         }
         declaration.LocationId = location.Id; declaration.SuggestedHsCodeId = suggestion.HsCodeId; declaration.SuggestedTariffLineId = suggestion.TariffLineId;
         declaration.SuggestedTariffDescription = suggestion.Description; declaration.OriginCountryCode = origin; declaration.OriginCountryName = originName;
-        declaration.ImportPurpose = purpose; declaration.PurposeDetails = form.PurposeDetails.Trim();
+        declaration.ImportPurpose = purpose; declaration.PurposeDetails = (form.PurposeDetails ?? "").Trim();
         declaration.IsCommercialProduct = commercialProduct; declaration.IsMachineryOrEquipment = purpose == "MANUFACTURING" && form.IsMachineryOrEquipment;
         declaration.RequestedTreatmentsJson = JsonSerializer.Serialize(requested);
-        declaration.Brand = form.Brand.Trim(); declaration.Model = form.Model.Trim(); declaration.ProductName = form.ProductName.Trim();
-        declaration.Description = form.Description.Trim(); declaration.Manufacturer = form.Manufacturer.Trim();
-        declaration.SerialOrPartNumber = form.SerialOrPartNumber.Trim(); declaration.Specifications = form.Specifications.Trim();
+        declaration.Brand = (form.Brand ?? "").Trim(); declaration.Model = (form.Model ?? "").Trim(); declaration.ProductName = form.ProductName.Trim();
+        declaration.Description = form.Description.Trim(); declaration.Manufacturer = (form.Manufacturer ?? "").Trim();
+        declaration.SerialOrPartNumber = (form.SerialOrPartNumber ?? "").Trim(); declaration.Specifications = (form.Specifications ?? "").Trim();
         declaration.Quantity = form.Quantity; declaration.Unit = form.Unit.Trim();
         declaration.InvoiceAmount = form.InvoiceAmount; declaration.InvoiceCurrency = invoiceCurrency;
         declaration.FreightAmount = form.FreightAmount; declaration.InsuranceAmount = form.InsuranceAmount;
-        declaration.Status = "SUBMITTED"; declaration.SubmittedAt = DateTimeOffset.UtcNow; declaration.UpdatedAt = declaration.SubmittedAt;
+        // Editing a waiting submission keeps its place in the queue; a response to an officer goes back in as a new submission.
+        declaration.UpdatedAt = DateTimeOffset.UtcNow;
+        if (!editingSubmitted) { declaration.Status = "SUBMITTED"; declaration.SubmittedAt = declaration.UpdatedAt; }
         declaration.Version = Guid.NewGuid(); declaration.ReviewNote = ""; declaration.ReviewedAt = null; declaration.ReviewedById = null;
-        Audit(declaration, id.HasValue ? "IMPORTER_DECLARATION_RESUBMITTED" : "IMPORTER_DECLARATION_SUBMITTED", null);
+        declaration.ReviewStartedAt = null; declaration.ReviewStartedById = null;
+        Audit(declaration, editingSubmitted ? "IMPORTER_DECLARATION_EDITED" : id.HasValue ? "IMPORTER_DECLARATION_RESUBMITTED" : "IMPORTER_DECLARATION_SUBMITTED", null, before);
         await DatabaseConnectionRetry.ExecuteWriteAfterDnsFailureAsync(() => db.SaveChangesAsync(ct), ct);
+        DocumentScanWorker.Nudge();
         return id.HasValue ? Ok(Detail(declaration)) : Created($"/api/importer-declarations/{declaration.Id}", Detail(declaration));
     }
 
@@ -373,6 +436,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                 ? $"This action is not available while the declaration is {declaration.Status.Replace('_', ' ').ToLowerInvariant()}. Refresh to see its current status."
                 : "Unknown review action." });
         var link = $"/importer/declarations/{declaration.Id}";
+        var before = AuditState(declaration);
         string auditAction;
         var auditNote = note;
         switch (action)
@@ -398,7 +462,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                 declaration.ConfirmedHsCodeId = confirmed.HsCodeId; declaration.ConfirmedTariffLineId = confirmed.TariffLineId;
                 declaration.Status = action == "APPROVE_INFORMATION" ? "VERIFIED" : "ASSESSMENT_READY";
                 Notify(declaration, "DECLARATION_VERIFIED", $"{declaration.Reference} passed officer review",
-                    $"Your documents were accepted and the goods were classified under HS {Display(confirmed)}. Valuation and tax assessment are now in progress.", link);
+                    $"Your documents were accepted and the goods were classified under {TariffDescriptions.ForCode(confirmed.Description, confirmed.HsDescription, Display(confirmed))} (HS {Display(confirmed)}). Valuation and tax assessment are now in progress.", link);
                 break;
             }
             case "RECLASSIFY":
@@ -411,7 +475,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
                 auditNote = $"Reclassified from {(previous is null ? "the earlier tariff item" : Display(previous))} to {Display(confirmed)}.{(note.Length > 0 ? " " + note : "")}";
                 if (declaration.Status != "SUBMITTED")
                     Notify(declaration, "DECLARATION_RECLASSIFIED", $"HS classification updated for {declaration.Reference}",
-                        $"The officer classified your goods under HS {Display(confirmed)}: {confirmed.Description}.{(note.Length > 0 ? " " + note : "")}", link);
+                        $"The officer classified your goods under {TariffDescriptions.ForCode(confirmed.Description, confirmed.HsDescription, Display(confirmed))} (HS {Display(confirmed)}).{(note.Length > 0 ? " " + note : "")}", link);
                 break;
             }
         }
@@ -419,7 +483,7 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         if (action != "RECLASSIFY") declaration.ReviewNote = note;
         declaration.ReviewedById = access.UserId; declaration.ReviewedAt = DateTimeOffset.UtcNow;
         declaration.UpdatedAt = declaration.ReviewedAt.Value; declaration.Version = Guid.NewGuid();
-        Audit(declaration, auditAction, auditNote);
+        Audit(declaration, auditAction, auditNote, before);
         await db.SaveChangesAsync(ct);
         return Ok(Detail(declaration));
     }
@@ -445,17 +509,21 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
             Sha256 = upload.Sha256, Content = upload.Content, UploadedAt = DateTimeOffset.UtcNow };
     }
 
-    private void Audit(ImporterDeclaration declaration, string action, string? note)
+    private void Audit(ImporterDeclaration declaration, string action, string? note, object? before = null)
     {
         db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = access.UserId.ToString(), SubjectUserId = declaration.ImporterId,
             Username = User.Identity?.Name ?? "", OccurredAt = DateTimeOffset.UtcNow, Action = action, Module = "ImporterDeclarations",
             RecordId = declaration.Id, LocationId = declaration.LocationId, Decision = declaration.Status, Justification = note,
-            NewValueJson = JsonSerializer.Serialize(new { declaration.Reference, declaration.Status, declaration.SuggestedHsCodeId, declaration.SuggestedTariffLineId, declaration.ConfirmedHsCodeId, declaration.ConfirmedTariffLineId, declaration.ImportPurpose }) });
+            PreviousValueJson = before is null ? null : JsonSerializer.Serialize(before), NewValueJson = JsonSerializer.Serialize(AuditState(declaration)) });
     }
 
-    private static object Summary(ImporterDeclaration x) => new { x.Id, x.Reference, x.Status, x.ProductName, x.ImportPurpose, x.OriginCountryName,
+    /// <summary>The declaration fields an audit event records, so each event shows the state at that moment rather than today's.</summary>
+    private static object AuditState(ImporterDeclaration x) => new { x.Reference, x.Status, x.SuggestedHsCodeId, x.SuggestedTariffLineId, x.ConfirmedHsCodeId, x.ConfirmedTariffLineId, x.ImportPurpose,
+        x.ProductName, x.Quantity, x.Unit, x.OriginCountryCode, x.OriginCountryName, x.InvoiceAmount, x.InvoiceCurrency, x.FreightAmount, x.InsuranceAmount };
+
+    private static object Summary(ImporterDeclaration x) => new { x.Id, x.Reference, x.Status, x.ProductName, x.Brand, x.Model, x.SuggestedTariffDescription, x.ImportPurpose, x.OriginCountryName,
         x.SuggestedHsCodeId, x.SuggestedTariffLineId, x.ConfirmedHsCodeId, x.ConfirmedTariffLineId, x.LocationId, x.SubmittedAt, x.UpdatedAt, x.Version,
-        x.InvoiceAmount, x.InvoiceCurrency, x.AssessedPayable, x.AssessmentCurrency };
+        x.InvoiceAmount, x.InvoiceCurrency, x.AssessedPayable, x.AssessmentCurrency, canEdit = Editable(x) };
 
     private static JsonElement AssessmentLines(ImporterDeclaration x)
     {
@@ -463,13 +531,19 @@ public sealed class ImporterDeclarationsController(CustomsDbContext db, Workspac
         catch (JsonException) { return JsonSerializer.Deserialize<JsonElement>("[]"); }
     }
 
-    private static object Detail(ImporterDeclaration x) => new { x.Id, x.Reference, x.Status, x.ImporterId, x.LocationId,
+    /// <summary>The importer can change a declaration while it waits for an officer, or when an officer asked for more information.</summary>
+    internal static bool Editable(ImporterDeclaration x) => x.Status == "INFORMATION_REQUESTED" || (x.Status == "SUBMITTED" && x.ReviewStartedAt is null);
+
+    private static object Detail(ImporterDeclaration x, IReadOnlyDictionary<Guid, (string Code, string Description)>? tariffs = null) => new { x.Id, x.Reference, x.Status, x.ImporterId, x.LocationId,
         x.SuggestedHsCodeId, x.SuggestedTariffLineId, x.SuggestedTariffDescription, x.ConfirmedHsCodeId, x.ConfirmedTariffLineId, x.OriginCountryCode, x.OriginCountryName,
+        suggestedTariffCode = x.SuggestedTariffLineId is { } suggestedId ? tariffs?.GetValueOrDefault(suggestedId).Code : null,
+        confirmedTariffCode = x.ConfirmedTariffLineId is { } confirmedId ? tariffs?.GetValueOrDefault(confirmedId).Code : null,
+        confirmedTariffDescription = x.ConfirmedTariffLineId is { } confirmedLineId ? tariffs?.GetValueOrDefault(confirmedLineId).Description : null,
         x.ImportPurpose, x.PurposeDetails, x.IsCommercialProduct, x.IsMachineryOrEquipment,
         requestedTreatments = JsonSerializer.Deserialize<string[]>(x.RequestedTreatmentsJson) ?? [], x.Brand, x.Model, x.ProductName,
         x.Description, x.Manufacturer, x.SerialOrPartNumber, x.Specifications, x.Quantity, x.Unit,
         x.InvoiceAmount, x.InvoiceCurrency, x.FreightAmount, x.InsuranceAmount,
         x.AssessedAt, x.AssessmentCurrency, x.AssessedCustomsValue, x.AssessedTotalTax, x.AssessedPayable, assessmentLines = AssessmentLines(x),
-        x.ReviewNote, x.ReviewedById, x.ReviewedAt, x.SubmittedAt, x.UpdatedAt, x.Version,
+        x.ReviewNote, x.ReviewedById, x.ReviewedAt, x.ReviewStartedAt, canEdit = Editable(x), x.SubmittedAt, x.UpdatedAt, x.Version,
         documents = x.Documents.Select(d => new { d.Kind, d.FileName, d.ContentType, d.Size, d.Sha256, d.UploadedAt }).ToArray() };
 }

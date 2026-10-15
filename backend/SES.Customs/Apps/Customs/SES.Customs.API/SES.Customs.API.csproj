@@ -11,4 +11,7 @@
     <ProjectReference Include="../SES.Customs.Core/SES.Customs.Core.csproj" />
     <ProjectReference Include="../SES.Customs.Infrastructure/SES.Customs.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Integrations\Hs\hs-nomenclature.json" LogicalName="SES.Customs.API.Integrations.Hs.hs-nomenclature.json" />
+  </ItemGroup>
 </Project>

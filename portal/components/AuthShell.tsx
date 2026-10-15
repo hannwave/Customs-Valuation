@@ -8,6 +8,7 @@ import { setSessionAccessToken } from "@/lib/auth/session";
 import { normalizeWorkspaceRole } from "@/lib/workspace";
 import { Brand, CustomsLogo } from "@/components/Brand";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ToastMessage } from "@/components/Toaster";
 export function LanguageSelect() {
   const { t, i18n } = useTranslation();
   return <label className="language-select"><FiGlobe aria-hidden="true"/><span className="sr-only">{t("language")}</span><select value={i18n.resolvedLanguage ?? "en"} onChange={e => void i18n.changeLanguage(e.target.value)}><option value="en">English</option><option value="am">አማርኛ</option></select></label>;
@@ -55,7 +56,7 @@ export function LoginForm() {
   }
   return <form className="auth-form" onSubmit={submit} aria-busy={busy}>
     <div className="form-heading"><p className="eyebrow">{t("auth.welcome", "YOUR VALUATION WORKSPACE")}</p><h1>{t("auth.signIn", "Welcome back")}</h1><p className="auth-subtitle">{t("auth.signInBody", "Sign in to access classification and price evidence.")}</p></div>
-    {error && <p className="auth-error" role="alert">{error}</p>}
+    <ToastMessage kind="error" message={error} onClear={() => setError("")} />
     <div className="field-group"><label htmlFor="identity">{t("auth.identity", "Username or email")}<span className="required-mark"> *</span></label><div className="input-with-icon"><FiUser aria-hidden="true"/><input id="identity" name="identity" required autoComplete="username" placeholder={t("auth.identityPlaceholder", "Enter your username or email")}/></div></div>
     <PasswordField name="password" label={t("auth.password", "Password")} placeholder={t("auth.passwordPlaceholder", "Enter your password")} autoComplete="current-password"/>
     <button className="auth-primary" type="submit" disabled={busy}>{busy ? t("auth.signingIn", "Signing in…") : t("auth.signInAction", "Sign in to workspace")}<FiArrowRight aria-hidden="true"/></button>
@@ -90,7 +91,7 @@ export function SignupForm() {
   return <form className="auth-form signup-form paper-form" onSubmit={submit} aria-busy={busy}>
     <p className="eyebrow">{t("auth.join", "JOIN THE WORKSPACE")}</p><h1>Apply as a Customs Officer</h1><p className="auth-subtitle">Submit your official staff details and requested customs branch. A Customs Administrator reviews this application before access is activated.</p>
     <div className="paper-form-note"><FiShield aria-hidden="true"/><div><strong>Customs Administrator review</strong><p>Your username and password are private. The reviewing administrator will only see your official application details.</p></div></div>
-    {error && <p className="auth-error" role="alert">{error}</p>}
+    <ToastMessage kind="error" message={error} onClear={() => setError("")} />
     <div className="form-grid">
       <div className="field-group"><label htmlFor="username">Username<span className="required-mark"> *</span></label><input id="username" name="username" required minLength={3} maxLength={120} autoComplete="username" placeholder="Choose your username" /></div>
       <div className="field-group"><label htmlFor="fullName">{t("auth.fullName", "Full name")}<span className="required-mark"> *</span></label><input id="fullName" name="fullName" required autoComplete="name" placeholder={t("auth.fullName", "Full name")}/></div>

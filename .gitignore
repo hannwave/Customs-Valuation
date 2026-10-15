@@ -12,3 +12,6 @@ portal-dev.err
 .verify-*/
 .vs/
 work/
+
+# Local build/test output
+.validation/

@@ -284,6 +284,14 @@ public sealed class AuthService(CustomsDbContext db, IConfiguration configuratio
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task RecordFailedSignInAsync(Guid id, string? ip, CancellationToken ct = default)
+    {
+        var user = await db.AuthAccounts.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null) return;
+        db.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), UserId = id.ToString(), SubjectUserId = id, Username = user.Username, OccurredAt = DateTimeOffset.UtcNow, Action = "SIGN_IN_FAILED", Module = "Users", RecordId = id, LocationId = user.PrimaryLocationId, IpDeviceInformation = ip, Justification = "Wrong password entered." });
+        await db.SaveChangesAsync(ct);
+    }
+
     public static bool Verify(AuthUser user, string password)
     {
         return VerifyHash(user.PasswordHash, password);

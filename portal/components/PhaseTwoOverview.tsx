@@ -34,6 +34,7 @@ import type {
 import { readValuationSession } from "@/lib/valuation-session";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
 import { recommendedHsCode } from "@/lib/hs-recommendation";
+import { HsItem } from "@/components/hs/HsItem";
 
 type PhaseTwoOverviewProps = {
   onBackToReview?: () => void;
@@ -63,6 +64,7 @@ function applyRecommendedRates(draft: Phase2Request, item: HsCode): Phase2Reques
   return {
     ...draft,
     selectedHsCodeId: item.id,
+    selectedTariffLineId: null,
     unit: exciseUnitFor(item),
     taxLines: pendingTaxLines(),
     exciseTaxApplicable: false,
@@ -236,11 +238,15 @@ function draftFromResponse(data: Phase2Response): Phase2Request {
   const carriedValue = phase1Value(data);
   if (!phase) return {
     ...emptyDraft(carriedValue), selectedHsCodeId: data.phase1.hsCodeId,
+    selectedTariffLineId: data.phase1.selectedTariffLineId ?? null,
+    importPurpose: data.importerDeclaration?.importPurpose || data.phase1.importPurpose || (data.phase1.productType === "MANUFACTURING" ? "MANUFACTURING" : ""),
+    isMachineryOrEquipment: data.importerDeclaration?.isMachineryOrEquipment ?? data.phase1.isMachineryOrEquipment ?? false,
     originCountry: data.importerDeclaration?.originCountryCode ?? "",
     quantity: data.importerDeclaration?.quantity || 1,
     unit: data.importerDeclaration?.unit || "Pieces (PCS)",
     isCommercialImport: data.importerDeclaration?.isCommercialProduct ?? true,
-    productCategory: data.phase1.productType === "MANUFACTURING" || data.importerDeclaration?.importPurpose === "MANUFACTURING" ? "Manufacturing input" : "General goods",
+    productCategory: data.phase1.productType === "MANUFACTURING" || data.importerDeclaration?.importPurpose === "MANUFACTURING" || data.phase1.importPurpose === "MANUFACTURING"
+      ? (data.importerDeclaration?.isMachineryOrEquipment ?? data.phase1.isMachineryOrEquipment) ? "Capital goods" : "Manufacturing input" : "General goods",
     // Importer claims are displayed to the officer; exemption codes stay empty until the officer chooses them.
   };
 
@@ -289,6 +295,9 @@ function draftFromResponse(data: Phase2Response): Phase2Request {
     adjustmentReason: phase.adjustmentReason,
     officerConfirmation: phase.officerConfirmed,
     expectedVersion: phase.version,
+    selectedTariffLineId: phase.selectedTariffLineId ?? null,
+    importPurpose: phase.importPurpose || data.phase1.importPurpose || "",
+    isMachineryOrEquipment: phase.isMachineryOrEquipment ?? false,
   };
 }
 
@@ -407,8 +416,8 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const currency = draft.targetCurrency || "ETB";
-  const isManufacturingProduct = data?.phase1.productType === "MANUFACTURING" || data?.importerDeclaration?.importPurpose === "MANUFACTURING";
-  const isCommodityProduct = data?.phase1.productType === "COMMODITY";
+  const isManufacturingProduct = (data?.importerDeclaration?.importPurpose ?? draft.importPurpose) === "MANUFACTURING";
+  const purposeLocked = Boolean(data?.importerDeclaration);
   const remarksIssue = officerNoteIssue(draft.notes);
   const adjustmentNoteIssue = officerNoteIssue(draft.adjustmentReason);
   const noteIssue = remarksIssue ?? adjustmentNoteIssue;
@@ -419,17 +428,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
 
   const rows = useMemo(
     () => {
-      const preview = previewLines(draft.taxLines, Number(draft.customsValueAmount) || 0, Number(draft.quantity) || 0, currency);
-      if (!isManufacturingProduct) return preview;
-      return preview.map((line) => ({
-        ...line,
-        isApplicable: false,
-        status: line.status === "Exempt" ? line.status : "NotApplicable",
-        notes: line.status === "Exempt" ? line.notes : "Not applicable: manufacturing product type has no assessment taxes or fees.",
-        calculatedAmount: 0,
-      }));
+      return previewLines(draft.taxLines, Number(draft.customsValueAmount) || 0, Number(draft.quantity) || 0, currency);
     },
-    [draft.taxLines, draft.customsValueAmount, draft.quantity, currency, isManufacturingProduct],
+    [draft.taxLines, draft.customsValueAmount, draft.quantity, currency],
   );
 
   const totalTaxPreview = rows
@@ -455,7 +456,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
         : Number(draft.manualAdjustmentAmount) || 0),
   );
 
-  const unresolvedTax = draft.taxLines.some((line) => line.status === "ReviewRequired" || line.status === "Pending");
+  const unresolvedTax = draft.taxLines.some((line) => line.isApplicable !== false && (line.status === "ReviewRequired" || line.status === "Pending"));
   const needsHsReview = !draft.selectedHsCodeId || selectedHs?.hsUpdateStatus === "MAPPING_CANDIDATE";
   const isRecommended = Boolean(
     !isManuallyOverridden &&
@@ -688,6 +689,37 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
     }
   }
 
+  /** Recalculates under a new import purpose; manufacturing (and machinery) changes which reliefs apply. */
+  function choosePurpose(importPurpose: string, isMachineryOrEquipment: boolean) {
+    const category = importPurpose === "MANUFACTURING" ? isMachineryOrEquipment ? "Capital goods" : "Manufacturing input"
+      : draft.productCategory === "Capital goods" || draft.productCategory === "Manufacturing input" ? "General goods" : draft.productCategory;
+    const nextDraft = { ...draft, importPurpose, isMachineryOrEquipment, productCategory: category, taxLines: pendingTaxLines() };
+    setDraft(nextDraft);
+    if (!decisionId || nextDraft.customsValueAmount <= 0) return;
+    setBusy(true); setError("");
+    void calculatePhase2(decisionId, requestPayload(nextDraft))
+      .then((response) => { setData(response); setDraft(draftFromCalculationResponse(response, nextDraft.expectedVersion)); setNotice("Import purpose updated. Duties and taxes recalculated with the applicable reliefs."); })
+      .catch((exception) => setError(exception instanceof Error ? exception.message : "Tax recommendations could not be calculated."))
+      .finally(() => setBusy(false));
+  }
+
+  /** Taxes the chosen national tariff line; an HS code can have several with different duty rates. */
+  function chooseTariffLine(lineId: string) {
+    const nextDraft = { ...draft, selectedTariffLineId: lineId, taxLines: pendingTaxLines() };
+    setDraft(nextDraft);
+    if (!decisionId || nextDraft.customsValueAmount <= 0) return;
+    setBusy(true); setError("");
+    void calculatePhase2(decisionId, requestPayload(nextDraft))
+      .then((response) => {
+        setData(response);
+        setDraft(draftFromCalculationResponse(response, nextDraft.expectedVersion));
+        const chosen = response.tariffLineOptions?.find(option => option.id === lineId);
+        setNotice(`Tariff line ${chosen?.tariffItemNo ?? ""} selected. Duty and taxes recalculated.`);
+      })
+      .catch((exception) => setError(exception instanceof Error ? exception.message : "Tax recommendations could not be calculated."))
+      .finally(() => setBusy(false));
+  }
+
   function update<K extends keyof Phase2Request>(key: K, value: Phase2Request[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
@@ -725,7 +757,6 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
   }
 
   function addTax() {
-    if (isManufacturingProduct) return;
     const name = newTaxName.trim();
     if (!name) return;
     if (standardTaxNames.some((standardName) => standardName.toLowerCase() === name.toLowerCase())) {
@@ -848,6 +879,17 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
 
   const calculationNotReady = unresolvedTax || specificExciseNeedsRefresh || needsHsReview || !(draft.customsValueAmount > 0);
   const confirmDisabled = busy || calculationNotReady || !draft.officerConfirmation || Boolean(noteIssue);
+  // Tell the officer exactly what still blocks confirmation instead of only greying the button out.
+  const confirmBlockers = [
+    needsHsReview && "Choose the HS code.",
+    (data?.tariffLineOptions?.length ?? 0) > 1 && !data?.phase2?.selectedTariffLineId && "Choose the national tariff line.",
+    unresolvedTax && `Resolve or switch off: ${draft.taxLines.filter(line => line.isApplicable !== false && (line.status === "ReviewRequired" || line.status === "Pending")).map(line => line.name).join(", ")}.`,
+    specificExciseNeedsRefresh && "Refresh the calculation after changing the quantity.",
+    !(draft.customsValueAmount > 0) && "The customs value (CIF) must be above zero.",
+    noteIssue && noteIssue,
+    draft.exemptionCodes.includes("CUSTOMS_DUTY_EXEMPT") && draft.notes.trim().length < 10 && "Record the authority for the customs duty exemption in the remarks.",
+    !draft.officerConfirmation && "Tick the review confirmation.",
+  ].filter(Boolean) as string[];
   const originalRows = originalDraft ? previewLines(originalDraft.taxLines, originalDraft.customsValueAmount, originalDraft.quantity, originalDraft.targetCurrency) : [];
   const originalTotal = originalRows.filter(line => line.isApplicable !== false && !isExciseComparisonLine(line)).reduce((sum, line) => sum + line.calculatedAmount, 0);
   const comparable = originalDraft && originalDraft.targetCurrency === currency && !calculationNotReady && !originalRows.some(line => line.status === "Pending" || line.status === "ReviewRequired");
@@ -882,7 +924,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
       {recordedOutcome && <p className="assessment-recorded" role="status">{recordedOutcome}. {dirty && "Further edits are not saved."} <a href={`/audit/cases/${decisionId}`}>View recorded outcome and audit history</a></p>}
       {calculationNotReady && <p className="assessment-readiness" role="status">Calculation requires review. Resolve the HS code, customs value, and pending tax rows before confirmation. Totals are provisional.</p>}
       {originalDraft && <section className="assessment-change-summary"><h2>Changes since opening this assessment</h2>
-        <p>HS code: {hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.tariffItemNo || hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.code || originalDraft.selectedHsCodeId || "Not selected"} → {hsCodeInput || "Not selected"}</p>
+        <p>Classification: <HsItem code={hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.tariffItemNo || hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.code} description={hsResults.find(item => item.id === originalDraft.selectedHsCodeId)?.descriptionEn} empty="Not selected" /> → <HsItem code={hsCodeInput} description={selectedHs?.descriptionEn} empty="Not selected" /></p>
         <p>Original tax: {originalRows.some(line => line.status === "Pending" || line.status === "ReviewRequired") ? "Not calculated" : money(originalTotal, originalDraft.targetCurrency)} · Revised tax: {calculationNotReady ? "Provisional — review required" : money(totalTaxPreview, currency)} · Difference: {comparable ? money(totalTaxPreview - originalTotal, currency) : "Awaiting comparable calculations"}</p>
         <p>Includes the effect on dependent taxes. Reason: {draft.adjustmentReason || "No adjustment reason entered"}</p>
       </section>}
@@ -1006,8 +1048,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                           className={`hs-suggestion-item ${item.id === draft.selectedHsCodeId ? "is-selected" : ""}`}
                           onClick={() => selectHsItem(item, true)}
                         >
-                          <span className="hs-suggestion-code">{displayHsCode(item)}</span>
-                          <span className="hs-suggestion-desc">{item.descriptionEn}</span>
+                          <HsItem code={displayHsCode(item)} description={item.descriptionEn} className="hs-suggestion-desc" />
                           {item.duty && <span className="hs-suggestion-duty">{item.duty} duty</span>}
                         </button>
                       ))}
@@ -1074,8 +1115,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             selectHsItem(item, true);
                           }}
                         >
-                          <span className="hs-suggestion-code">{displayHsCode(item)}</span>
-                          <span className="hs-suggestion-desc">{item.descriptionEn}</span>
+                          <HsItem code={displayHsCode(item)} description={item.descriptionEn} className="hs-suggestion-desc" />
                           {item.duty && <span className="hs-suggestion-duty">{item.duty}</span>}
                         </button>
                       ))}
@@ -1087,9 +1127,39 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
           </div>
         </div>
 
+        {(data?.tariffLineOptions?.length ?? 0) > 1 && <fieldset className={`phase2-line-choice${data?.phase2?.selectedTariffLineId ? "" : " needs-choice"}`}>
+          <legend>National tariff line <small>{data?.phase2?.selectedTariffLineId ? "used for duty and taxes" : "choose the line that matches the goods — duty rates differ"}</small></legend>
+          <div className="phase2-line-options">{data!.tariffLineOptions!.map(option => {
+            const active = data?.phase2?.selectedTariffLineId === option.id;
+            return <button type="button" key={option.id} className={active ? "is-selected" : ""} aria-pressed={active} disabled={busy} onClick={() => chooseTariffLine(option.id)}>
+              <HsItem code={option.tariffItemNo} description={option.description} full /><b>{option.dutyRate == null ? "Rate not listed" : option.dutyRate === 0 ? "Duty free" : `${option.dutyRate}% duty`}</b>
+            </button>;
+          })}</div>
+        </fieldset>}
         {data?.importerDeclaration && <div className="importer-provisional"><strong>Importer submission {data.importerDeclaration.reference}</strong><p>Purpose: {data.importerDeclaration.importPurpose.replaceAll("_", " ")} · Origin: {data.importerDeclaration.originCountryCode} · Machinery/equipment claimed: {data.importerDeclaration.isMachineryOrEquipment ? "yes" : "no"}</p><p>Requested treatment for review: {data.importerDeclaration.requestedTreatments.length ? data.importerDeclaration.requestedTreatments.join(", ").replaceAll("_", " ") : "none"}. No exemption is applied from this claim; verify the rule and evidence before selecting treatment below.</p></div>}
-        {data?.phase1.fobCifCalculation && <div className="phase2-fob-breakdown"><strong>Origin-country FOB valuation carried into CIF</strong><p>{data.phase1.fobCifCalculation.originCountryName} ({data.phase1.fobCifCalculation.originCountryCode}) · Certificate of Origin: {data.phase1.fobCifCalculation.certificateOfOrigin.fileName}</p><div><span>FOB</span><b>{money(data.phase1.fobCifCalculation.fobAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Freight</span><b>{money(data.phase1.fobCifCalculation.freightAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Insurance</span><b>{money(data.phase1.fobCifCalculation.insuranceAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Converted CIF customs value</span><b>{money(data.phase1.fobCifCalculation.customsValueCifAmount, data.phase1.fobCifCalculation.customsValueCurrency)}</b></div><small>Exchange rate {data.phase1.fobCifCalculation.exchangeRate.toLocaleString()} · {data.phase1.fobCifCalculation.exchangeRateSource} · {data.phase1.fobCifCalculation.exchangeRateDate}</small></div>}
+        {data?.phase1.fobCifCalculation && <div className="phase2-fob-breakdown"><strong>Origin-country FOB valuation carried into CIF</strong><p>{data.phase1.fobCifCalculation.originCountryName} ({data.phase1.fobCifCalculation.originCountryCode}) {data.phase1.fobCifCalculation.certificateOfOrigin ? ` · Certificate of Origin: ${data.phase1.fobCifCalculation.certificateOfOrigin.fileName}` : ""}</p><div><span>FOB</span><b>{money(data.phase1.fobCifCalculation.fobAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Freight</span><b>{money(data.phase1.fobCifCalculation.freightAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Insurance</span><b>{money(data.phase1.fobCifCalculation.insuranceAmount, data.phase1.fobCifCalculation.originalCurrency)}</b><span>Converted CIF customs value</span><b>{money(data.phase1.fobCifCalculation.customsValueCifAmount, data.phase1.fobCifCalculation.customsValueCurrency)}</b></div><small>Exchange rate {data.phase1.fobCifCalculation.exchangeRate.toLocaleString()} · {data.phase1.fobCifCalculation.exchangeRateSource} · {data.phase1.fobCifCalculation.exchangeRateDate}</small></div>}
         {data?.phase1.declaredPriceAmount != null && <div className="phase2-receipt-evidence"><div><span>Customer invoice declaration</span><strong>{money(data.phase1.declaredPriceAmount, data.phase1.declaredPriceCurrency)}</strong><small>Original amount paid</small></div><div><span>Converted into Phase 1 currency</span><strong>{money(data.phase1.declaredPriceConvertedAmount, data.phase1.declaredPriceConvertedCurrency)}</strong><small>Rate {data.phase1.declaredPriceExchangeRate?.toLocaleString() ?? "—"} · {data.phase1.declaredPriceExchangeRateSource}</small></div><button className="secondary-button" type="button" onClick={() => void openCustomerReceipt()} disabled={!data.phase1.receiptFileName || receiptBusy}><FiFileText />{receiptBusy ? "Opening receipt…" : data.phase1.receiptFileName || "Receipt unavailable"}</button></div>}
+
+        <fieldset className="phase2-purpose">
+          <legend>Purpose of import <small>{purposeLocked ? "from the importer's declaration" : "drives manufacturing tax reliefs"}</small></legend>
+          <div className="phase2-purpose-row">
+            <select value={draft.importPurpose ?? ""} disabled={purposeLocked || busy} onChange={(event) => choosePurpose(event.target.value, event.target.value === "MANUFACTURING" ? draft.isMachineryOrEquipment ?? false : false)} aria-label="Purpose of import">
+              <option value="">Not specified (commercial rules)</option>
+              <option value="COMMERCIAL_RESALE">Commercial resale</option>
+              <option value="MANUFACTURING">Manufacturing / production</option>
+              <option value="PERSONAL">Personal use</option>
+              <option value="INSTITUTIONAL">Institutional use</option>
+              <option value="OTHER">Other</option>
+            </select>
+            {draft.importPurpose === "MANUFACTURING" && <div className="oc-segmented" role="radiogroup" aria-label="Manufacturing goods">
+              <button type="button" aria-selected={!draft.isMachineryOrEquipment} disabled={purposeLocked || busy} onClick={() => choosePurpose("MANUFACTURING", false)}>Raw materials / inputs</button>
+              <button type="button" aria-selected={Boolean(draft.isMachineryOrEquipment)} disabled={purposeLocked || busy} onClick={() => choosePurpose("MANUFACTURING", true)}>Machinery / equipment</button>
+            </div>}
+          </div>
+          {draft.importPurpose === "MANUFACTURING" && <p className="phase2-purpose-note">{draft.isMachineryOrEquipment
+            ? "Capital goods for manufacturing: customs duty, VAT and the social welfare levy are exempt (Investment Incentive Regulation No. 517/2022), surtax falls away and no import withholding is collected. Check the investment permit before confirming."
+            : "Manufacturing inputs: the 3% import withholding is not collected (Income Tax Proclamation No. 979/2016, Art. 97). Duty and VAT apply at the tariff rates."}</p>}
+        </fieldset>
 
         <div className="phase2-inputs-toggle">
           <button type="button" onClick={() => setShowInputs((value) => !value)} aria-expanded={showInputs}>
@@ -1160,7 +1230,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                     <input
                       type="checkbox"
                       checked={draft.exemptionCodes.includes(code)}
-                      disabled={code === "MACHINERY_EQUIPMENT_EXEMPT" && !(data?.importerDeclaration?.importPurpose === "MANUFACTURING" && data.importerDeclaration.isMachineryOrEquipment)}
+                      disabled={code === "MACHINERY_EQUIPMENT_EXEMPT" && !isManufacturingProduct}
                       onChange={() => toggleExemption(code)}
                     />
                     {label}
@@ -1183,7 +1253,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                 </h2>
                 <div className="inline-statuses">
                   <span className="status-pill status-pill--good">
-                    <FiCheck /> Taxes auto-determined from HS code {hsCodeInput ? `(${hsCodeInput})` : ""}
+                    <FiCheck /> Taxes auto-determined from {hsCodeInput ? <HsItem code={hsCodeInput} description={selectedHs?.descriptionEn} /> : "the HS code"}
                   </span>
                   {unresolvedTax && (
                     <span className="status-pill status-pill--warning">
@@ -1247,7 +1317,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             min="0"
                             step="0.01"
                             placeholder={line.calculationType === "PerUnit" ? "Amount" : undefined}
-                            value={line.status === "Pending" || (line.status === "ReviewRequired" && line.value <= 0) ? "" : line.value}
+                            value={line.status === "Pending" ? "" : line.value}
                             onChange={(event) => updateLine(index, { value: Number(event.target.value), status: "OfficerAdjusted" })}
                             disabled={line.isApplicable === false}
                             aria-label={`${displayTaxName(line.name, line.calculationBasis)} ${line.calculationType === "PerUnit" ? `specific amount per ${exciseUnitAbbreviation(draft.unit)} in ETB` : "rate in percent"}`}
@@ -1268,7 +1338,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                           {line.status === "Pending" || line.status === "ReviewRequired"
                             ? "—"
                             : line.isApplicable === false
-                              ? <div className="tax-line-assessment-status"><strong>{money(0, currency)}</strong><span>{line.status === "Exempt" ? "EXEMPT" : "NOT APPLICABLE"}</span><small>{line.notes || "No specific reason recorded."}</small></div>
+                              ? <div className="tax-line-assessment-status"><strong>{money(0, currency)}</strong><span>{line.status === "Exempt" ? "EXEMPT" : "NOT APPLICABLE"}</span><small title={line.notes}>{line.notes || "No specific reason recorded."}</small></div>
                             : line.name === "Excise Tax (specific)" && specificExciseNeedsRefresh
                               ? "Refresh calculation"
                               : money(line.calculatedAmount, currency)}
@@ -1280,7 +1350,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                             role="switch"
                             aria-checked={line.isApplicable !== false}
                             onClick={() => toggleLine(index)}
-                            disabled={line.status === "Exempt" || isManufacturingProduct}
+                            disabled={line.status === "Exempt"}
                             aria-label={`${line.isApplicable === false ? "Apply" : "Disable"} ${displayTaxName(line.name, line.calculationBasis)}`}
                           >
                             <span />
@@ -1306,7 +1376,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                   <button type="button" onClick={() => setShowNewTax(false)}><FiX /></button>
                 </div>
               ) : (
-                <button type="button" onClick={() => setShowNewTax(true)} disabled={isManufacturingProduct}>
+                <button type="button" onClick={() => setShowNewTax(true)}>
                   <FiPlus /> Add tax type
                 </button>
               )}
@@ -1364,9 +1434,9 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
               <div className="calculation-summary-line"><span>Waivers</span><strong>−{money(draft.waiverAmount, currency)}</strong></div>
               <div className="calculation-summary-line"><span>Adjustment</span><strong>{money(adjustment, currency)}</strong></div>
               <div className="calculation-summary-line"><span>Duties and taxes balance after adjustments (excluding CIF; negative is credit)</span><strong>{calculationNotReady ? "Provisional — review required" : money(netTaxes, currency)}</strong></div>
-              {isCommodityProduct && (
+              {(
                 <div className="calculation-summary-line calculation-summary-line--total">
-                  <span>Total taxes payable for this commodity</span>
+                  <span>Total duties and taxes payable</span>
                   <strong>{calculationNotReady ? "Provisional — review required" : money(Math.max(0, netTaxes), currency)}</strong>
                 </div>
               )}
@@ -1396,8 +1466,8 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
                   <div className="reason-required-alert">
                     <FiAlertCircle style={{ marginRight: "4px", verticalAlign: "middle" }} />
                     HS Code was manually changed from{" "}
-                    <strong>{systemRecommendedCode || "system recommendation"}</strong> to{" "}
-                    <strong>{hsCodeInput}</strong>.
+                    <strong>{systemRecommendedCode ? <HsItem code={systemRecommendedCode} /> : "system recommendation"}</strong> to{" "}
+                    <strong><HsItem code={hsCodeInput} description={selectedHs?.descriptionEn} /></strong>.
                   </div>
                 )}
                 <textarea
@@ -1434,6 +1504,7 @@ export function PhaseTwoOverview({ onBackToReview }: PhaseTwoOverviewProps) {
             >
               <FiCheckCircle /> Confirm Assessment
             </button>
+            {confirmBlockers.length > 0 && !busy && <ul className="phase2-blockers" aria-live="polite">{confirmBlockers.map(item => <li key={item}>{item}</li>)}</ul>}
           </section>
         </aside>
       </div>

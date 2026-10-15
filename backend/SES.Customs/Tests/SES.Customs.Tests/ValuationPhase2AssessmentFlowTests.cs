@@ -15,7 +15,7 @@ namespace SES.Customs.Tests;
 public sealed class ValuationPhase2AssessmentFlowTests
 {
     [Fact]
-    public async Task PhaseOneManufacturingSelectionMakesAllAssessmentTaxesNotApplicable()
+    public async Task PhaseOneManufacturingCapitalGoodsGetTheMachineryIncentive()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
         var hsCodeId = Guid.NewGuid();
@@ -68,22 +68,18 @@ public sealed class ValuationPhase2AssessmentFlowTests
         var vat = Assert.Single(assessment.TaxLines, line => line.Name == "VAT");
         var withholding = Assert.Single(assessment.TaxLines, line => line.Name == "Withholding Tax");
         var cargoFee = Assert.Single(assessment.TaxLines, line => line.Name == "Cargo Scanning Fee");
-        Assert.Equal("NotApplicable", duty.Status);
-        Assert.Equal("NotApplicable", vat.Status);
-        Assert.All(assessment.TaxLines, line =>
-        {
-            Assert.False(line.IsApplicable);
-            Assert.Equal(0m, line.CalculatedAmount);
-            Assert.Equal("NotApplicable", line.Status);
-        });
+        Assert.Equal("Exempt", duty.Status);
+        Assert.Equal("Exempt", vat.Status);
+        Assert.Equal(0m, duty.CalculatedAmount);
+        Assert.Equal(0m, vat.CalculatedAmount);
+        Assert.False(withholding.IsApplicable);
         Assert.Contains("manufacturing", withholding.Notes, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("manufacturing", cargoFee.Notes, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0m, cargoFee.CalculatedAmount);
-        Assert.Equal(0m, assessment.TotalTax);
+        Assert.True(cargoFee.IsApplicable);
+        Assert.Equal(700m, cargoFee.CalculatedAmount);
+        Assert.Equal(700m, assessment.TotalTax);
 
         var auditSnapshot = await db.ValuationAuditSnapshots.SingleAsync();
         Assert.Contains("Cargo Scanning Fee", auditSnapshot.TaxBreakdownJson);
-        Assert.Contains("no assessment taxes or fees", auditSnapshot.TaxBreakdownJson);
-        Assert.Contains("manufacturing", auditSnapshot.TaxBreakdownJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("517/2022", auditSnapshot.TaxBreakdownJson);
     }
 }

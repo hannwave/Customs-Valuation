@@ -88,4 +88,27 @@ public sealed class AuditLog
     public string? Decision { get; set; }
     public string? Justification { get; set; }
     public string? IpDeviceInformation { get; set; }
+    /// <summary>Which audit view shows the event (AuditTaxonomy.Categories); filled in when the event is saved.</summary>
+    public string Category { get; set; } = "";
+    /// <summary>Where it happened: importer portal, valuation search, administration or system.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>The actor's role at the time of the event.</summary>
+    public string ActorRole { get; set; } = "";
+    /// <summary>The region the event belongs to, so regional administrators see it.</summary>
+    public Guid? RegionLocationId { get; set; }
+}
+
+/// <summary>Trade documents an officer attaches to their own valuation besides the receipt: packing list and certificate of origin.</summary>
+public sealed class ValuationDecisionDocument
+{
+    public Guid Id { get; set; }
+    public Guid ValuationDecisionId { get; set; }
+    public string Kind { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public long Size { get; set; }
+    public string Sha256 { get; set; } = "";
+    public byte[] Content { get; set; } = [];
+    public DateTimeOffset UploadedAt { get; set; }
+    public string UploadedBy { get; set; } = "";
 }

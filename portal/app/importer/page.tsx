@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FiArrowRight, FiCheck, FiClock, FiFileText, FiMapPin, FiPlusCircle, FiUserCheck } from "react-icons/fi";
+import { FiArrowRight, FiCheck, FiClock, FiFileText, FiMapPin, FiPackage, FiPlusCircle, FiUserCheck } from "react-icons/fi";
 import { ImporterLanding } from "@/components/ImporterOnboarding";
 import { usePortal, usePortalOptional } from "@/components/importer/ImporterShell";
 import { DeclarationPill, PageHeader, StatCard, VerificationBanner, shortDate } from "@/components/importer/PortalParts";
-import { importerTypes, verificationLabels } from "@/lib/importer";
+import { declarationStatus, importerTypes, verificationLabels, declarationTitle, tariffSummary } from "@/lib/importer";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -14,7 +13,6 @@ function greeting() {
 }
 
 function Dashboard() {
-  const router = useRouter();
   const { account, profile, declarations, verified } = usePortal();
   const all = declarations ?? [];
   const count = (...statuses: string[]) => all.filter(item => statuses.includes(item.status)).length;
@@ -28,12 +26,13 @@ function Dashboard() {
         : <span className="iv-primary ip-disabled" aria-disabled="true" title="Available after verification"><FiPlusCircle aria-hidden="true" />New declaration</span>} />
     <VerificationBanner profile={profile} />
 
-    <div className="ip-stats">
-      <StatCard label="Total declarations" value={declarations ? all.length : "–"} tone="neutral" href="/importer/declarations" />
+    <div className="ip-stats is-six">
+      <StatCard label="Total declarations" value={declarations ? all.length : "–"} tone="neutral" href="/importer/declarations" hint="Everything you registered" />
       <StatCard label="In review" value={declarations ? count("SUBMITTED") : "–"} tone="info" href="/importer/declarations?status=SUBMITTED" hint="With a Customs Officer" />
       <StatCard label="Action needed" value={declarations ? actionNeeded.length : "–"} tone="warning" href="/importer/declarations?status=INFORMATION_REQUESTED" hint="Officer requested information" />
-      <StatCard label="Verified & in assessment" value={declarations ? count("VERIFIED", "ASSESSMENT_READY") : "–"} tone="success" href="/importer/declarations?status=VERIFIED" />
-      <StatCard label="Rejected" value={declarations ? count("REJECTED") : "–"} tone="danger" href="/importer/declarations?status=REJECTED" />
+      <StatCard label="Being valued" value={declarations ? count("VERIFIED", "ASSESSMENT_READY", "IN_ASSESSMENT") : "–"} tone="info" href="/importer/declarations?status=VALUATION" hint="Verified, value and taxes in progress" />
+      <StatCard label="Assessed" value={declarations ? count("ASSESSED") : "–"} tone="success" href="/importer/declarations?status=ASSESSED" hint="Amount payable issued" />
+      <StatCard label="Rejected" value={declarations ? count("REJECTED") : "–"} tone="danger" href="/importer/declarations?status=REJECTED" hint="Not accepted by the officer" />
     </div>
 
     <div className="ip-dashboard-grid">
@@ -41,18 +40,25 @@ function Dashboard() {
         <header className="ip-card-head"><h2>Recent declarations</h2><Link href="/importer/declarations">View all<FiArrowRight aria-hidden="true" /></Link></header>
         {declarations === null ? <p className="ip-empty">Loading declarations…</p> : all.length === 0
           ? <div className="ip-empty-state"><FiFileText aria-hidden="true" /><strong>No declarations yet</strong><p>{verified ? "Register your first imported goods to start officer review." : "Once you are verified you can register imported goods here."}</p>{verified && <Link className="iv-primary" href="/importer/declarations/new">Create a declaration</Link>}</div>
-          : <div className="iv-table-scroll"><table className="iv-table ip-table">
-            <thead><tr><th scope="col">Reference</th><th scope="col">Product</th><th scope="col">Status</th><th scope="col">Updated</th><th scope="col"><span className="sr-only">Open</span></th></tr></thead>
-            <tbody>{all.slice(0, 6).map(item => <tr key={item.id} onClick={() => router.push(`/importer/declarations/${item.id}`)}>
-              <td data-label="Reference" className="iv-mono">{item.reference}</td><td data-label="Product"><strong>{item.productName}</strong><small>{item.originCountryName}</small></td>
-              <td data-label="Status"><DeclarationPill status={item.status} /></td><td data-label="Updated">{shortDate(item.updatedAt)}</td>
-              <td className="iv-table-action"><Link className="iv-open" href={`/importer/declarations/${item.id}`} onClick={event => event.stopPropagation()}>Open<FiArrowRight aria-hidden="true" /></Link></td></tr>)}</tbody>
-          </table></div>}
+          : <ul className="rd-list">{all.slice(0, 6).map(item => {
+            const tone = declarationStatus[item.status]?.tone ?? "neutral";
+            const urgent = item.status === "INFORMATION_REQUESTED";
+            const summary = tariffSummary(item.suggestedTariffDescription);
+            return <li key={item.id} className={`rd-row is-${tone}`}>
+              <Link href={`/importer/declarations/${item.id}`} title={`${item.productName} · ${item.reference}`}>
+                <span className="rd-icon" aria-hidden="true"><FiPackage /></span>
+                <span className="rd-main"><strong>{declarationTitle(item)}</strong>{summary && <small>{summary}</small>}</span>
+                <span className="rd-origin"><FiMapPin aria-hidden="true" />{item.originCountryName}</span>
+                <span className="rd-status"><DeclarationPill status={item.status} /><small>{shortDate(item.updatedAt)}</small></span>
+                <span className={`rd-go${urgent ? " is-urgent" : ""}`} aria-hidden="true">{urgent ? <em>Respond</em> : null}<FiArrowRight /></span>
+              </Link>
+            </li>;
+          })}</ul>}
       </section>
 
       <div className="ip-side">
         {actionNeeded.length > 0 && <section className="ip-card is-attention"><header className="ip-card-head"><h2>Needs your attention</h2></header>
-          <ul className="ip-task-list">{actionNeeded.slice(0, 4).map(item => <li key={item.id}><Link href={`/importer/declarations/${item.id}`}><strong>{item.productName}</strong><small>{item.reference} · officer requested information</small><FiArrowRight aria-hidden="true" /></Link></li>)}</ul></section>}
+          <ul className="ip-task-list">{actionNeeded.slice(0, 4).map(item => <li key={item.id}><Link href={`/importer/declarations/${item.id}`}><strong>{declarationTitle(item)}</strong><small>{item.reference} · officer requested information</small><FiArrowRight aria-hidden="true" /></Link></li>)}</ul></section>}
 
         <section className="ip-card">
           <header className="ip-card-head"><h2>Your importer account</h2><Link href="/importer/account">Manage<FiArrowRight aria-hidden="true" /></Link></header>

@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiAlertTriangle, FiCheckCircle, FiExternalLink, FiRefreshCw, FiSave, FiSend } from "react-icons/fi";
+import { FiAlertTriangle, FiAward, FiCheckCircle, FiExternalLink, FiRefreshCw, FiSave, FiSend } from "react-icons/fi";
+import { PageSkeleton } from "@/components/PageSkeleton";
 import { formatMoney } from "@/lib/importer";
-import { type OfficerCase } from "@/lib/officer-case";
+import { lineCode, lineTitle, type OfficerCase } from "@/lib/officer-case";
+import { HsItem } from "@/components/hs/HsItem";
 import { officerNoteIssue } from "@/lib/officer-note-quality";
 import { calculatePhase2, loadPhase2, savePhase2 } from "@/lib/phase2Api";
 import type { Phase2Request, Phase2Response, Phase2TaxLine, Phase2TaxLineRequest } from "@/lib/types/customs";
@@ -36,6 +38,9 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
   const serial = useRef(0);
 
   const lines = response?.phase2?.taxLines ?? [];
+  // Manufacturing incentives the calculator applies by default (see ImportTaxAssessmentCalculator).
+  const manufacturing = d.importPurpose === "MANUFACTURING";
+  const capitalGoods = manufacturing && (d.isMachineryOrEquipment || draft?.productCategory === "Capital goods" || Boolean(draft?.exemptionCodes.includes("MACHINERY_EQUIPMENT_EXEMPT")));
   const requestLines = useCallback((source: Phase2TaxLine[], pending: Record<string, Edit>): Phase2TaxLineRequest[] =>
     source.filter(line => line.status === "OfficerAdjusted" || pending[line.name]).map(line => ({
       name: line.name, calculationType: line.calculationType, value: pending[line.name]?.value ?? line.value, currency: line.currency, order: line.order,
@@ -64,9 +69,10 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
         exemptionAmount: saved?.exemptionAmount ?? 0, waiverAmount: saved?.waiverAmount ?? 0, manualAdjustmentAmount: saved?.manualAdjustmentAmount ?? 0, manualAdjustmentType: saved?.manualAdjustmentType ?? "Fixed",
         notes: saved?.notes ?? "", taxLines: [], customsValueAmount: data.valuation?.selectedReferenceValue ?? result.phase1.initialDuty, customsValueCurrency: ASSESSMENT_CURRENCY,
         quantity: saved?.quantity || Number(d.quantity) || 1, unit: (saved?.unit || d.unit || "Pieces (PCS)").slice(0, 40), originCountry: d.originCountryCode,
-        productCategory: saved?.productCategory || (d.importPurpose === "MANUFACTURING" ? "Manufacturing input" : "General goods"), exemptionCodes: saved?.exemptionCodes ?? [],
-        originPreferenceClaimed: saved?.originPreferenceClaimed ?? false, exciseTaxApplicable: false, isCommercialImport: saved?.isCommercialImport ?? (d.isCommercialProduct || d.importPurpose === "COMMERCIAL_RESALE"),
+        productCategory: saved?.productCategory || (d.importPurpose === "MANUFACTURING" ? d.isMachineryOrEquipment ? "Capital goods" : "Manufacturing input" : "General goods"), exemptionCodes: saved?.exemptionCodes ?? [],
+        originPreferenceClaimed: saved?.originPreferenceClaimed ?? false, exciseTaxApplicable: false, isCommercialImport: saved?.isCommercialImport ?? (d.importPurpose !== "MANUFACTURING" && (d.isCommercialProduct || d.importPurpose === "COMMERCIAL_RESALE")),
         withholdingApplicable: saved?.withholdingApplicable ?? true, adjustmentReason: saved?.adjustmentReason ?? "", officerConfirmation: false, expectedVersion: saved?.version,
+        selectedTariffLineId: saved?.selectedTariffLineId ?? null,
       };
       base.taxLines = saved ? requestLines(saved.taxLines, {}) : [];
       setDraft(base); setResponse(result);
@@ -92,8 +98,8 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
     if (!draft) return;
     const notesIssue = officerNoteIssue(draft.notes);
     if (notesIssue) { onError(notesIssue); return; }
-    const dutyExemption = draft.exemptionCodes.some(code => code === "CUSTOMS_DUTY_EXEMPT" || code === "MACHINERY_EQUIPMENT_EXEMPT");
-    if (complete && dutyExemption && draft.notes.trim().length < 10) { onError("Record the authority and evidence for the duty exemption in the assessment note."); document.getElementById("oc-tax-note")?.focus(); return; }
+    const manualDutyExemption = draft.exemptionCodes.includes("CUSTOMS_DUTY_EXEMPT");
+    if (complete && manualDutyExemption && draft.notes.trim().length < 10) { onError("Record the authority for the customs duty exemption you selected in the assessment note."); document.getElementById("oc-tax-note")?.focus(); return; }
     if (complete && !confirmed) { onError("Tick the confirmation before finalising."); return; }
     setSaving(complete ? "final" : "draft");
     try {
@@ -108,20 +114,47 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
   if (!decisionId) return <div className="oc-callout is-warning"><FiAlertTriangle aria-hidden="true" />Record the customs value before assessing taxes.</div>;
   if (data.valuation && !data.valuation.ownedByMe) return <div className="oc-callout is-info"><FiAlertTriangle aria-hidden="true" /><div><strong>Assessment held by another officer</strong><p>The officer who recorded the customs value completes this assessment. Customs value: {formatMoney(data.valuation.selectedReferenceValue, data.valuation.currency)}.</p></div></div>;
   if (loadError) return <div className="oc-callout is-danger"><FiAlertTriangle aria-hidden="true" />{loadError}</div>;
-  if (!draft) return <div className="oc-card"><p className="oc-muted" role="status">Opening the assessment…</p></div>;
+  if (!draft) return <PageSkeleton variant="table" label="Opening the tax assessment" />;
 
   const phase = response?.phase2;
   const customsValue = phase?.customsValueAmount ?? draft.customsValueAmount;
   const payable = phase ? Math.max(0, phase.finalAmount - phase.customsValueAmount) : null;
-  const unresolved = lines.some(line => line.status === "ReviewRequired" && line.isApplicable);
+  // Offered when the confirmed tariff line carries no rates: the officer picks the national line the duty comes from.
+  const lineOptions = response?.tariffLineOptions ?? [];
+  const chosenLineId = phase?.selectedTariffLineId ?? draft.selectedTariffLineId ?? null;
+  const needsLine = lineOptions.length > 1 && !chosenLineId;
+  const chosenOption = lineOptions.find(option => option.id === chosenLineId);
+  const unresolved = needsLine || lines.some(line => line.status === "ReviewRequired" && line.isApplicable);
   const hasSpecificExcise = lines.some(line => line.name === "Excise Tax (specific)");
   const requested = new Set(d.requestedTreatments);
 
+  const relieved = lines.filter(line => line.status === "Exempt");
+  const relievedAmount = relieved.reduce((sum, line) => sum + line.baseAmount * line.value / 100, 0);
   return <div className="oc-step-grid oc-tax-layout">
+    {manufacturing && <section className="oc-card oc-incentive" aria-labelledby="oc-incentive-title">
+      <FiAward aria-hidden="true" />
+      <div><h3 id="oc-incentive-title">{capitalGoods ? "Manufacturing incentive: capital goods" : "Manufacturing import"}</h3>
+        <p>{capitalGoods
+          ? "Declared as machinery or equipment for manufacturing. Customs duty, VAT and the social welfare levy are exempt under Investment Incentive Regulation No. 517/2022, surtax falls away with the duty, and no import withholding is collected."
+          : "Imported for manufacturing, so the 3% import withholding (Income Tax Proclamation No. 979/2016, Art. 97) is not collected. Raw materials and inputs remain subject to duty and VAT. Set the category to Capital goods if these are machines or equipment."}</p>
+        {relieved.length > 0 && <p className="oc-incentive-lines">{relieved.map(line => <span key={line.name}>{line.name}</span>)}<b>about {formatMoney(relievedAmount, ASSESSMENT_CURRENCY)} not collected</b></p>}
+        {capitalGoods && <small>Check the investment permit before finalising, and switch a line back on if the goods do not qualify.</small>}
+      </div>
+    </section>}
     <section className="oc-card" aria-labelledby="oc-tax-title">
-      <header className="oc-card-head"><div><span className="oc-eyebrow">Duties and taxes · ERCA tariff {data.confirmedLine?.tariffItemNo}</span><h2 id="oc-tax-title">Tax assessment</h2>
+      <header className="oc-card-head"><div><span className="oc-eyebrow">Duties and taxes</span><h2 id="oc-tax-title">Tax assessment</h2>
+        {(chosenOption || data.confirmedLine) && <p className="oc-tax-line"><HsItem code={chosenOption?.tariffItemNo ?? lineCode(data.confirmedLine)} description={chosenOption?.description ?? lineTitle(data.confirmedLine)} full /></p>}
         <p className="oc-muted">Rates come from the tariff line. Change a rate or switch a tax off only with a legal basis; the change is recorded in the audit trail.</p></div>
         <button type="button" className="oc-icon-button" onClick={() => void calculate({ ...draft, taxLines: requestLines(lines, edits) })} aria-label="Recalculate" title="Recalculate"><FiRefreshCw aria-hidden="true" className={calculating ? "oc-spin" : ""} /></button></header>
+      {lineOptions.length > 1 && <fieldset className={`phase2-line-choice${needsLine ? " needs-choice" : ""}`}>
+        <legend>National tariff line <small>{needsLine ? "choose the line that matches the goods — duty rates differ" : "used for duty and taxes"}</small></legend>
+        <div className="phase2-line-options">{lineOptions.map(option => {
+          const active = chosenLineId === option.id;
+          return <button type="button" key={option.id} className={active ? "is-selected" : ""} aria-pressed={active} disabled={calculating} onClick={() => update({ selectedTariffLineId: option.id })}>
+            <HsItem code={option.tariffItemNo} description={option.description} full /><b>{option.dutyRate == null ? "Rate not listed" : option.dutyRate === 0 ? "Duty free" : `${option.dutyRate}% duty`}</b>
+          </button>;
+        })}</div>
+      </fieldset>}
       <div className="oc-table-wrap"><table className="oc-tax-table">
         <thead><tr><th scope="col">Applies</th><th scope="col">Duty or tax</th><th scope="col">Calculated on</th><th scope="col">Rate</th><th scope="col">Amount</th></tr></thead>
         <tbody>{lines.map(line => { const edit = edits[line.name]; const applies = edit?.isApplicable ?? line.isApplicable; const comparison = line.calculationBasis === "UNIT_RATE_ETB_GREATER_OF";
@@ -138,7 +171,7 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
           </tr>; })}</tbody>
         <tfoot><tr><th scope="row" colSpan={4}>Total duties and taxes</th><td className="oc-amount">{formatMoney(phase?.totalTax ?? null, ASSESSMENT_CURRENCY)}</td></tr></tfoot>
       </table></div>
-      {unresolved && <p className="oc-callout is-warning"><FiAlertTriangle aria-hidden="true" />A tax needs review: enter the approved rate or switch it off before finalising.</p>}
+      {unresolved && <p className="oc-callout is-warning"><FiAlertTriangle aria-hidden="true" />{needsLine ? "Choose the national tariff line above so the duty rate comes from the tariff." : "A tax needs review: enter the approved rate or switch it off before finalising."}</p>}
     </section>
 
     <aside className="oc-tax-side">
@@ -160,8 +193,8 @@ export function TaxStep({ data, onSaved, onError }: { data: OfficerCase; onSaved
           {exemptionOptions.map(([code, label, claim]) => <label key={code}><input type="checkbox" checked={draft.exemptionCodes.includes(code)}
             onChange={event => update({ exemptionCodes: event.target.checked ? [...draft.exemptionCodes, code] : draft.exemptionCodes.filter(item => item !== code) })} />
             {label}{claim && requested.has(claim) && <span className="oc-claim">requested</span>}</label>)}</fieldset>
-        <label className="oc-field" htmlFor="oc-tax-note">Assessment note <small>{draft.exemptionCodes.length ? "authority and evidence for exemptions" : "optional"}</small>
-          <textarea id="oc-tax-note" rows={3} maxLength={500} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} placeholder="e.g. Duty exemption under investment permit 123/2026." /></label>
+        <label className="oc-field" htmlFor="oc-tax-note">Assessment note <small>{draft.exemptionCodes.includes("CUSTOMS_DUTY_EXEMPT") ? "required — authority for the duty exemption" : "optional"}</small>
+          <textarea id="oc-tax-note" rows={3} maxLength={500} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} placeholder={capitalGoods ? "e.g. Capital goods exemption, investment permit EIC/123/2026 checked." : "e.g. Duty exemption under investment permit 123/2026."} /></label>
       </section>
 
       <section className="oc-card oc-decision">

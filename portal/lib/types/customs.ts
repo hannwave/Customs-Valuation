@@ -116,14 +116,21 @@ export interface Phase2TaxLine {
   isApplicable: boolean;
 }
 
+/** A national tariff line under the selected HS code; the assessment taxes the one the officer chooses. */
+export interface TariffLineChoice { id: string; tariffItemNo: string; description: string; dutyRate: number | null }
+
 export interface Phase2Response {
   decisionId: string;
+  tariffLineOptions?: TariffLineChoice[];
   importerDeclaration?: { id: string; reference: string; importPurpose: string; purposeDetails: string; originCountryCode: string; isCommercialProduct: boolean; isMachineryOrEquipment: boolean; quantity: number; unit: string; requestedTreatments: string[] } | null;
   phase1: {
     hsCodeId: string | null;
     productId: string | null;
     productName: string;
     productType: "COMMODITY" | "MANUFACTURING" | null;
+    importPurpose?: string | null;
+    isMachineryOrEquipment?: boolean;
+    selectedTariffLineId?: string | null;
     purchaseCountryCode: string;
     purchaseCountryName: string;
     selectedPriceSource: string;
@@ -136,7 +143,7 @@ export interface Phase2Response {
       basis: string;
       originCountryCode: string;
       originCountryName: string;
-      certificateOfOrigin: { fileName: string; contentType: string; sha256: string; uploadedAt: string };
+      certificateOfOrigin: { fileName: string; contentType: string; sha256: string; uploadedAt: string } | null;
       fobAmount: number;
       freightAmount: number;
       insuranceAmount: number;
@@ -166,6 +173,9 @@ export interface Phase2Response {
     status: Phase2Status;
     originalHsCodeId: string | null;
     selectedHsCodeId: string | null;
+    selectedTariffLineId?: string | null;
+    importPurpose?: string;
+    isMachineryOrEquipment?: boolean;
     customsValueAmount: number;
     customsValueCurrency: string;
     quantity: number;
@@ -243,4 +253,7 @@ export interface Phase2Request {
   adjustmentReason: string;
   officerConfirmation: boolean;
   expectedVersion?: string;
+  selectedTariffLineId?: string | null;
+  importPurpose?: string;
+  isMachineryOrEquipment?: boolean;
 }

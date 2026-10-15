@@ -8,6 +8,11 @@ public sealed class ValuationPhase2
     public Guid ValuationDecisionId { get; set; }
     public Guid? OriginalHsCodeId { get; set; }
     public Guid? SelectedHsCodeId { get; set; }
+    /// <summary>The national tariff line the assessment taxed (an HS code can have several with different duty rates).</summary>
+    public Guid? SelectedTariffLineId { get; set; }
+    /// <summary>Import purpose the reliefs were assessed under (MANUFACTURING, COMMERCIAL_RESALE, …).</summary>
+    public string ImportPurpose { get; set; } = "";
+    public bool IsMachineryOrEquipment { get; set; }
     public decimal CustomsValueAmount { get; set; }
     public string CustomsValueCurrency { get; set; } = "ETB";
     public decimal Quantity { get; set; } = 1m;

@@ -32,6 +32,16 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ActorRole")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Decision")
                         .HasColumnType("text");
 
@@ -60,6 +70,14 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<Guid>("RecordId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("RegionLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
                     b.Property<Guid?>("SubjectUserId")
                         .HasColumnType("uuid");
 
@@ -73,9 +91,17 @@ namespace SES.Customs.Infrastructure.Context.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RecordId");
+
+                    b.HasIndex("SubjectUserId");
+
+                    b.HasIndex("Category", "OccurredAt");
+
                     b.HasIndex("LocationId", "OccurredAt");
 
                     b.HasIndex("RecordId", "OccurredAt");
+
+                    b.HasIndex("RegionLocationId", "OccurredAt");
 
                     b.ToTable("audit_logs", (string)null);
                 });
@@ -120,6 +146,107 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         {
                             t.HasCheckConstraint("ck_one_evidence_pool", "num_nonnulls(\"InternationalPriceId\", \"LocalPriceId\", \"HistoricalCustomsPriceId\") = 1");
                         });
+                });
+
+            modelBuilder.Entity("SES.Customs.Core.Models.DocumentScan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double?>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("DetectedType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Engine")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Error")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("ExtractedText")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FindingsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Flag")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("ProcessingMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("QueuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId", "Sha256")
+                        .IsUnique();
+
+                    b.HasIndex("Source", "OwnerId");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("document_scans", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Core.Models.ExchangeRate", b =>
@@ -364,6 +491,112 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.ToTable("hs_revisions", (string)null);
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterChangeRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CurrentFullName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CurrentLegalName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CurrentTin")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<byte[]>("DocumentContent")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("DocumentContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DocumentFileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("DocumentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("DocumentSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("RegionKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid?>("RegionLocationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestedFullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RequestedLegalName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RequestedTin")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("ReviewNote")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId", "Status");
+
+                    b.HasIndex("RegionKey", "Status", "CreatedAt");
+
+                    b.ToTable("importer_change_requests", (string)null);
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.ImporterDeclaration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -483,6 +716,12 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.Property<string>("ReviewNote")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ReviewStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewStartedById")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset?>("ReviewedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1729,6 +1968,58 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.ToTable("valuation_decisions", (string)null);
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.ValuationDecisionDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UploadedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("ValuationDecisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ValuationDecisionId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("valuation_decision_documents", (string)null);
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.ValuationPhase2", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1784,6 +2075,10 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
 
+                    b.Property<string>("ImportPurpose")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<decimal>("InitialDutyAmount")
                         .HasPrecision(24, 8)
                         .HasColumnType("numeric(24,8)");
@@ -1794,6 +2089,9 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasColumnType("character varying(3)");
 
                     b.Property<bool>("IsCommercialImport")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsMachineryOrEquipment")
                         .HasColumnType("boolean");
 
                     b.Property<decimal>("ManualAdjustmentAmount")
@@ -1832,6 +2130,9 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .HasColumnType("numeric(24,8)");
 
                     b.Property<Guid?>("SelectedHsCodeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SelectedTariffLineId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Status")
@@ -1952,6 +2253,28 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasIndex("ValuationPhase2Id", "Order");
 
                     b.ToTable("valuation_phase2_tax_lines", (string)null);
+                });
+
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.AccountPhotoEntity", b =>
+                {
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("AccountId");
+
+                    b.ToTable("account_photos", (string)null);
                 });
 
             modelBuilder.Entity("SES.Customs.Infrastructure.Context.AuthAccountEntity", b =>
@@ -2451,6 +2774,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("SES.Customs.Core.Models.ImporterChangeRequest", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SES.Customs.Core.Models.ImporterDeclaration", b =>
                 {
                     b.HasOne("SES.Customs.Core.Models.HsCode", null)
@@ -2669,6 +3001,15 @@ namespace SES.Customs.Infrastructure.Context.Migrations
                     b.HasOne("SES.Customs.Core.Models.ValuationPhase2", null)
                         .WithMany("TaxLines")
                         .HasForeignKey("ValuationPhase2Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SES.Customs.Infrastructure.Context.AccountPhotoEntity", b =>
+                {
+                    b.HasOne("SES.Customs.Infrastructure.Context.AuthAccountEntity", null)
+                        .WithOne()
+                        .HasForeignKey("SES.Customs.Infrastructure.Context.AccountPhotoEntity", "AccountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

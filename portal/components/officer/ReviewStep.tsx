@@ -4,7 +4,8 @@ import { useState } from "react";
 import { FiAlertTriangle, FiArrowRight, FiCheck, FiClock, FiMessageSquare, FiSlash, FiXCircle } from "react-icons/fi";
 import { HsClassificationCard, optionToLine } from "@/components/officer/HsClassificationCard";
 import { formatMoney, purposeLabels, type TariffOption } from "@/lib/importer";
-import { lineCode, reviewDeclaration, type OfficerCase, type TariffLineView } from "@/lib/officer-case";
+import { lineCode, lineTitle, readableTariffText, reviewDeclaration, type OfficerCase, type TariffLineView } from "@/lib/officer-case";
+import { splitDescription } from "@/lib/declaration-description";
 
 const treatmentLabels: Record<string, string> = { WITHHOLDING_REVIEW: "Withholding tax review", VAT_EXEMPTION: "VAT exemption", CUSTOMS_DUTY_EXEMPTION: "Customs duty exemption", MACHINERY_EXEMPTION: "Machinery / equipment exemption" };
 const checks = [
@@ -38,7 +39,7 @@ export function ReviewStep({ data, onSaved, onError }: { data: OfficerCase; onSa
 
   function changeLine(option: TariffOption, reason: string) {
     if (submitted) { setPending(optionToLine(option)); return; }
-    void act("RECLASSIFY", `Reclassified to HS ${option.tariffItemNo || option.hsCode}. The importer has been notified.`, { tariffLineId: option.tariffLineId, note: reason });
+    void act("RECLASSIFY", `Reclassified to ${readableTariffText(option.description, option.hsDescription)} (${option.tariffItemNo || option.hsCode}). The importer has been notified.`, { tariffLineId: option.tariffLineId, note: reason });
   }
 
   function needsReason(label: string) {
@@ -48,9 +49,11 @@ export function ReviewStep({ data, onSaved, onError }: { data: OfficerCase; onSa
     return true;
   }
 
+  const described = splitDescription(d.description);
   const facts: [string, React.ReactNode][] = [
-    ["Brand / model", [d.brand, d.model].filter(Boolean).join(" / ") || "—"], ["Manufacturer", d.manufacturer || "—"], ["Serial / part no.", d.serialOrPartNumber || "—"],
-    ["Quantity", `${d.quantity} ${d.unit}`], ["Country of origin", d.originCountryName], ["Purpose", purposeLabels[d.importPurpose] ?? d.importPurpose],
+    ...([["Brand / model", [d.brand, d.model].filter(Boolean).join(" / ").replace("Generic / Generic", "No brand (generic goods)")], ["Manufacturer", d.manufacturer], ["Serial / part no.", d.serialOrPartNumber]] as [string, string][])
+      .filter(([, value]) => value?.trim()),
+    ["Quantity", `${d.quantity} ${d.unit}`], ...described.facts, ["Country of origin", d.originCountryName], ["Purpose", purposeLabels[d.importPurpose] ?? d.importPurpose],
     ["Price paid", <b key="p">{formatMoney(d.invoiceAmount, d.invoiceCurrency)}</b>], ["Freight / insurance", `${formatMoney(d.freightAmount ?? 0, d.invoiceCurrency)} / ${formatMoney(d.insuranceAmount ?? 0, d.invoiceCurrency)}`],
     ["Declared CIF value", <b key="c">{formatMoney(declaredTotal, d.invoiceCurrency)}</b>], ["Receiving branch", data.branch ? data.branch.displayName || data.branch.name : "—"],
   ];
@@ -62,11 +65,15 @@ export function ReviewStep({ data, onSaved, onError }: { data: OfficerCase; onSa
     <section className="oc-card" aria-labelledby="oc-goods-title">
       <header className="oc-card-head"><div><span className="oc-eyebrow">Declared goods</span><h2 id="oc-goods-title">{d.productName}</h2></div></header>
       <dl className="oc-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-      <h3 className="oc-subtitle">Item description</h3><p className="oc-prose">{d.description}</p>
+      {described.details && <><h3 className="oc-subtitle">{described.facts.length ? "Importer's notes" : "Item description"}</h3><p className="oc-prose">{described.details}</p></>}
       {d.specifications && <><h3 className="oc-subtitle">Specifications</h3><p className="oc-prose">{d.specifications}</p></>}
       {d.purposeDetails && <><h3 className="oc-subtitle">Purpose details</h3><p className="oc-prose">{d.purposeDetails}</p></>}
-      {(d.requestedTreatments.length > 0 || d.isMachineryOrEquipment) && <div className="oc-callout is-info"><FiAlertTriangle aria-hidden="true" /><div><strong>Importer requests special treatment</strong>
-        <p>{[...(d.isMachineryOrEquipment ? ["Declared as machinery or equipment"] : []), ...d.requestedTreatments.map(code => treatmentLabels[code] ?? code)].join(" · ")}. These are claims only; decide on them in the tax assessment.</p></div></div>}
+      {d.importPurpose === "MANUFACTURING" && <div className="oc-callout is-info"><FiAlertTriangle aria-hidden="true" /><div><strong>{d.isMachineryOrEquipment ? "Manufacturing: machinery or equipment" : "Manufacturing: production inputs"}</strong>
+        <p>{d.isMachineryOrEquipment
+          ? "Declared as capital goods for production. The tax assessment applies the capital-goods exemption (duty, VAT, social welfare levy) and no withholding by default; check the investment permit before finalising."
+          : "Declared as production inputs. The tax assessment drops the import withholding; duty and VAT apply at the tariff rates."}</p></div></div>}
+      {d.requestedTreatments.length > 0 && <div className="oc-callout is-info"><FiAlertTriangle aria-hidden="true" /><div><strong>Importer requests special treatment</strong>
+        <p>{d.requestedTreatments.map(code => treatmentLabels[code] ?? code).join(" · ")}. These are claims only; decide on them in the tax assessment.</p></div></div>}
     </section>
 
     <HsClassificationCard line={line} source={source} productName={d.productName} description={d.description} busy={busy}
@@ -81,7 +88,7 @@ export function ReviewStep({ data, onSaved, onError }: { data: OfficerCase; onSa
       {fieldError && <p className="oc-inline-error" role="alert">{fieldError}</p>}
       <div className="oc-actions">
         {actions.includes("APPROVE_FOR_VALUATION") && <button type="button" className="oc-btn is-primary" disabled={busy || !allTicked || !line || line.retired}
-          onClick={() => void act("APPROVE_FOR_VALUATION", `Approved under HS ${lineCode(line)}. Continue with valuation.`, { tariffLineId: line?.tariffLineId, note: note.trim() })}>
+          onClick={() => void act("APPROVE_FOR_VALUATION", `Approved under ${lineTitle(line)} (${lineCode(line)}). Continue with valuation.`, { tariffLineId: line?.tariffLineId, note: note.trim() })}>
           <FiCheck aria-hidden="true" />Approve and start valuation<FiArrowRight aria-hidden="true" /></button>}
         {actions.includes("CONTINUE_ASSESSMENT") && <button type="button" className="oc-btn is-primary" disabled={busy} onClick={() => void act("CONTINUE_ASSESSMENT", "Moved to valuation.")}><FiArrowRight aria-hidden="true" />Start valuation</button>}
         {actions.includes("REQUEST_INFORMATION") && <button type="button" className="oc-btn" disabled={busy} onClick={() => { if (!needsReason("need more information")) void act("REQUEST_INFORMATION", "Information requested. The importer has been notified.", { note: note.trim() }); }}><FiMessageSquare aria-hidden="true" />Request information</button>}

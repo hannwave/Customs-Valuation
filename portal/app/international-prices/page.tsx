@@ -1,5 +1,6 @@
 "use client";
 
+import { lookupHsDescription } from "@/components/hs/HsItem";
 import { FormEvent, useEffect, useState } from "react";
 import {
   Alert,
@@ -124,8 +125,9 @@ export default function InternationalPricesPage() {
 
       if (action === "sync") {
         const sync = body as InternationalPriceSync;
+        const hsDescription = await lookupHsDescription(sync.hsCode);
         setStatus(
-          `HS ${sync.hsCode}: ${sync.savedCount} new prices saved, ${sync.updatedCount} existing prices updated, and ${sync.skippedCount} results skipped.`,
+          `${hsDescription ? `${hsDescription} (${sync.hsCode})` : `HS ${sync.hsCode}`}: ${sync.savedCount} new prices saved, ${sync.updatedCount} existing prices updated, and ${sync.skippedCount} results skipped.`,
         );
       }
     } catch (exception) {

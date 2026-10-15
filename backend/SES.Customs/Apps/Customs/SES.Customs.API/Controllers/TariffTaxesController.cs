@@ -1,3 +1,4 @@
+using SES.Customs.API.Integrations.Hs;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,6 +33,45 @@ public sealed class TariffTaxesController(CustomsDbContext db) : ControllerBase
                 rates = x.TaxRates.OrderBy(r => r.TaxCode).Select(r => new { r.TaxCode, r.Rate, r.RetrievedAt }).ToList() })
             .ToListAsync(ct);
         return Ok(lines);
+    }
+
+    /// <summary>
+    /// Plain-language descriptions for HS / tariff codes, so every screen can show the item description next to a code.
+    /// Accepts 4-digit headings, 6-digit HS codes, 8-digit tariff item numbers (with or without the dot) and 11-digit national codes; falls back to the 6-digit HS description, then the WCO nomenclature.
+    /// </summary>
+    [HttpGet("describe")]
+    public async Task<IActionResult> Describe([FromQuery] string? codes, CancellationToken ct)
+    {
+        var requested = (codes ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct().Take(100).ToList();
+        if (requested.Count == 0) return Ok(new Dictionary<string, string>());
+        var digitsOf = requested.ToDictionary(code => code, code => new string(code.Where(char.IsDigit).ToArray()));
+        var national = digitsOf.Values.Where(d => d.Length == 11).Distinct().ToList();
+        var items = digitsOf.Values.Where(d => d.Length == 8).Select(d => $"{d[..4]}.{d[4..]}").Distinct().ToList();
+        var hs6 = digitsOf.Values.Where(d => d.Length >= 6).Select(d => d[..6]).Distinct().ToList();
+        var hsKeys = hs6.Concat(hs6.Select(d => $"{d[..4]}.{d[4..]}")).ToList();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var lines = national.Count + items.Count == 0 ? [] : await db.NationalTariffLines.AsNoTracking()
+            .Where(x => (x.EndDate == null || x.EndDate >= today) && ((x.NationalCode != null && national.Contains(x.NationalCode)) || (x.TariffItemNo != null && items.Contains(x.TariffItemNo))))
+            .Select(x => new { x.NationalCode, x.TariffItemNo, x.DescriptionEn, x.HsCodeId }).ToListAsync(ct);
+        var hsRows = await db.HsCodes.AsNoTracking().Where(x => x.Code != null && hsKeys.Contains(x.Code))
+            .Select(x => new { x.Id, x.Code, x.DescriptionEn }).ToListAsync(ct);
+        var hsById = hsRows.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().DescriptionEn);
+        var hsByDigits = hsRows.GroupBy(x => new string(x.Code!.Where(char.IsDigit).ToArray())).ToDictionary(g => g.Key, g => g.First().DescriptionEn);
+
+        var result = new Dictionary<string, string>();
+        foreach (var (code, digits) in digitsOf)
+        {
+            var line = digits.Length == 11 ? lines.FirstOrDefault(x => x.NationalCode == digits)
+                : digits.Length == 8 ? lines.FirstOrDefault(x => x.TariffItemNo == $"{digits[..4]}.{digits[4..]}") : null;
+            var hsText = line is not null && hsById.TryGetValue(line.HsCodeId, out var parent) ? parent
+                : digits.Length >= 6 ? hsByDigits.GetValueOrDefault(digits[..6]) : null;
+            // Tariff book text first; the WCO nomenclature covers headings and codes the book has no text for.
+            var text = line is null ? hsText : TariffDescriptions.Readable(line.DescriptionEn, hsText);
+            if (string.IsNullOrWhiteSpace(text)) text = HsNomenclature.Describe(digits);
+            if (!string.IsNullOrWhiteSpace(text)) result[code] = text.Trim();
+        }
+        return Ok(result);
     }
 
     [HttpGet("lines/{id:guid}/taxes")]

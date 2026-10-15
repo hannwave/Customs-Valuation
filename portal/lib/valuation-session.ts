@@ -65,6 +65,10 @@ export interface ValuationSession {
   selectedCurrency?: string;
   decisionId?: string;
   phase1Submitted?: boolean;
+  /** National tariff line chosen in the price review; Phase 2 taxes this line. */
+  tariffLineId?: string | null;
+  importPurpose?: string;
+  isMachineryOrEquipment?: boolean;
 }
 
 export function readValuationSession(): ValuationSession | null {

@@ -1,0 +1,24 @@
+/* HS / tariff code display: item description first, the code beside it. Uses the --iv-* tokens (dark mode included). */
+.hs-item { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; vertical-align: baseline; }
+.hs-item-desc { min-width: 0; color: inherit; font-weight: inherit; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hs-item.is-full .hs-item-desc { display: inline; -webkit-line-clamp: unset; }
+.hs-item-desc:first-letter { text-transform: uppercase; }
+.hs-item-code { flex: none; padding: 1px 7px; border: 1px solid var(--iv-border, #d9e4ee); border-radius: 6px; background: var(--iv-surface-2, #f6f9fc); color: var(--iv-accent-strong, #0f4f7f); font: 700 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; white-space: nowrap; }
+.hs-item-loading { color: var(--iv-muted, #5a7389); font-style: italic; font-weight: 500; }
+.hs-item.is-empty { color: var(--iv-muted, #5a7389); }
+
+/* Context tweaks: lists keep one tidy line per item; headings keep their size with a smaller code chip. */
+.hs-tree-row-copy .hs-item, .oc-hs-alternatives button .hs-item, .hs-suggestion-item .hs-item { display: flex; width: 100%; justify-content: space-between; }
+.hs-tree-row-copy .hs-item-desc, .oc-hs-alternatives button .hs-item-desc { white-space: normal; overflow: hidden; text-overflow: clip; color: inherit; font-size: inherit; }
+.hs-suggestion-item .hs-item { white-space: normal; }
+.hs-suggestion-item .hs-item-desc { -webkit-line-clamp: 2; }
+.hs-tree-current { margin-left: 8px; color: var(--iv-accent, #15649d); font-size: 11.5px; font-style: normal; font-weight: 700; }
+.oc-hs-title, .oc-hs-code-block .oc-hs-desc { margin: 0; font-size: 18px; font-weight: 800; line-height: 1.35; }
+.oc-hs-title .hs-item-code, .oc-hs-code-block .hs-item-code, .hs-detail-code-heading .hs-item-code { font-size: 13px; padding: 2px 9px; }
+.hs-detail-code-heading h2 .hs-item, .decision-card-heading h3 .hs-item { align-items: baseline; flex-wrap: wrap; }
+.phase2-line-options .hs-item, .oc-tax-line .hs-item { display: flex; justify-content: space-between; }
+.oc-tax-line { margin: 4px 0 6px; color: var(--iv-text, #14324f); font-weight: 700; }
+.audit-hs-cell .hs-item, .iv-detail-grid dd .hs-item, .oc-facts dd .hs-item { flex-wrap: wrap; row-gap: 4px; }
+td .hs-item { min-width: 180px; }
+/* Descriptions always read in the body font, even inside rows styled for codes. */
+.hs-item-desc { font-family: var(--font, "Segoe UI", Arial, sans-serif); letter-spacing: normal; }

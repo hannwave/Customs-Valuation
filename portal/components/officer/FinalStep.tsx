@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { FiBell, FiCheckCircle, FiClock, FiEdit3, FiPrinter } from "react-icons/fi";
 import { formatMoney } from "@/lib/importer";
-import { lineCode, type OfficerCase } from "@/lib/officer-case";
+import { lineCode, lineTitle, type OfficerCase } from "@/lib/officer-case";
+import { HsItem } from "@/components/hs/HsItem";
 
 /** The issued assessment, as the importer sees it, with links to the audit record. */
 export function FinalStep({ data, onRevise }: { data: OfficerCase; onRevise: () => void }) {
@@ -18,7 +19,7 @@ export function FinalStep({ data, onRevise }: { data: OfficerCase; onRevise: () 
       <dl className="oc-facts">
         <div><dt>Customs value (CIF)</dt><dd><b>{formatMoney(d.assessedCustomsValue, currency)}</b></dd></div>
         <div><dt>Valuation method</dt><dd>{data.valuation?.selectedPriceSource === "originFobCif" ? "Declared transaction value (invoice + freight + insurance)" : data.valuation?.valuationMethod ?? "—"}</dd></div>
-        <div><dt>HS classification</dt><dd className="oc-mono">{lineCode(data.confirmedLine)}</dd></div>
+        <div><dt>Item / HS classification</dt><dd><HsItem code={lineCode(data.confirmedLine)} description={lineTitle(data.confirmedLine)} full /></dd></div>
         <div><dt>Declared price</dt><dd>{formatMoney(d.invoiceAmount, d.invoiceCurrency)}</dd></div>
       </dl>
       <div className="oc-table-wrap"><table className="oc-tax-table is-readonly">

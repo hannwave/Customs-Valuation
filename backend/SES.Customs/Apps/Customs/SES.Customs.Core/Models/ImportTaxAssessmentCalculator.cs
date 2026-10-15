@@ -48,6 +48,7 @@ public static class ImportTaxAssessmentCalculator
     private const string WithholdingSource = "https://www.mofed.gov.et/mof-directive/tax-directive/";
     private const string ExciseProclamationSource = "https://www.ecc.gov.et/proclamations";
     private const string TariffSource = "https://customs.erca.gov.et/trade/help/tariff/search";
+    private const string InvestmentIncentiveSource = "https://ethiodata.et/wp-content/uploads/2023/02/Ethiopia-Investment-Incentive-Regulation-No.-517_2022.pdf";
 
     private static readonly HashSet<string> SurtaxExcludedCategories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -85,6 +86,9 @@ public static class ImportTaxAssessmentCalculator
         var withholdingRate = tariffWithholding ?? WithholdingRate;
         var surtaxRate = tariffSurtax is > 0 ? tariffSurtax.Value : SurtaxRate;
         var codes = new HashSet<string>(input.ExemptionCodes.Select(code => code.Trim()), StringComparer.OrdinalIgnoreCase);
+        // Manufacturing incentives: capital goods (machinery and equipment) imported for a manufacturing investment are
+        // duty-free under the Investment Incentive Regulation, and with duty removed the surtax, VAT and social welfare
+        // levy on them are not collected either. Raw materials stay dutiable; manufacturers pay no import withholding.
         var machineryExemption = QualifiesForMachineryExemption(input, codes);
         var dutyExempt = codes.Contains("CUSTOMS_DUTY_EXEMPT") || machineryExemption;
         var recommendedDutyRate = tariffDuty ?? ParseRate(tariff.Duty);
@@ -100,7 +104,7 @@ public static class ImportTaxAssessmentCalculator
             : !surtaxExcluded && !surtaxThresholdUnknown && !dutyExempt && dutyRate > SurtaxDutyThreshold;
         if (tariffSurtax.HasValue) surtaxThresholdUnknown = false;
         var vatExempt = codes.Contains("VAT_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC") || machineryExemption;
-        var socialExempt = codes.Contains("SOCIAL_WELFARE_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC");
+        var socialExempt = codes.Contains("SOCIAL_WELFARE_EXEMPT") || codes.Contains("TAX_EXEMPT") || codes.Contains("DIPLOMATIC") || machineryExemption;
         var withholdingApplicable = input.IsCommercialImport && input.WithholdingApplicable && !input.IsManufacturing && !codes.Contains("WITHHOLDING_NOT_APPLICABLE");
         var socialApplicable = !socialExempt && !surtaxApplies && !surtaxThresholdUnknown;
         var exciseRate = exciseRule?.AdValoremRate ?? 0m;
@@ -124,15 +128,16 @@ public static class ImportTaxAssessmentCalculator
                 : surtaxExcluded
                     ? "Product category or recorded exemption excludes import surtax."
                     : "Customs duty is 15% or less; import surtax is generally not recommended under the configured threshold.";
-        var machineryReason = "Qualifying machinery exemption approved by the officer; verify the governing authority and evidence recorded in assessment notes.";
+        var machineryReason = "Exempt: machinery or equipment imported for manufacturing is a duty-free capital good under Investment Incentive Regulation No. 517/2022. Verify the investment permit before finalising; switch the line on if the goods do not qualify.";
+        var manufacturingWithholdingReason = "Not applicable: the 3% import withholding (Income Tax Proclamation No. 979/2016, Art. 97) is collected on goods imported for commercial resale; manufacturing imports for own production are excluded.";
         var lines = new List<ValuationPhase2TaxLine>
         {
             Line("Customs Duty", dutyRate, 1, "CIF", tariffDuty.HasValue ? TariffSource : tariff.SourceReference, !dutyExempt, dutyExempt ? "Exempt" : dutyNeedsReview ? "ReviewRequired" : "Recommended", machineryExemption ? machineryReason : dutyExempt ? "Officer-selected exemption. Verify the governing authority and evidence before confirming." : dutyNeedsReview ? "The HS 2022 tariff record has no single numeric duty rate. Enter the officer-approved rate before completing this assessment." : $"{dutyRate:0.##}% from the selected national tariff item.", input.Currency),
             Line("Excise Tax", exciseRate, 2, "CIFPlusDuty", exciseRule?.SourceReference ?? ExciseSource, exciseApplies, exciseNeedsReview || specificNeedsReview ? "ReviewRequired" : exciseApplies ? "Recommended" : "NotApplicable", exciseNote, input.Currency),
             Line("Surtax", surtaxRate, 4, "CIFPlusDutyPlusExcise", tariffSurtax.HasValue ? TariffSource : SurtaxSource, surtaxApplies, surtaxThresholdUnknown ? "ReviewRequired" : surtaxApplies ? "Recommended" : "NotApplicable", surtaxNote, input.Currency),
             Line("VAT", vatRate, 5, "CIFPlusDutyPlusExcisePlusSurtax", tariffVat.HasValue ? TariffSource : VatSource, !vatExempt, machineryExemption ? "Exempt" : vatExempt ? "NotApplicable" : "Recommended", machineryExemption ? machineryReason : vatExempt ? "Exemption selected; verify supporting authority." : $"{vatRate:0.##}% VAT{(tariffVat.HasValue ? " from the national tariff" : "")}, calculated after Customs Duty, Excise Tax, and Surtax in the configured assessment order.", input.Currency),
-            Line("Withholding Tax", withholdingRate, 6, "CIF", tariffWithholding.HasValue ? TariffSource : WithholdingSource, withholdingApplicable, withholdingApplicable ? "Recommended" : "NotApplicable", input.IsManufacturing ? "Not applicable: manufacturing importer/transaction exemption." : withholdingApplicable ? $"{withholdingRate:0.##}% of CIF for commercial imports{(tariffWithholding.HasValue ? " (national tariff rate)" : "")}; an advance income-tax payment." : "Not selected for this import or excluded by the commercial-import setting.", input.Currency),
-            Line("Social Welfare Levy", SocialWelfareLevyRate, 7, "CIF", SocialWelfareSource, socialApplicable, socialExempt || surtaxApplies ? "NotApplicable" : surtaxThresholdUnknown ? "ReviewRequired" : "Recommended", socialExempt ? "Exemption selected; verify supporting authority." : surtaxApplies ? "Not applied because the import is already subject to surtax." : surtaxThresholdUnknown ? "Confirm surtax eligibility after the Customs Duty rate is resolved." : "3% of CIF when the import is not subject to surtax, subject to exemptions.", input.Currency),
+            Line("Withholding Tax", withholdingRate, 6, "CIF", input.IsManufacturing ? WithholdingSource : tariffWithholding.HasValue ? TariffSource : WithholdingSource, withholdingApplicable, input.IsManufacturing ? "Exempt" : withholdingApplicable ? "Recommended" : "NotApplicable", input.IsManufacturing ? manufacturingWithholdingReason : withholdingApplicable ? $"{withholdingRate:0.##}% of CIF for commercial imports{(tariffWithholding.HasValue ? " (national tariff rate)" : "")}; an advance income-tax payment." : "Not selected for this import or excluded by the commercial-import setting.", input.Currency),
+            Line("Social Welfare Levy", SocialWelfareLevyRate, 7, "CIF", machineryExemption ? InvestmentIncentiveSource : SocialWelfareSource, socialApplicable, machineryExemption ? "Exempt" : socialExempt || surtaxApplies ? "NotApplicable" : surtaxThresholdUnknown ? "ReviewRequired" : "Recommended", machineryExemption ? machineryReason : socialExempt ? "Exemption selected; verify supporting authority." : surtaxApplies ? "Not applied because the import is already subject to surtax." : surtaxThresholdUnknown ? "Confirm surtax eligibility after the Customs Duty rate is resolved." : "3% of CIF when the import is not subject to surtax, subject to exemptions.", input.Currency),
             Line("Cargo Scanning Fee", CargoScanningFeeRate, 8, "CIF", "Cargo scanning fee rate specified by the business requirement.", true, "Recommended", "0.07% of CIF customs value; assessed separately and excluded from the VAT base.", input.Currency)
         };
         if (hasSpecificRate)
@@ -160,7 +165,7 @@ public static class ImportTaxAssessmentCalculator
             if (Math.Abs(line.Value - line.RecommendedValue) > 0.0001m || !string.Equals(line.CalculationType, line.Name == "Excise Tax (specific)" ? "PerUnit" : "Percentage", StringComparison.OrdinalIgnoreCase) || applicabilityChanged || string.Equals(overrideLine.Status, "OfficerAdjusted", StringComparison.OrdinalIgnoreCase)) line.Status = "OfficerAdjusted";
             if (line.Name == "Excise Tax" && input.ExciseTaxApplicable) { line.IsApplicable = true; line.Status = "OfficerAdjusted"; }
         }
-        if (dutyExempt)
+        if (dutyExempt && !machineryExemption)
         {
             var exemptDuty = lines.First(line => line.Name == "Customs Duty");
             exemptDuty.IsApplicable = false;
@@ -169,32 +174,19 @@ public static class ImportTaxAssessmentCalculator
         }
         if (machineryExemption)
         {
-            var exemptVat = lines.First(line => line.Name == "VAT");
-            exemptVat.IsApplicable = false;
-            exemptVat.Status = "Exempt";
-            exemptVat.Notes = machineryReason;
+            // Applied by default, but the officer can switch a line back on when the goods do not qualify.
+            foreach (var name in new[] { "Customs Duty", "VAT", "Social Welfare Levy" })
+            {
+                var exemptLine = lines.First(line => line.Name == name);
+                if (supplied.TryGetValue(name, out var officerLine) && officerLine.IsApplicable == true) continue;
+                exemptLine.IsApplicable = false;
+                exemptLine.Status = "Exempt";
+                exemptLine.Notes = machineryReason;
+                exemptLine.SourceReference = InvestmentIncentiveSource;
+            }
         }
         foreach (var custom in submitted.Where(line => !string.IsNullOrWhiteSpace(line.Name) && !lines.Any(existing => string.Equals(existing.Name, line.Name.Trim(), StringComparison.OrdinalIgnoreCase))))
             lines.Add(Line(custom.Name.Trim(), custom.Value, 90 + (custom.Order ?? 0), custom.CalculationBasis ?? "CIF", "Officer-entered charge. An optional note may record the legal source.", true, "OfficerAdjusted", custom.Notes ?? "", custom.Currency ?? input.Currency, custom.CalculationType));
-
-        if (input.IsManufacturing)
-        {
-            foreach (var line in lines)
-            {
-                line.IsApplicable = false;
-                line.Status = "NotApplicable";
-                line.Notes = "Not applicable: manufacturing product type has no assessment taxes or fees.";
-            }
-            if (machineryExemption)
-            {
-                foreach (var name in new[] { "Customs Duty", "VAT" })
-                {
-                    var exemptLine = lines.First(line => line.Name == name);
-                    exemptLine.Status = "Exempt";
-                    exemptLine.Notes = machineryReason;
-                }
-            }
-        }
 
         var cif = input.CustomsValue;
         var dutyLine = lines.First(line => line.Name == "Customs Duty");
@@ -246,8 +238,10 @@ public static class ImportTaxAssessmentCalculator
     private enum ExciseSpecificMode { Additive, GreaterOf }
     private sealed record ExciseRule(decimal AdValoremRate, decimal SpecificRate, string Unit, ExciseSpecificMode Mode, string Notes, string? SourceReference = null);
 
-    private static bool QualifiesForMachineryExemption(ImportTaxAssessmentInput input, HashSet<string> exemptionCodes) =>
-        exemptionCodes.Contains("MACHINERY_EQUIPMENT_EXEMPT") && input.IsManufacturing && input.IsMachineryOrEquipment;
+    /// <summary>Capital goods for a manufacturing import: declared machinery/equipment, or classed as capital goods by the officer.</summary>
+    public static bool QualifiesForMachineryExemption(ImportTaxAssessmentInput input, IReadOnlySet<string> exemptionCodes) =>
+        input.IsManufacturing && (input.IsMachineryOrEquipment || exemptionCodes.Contains("MACHINERY_EQUIPMENT_EXEMPT")
+            || string.Equals(input.ProductCategory.Trim(), "Capital goods", StringComparison.OrdinalIgnoreCase));
 
     private static ExciseRule? ExciseRuleFor(NationalTariffLine? tariff)
     {

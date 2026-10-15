@@ -1,0 +1,213 @@
+/* Importer declaration wizard: one step at a time, selectable fields, document drop zones. Uses the --iv-* tokens. */
+.tariff-browser { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tariff-browser > .oc-inline-error { padding: 8px 22px 0; }
+
+.ip-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ip-steps li button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); color: var(--iv-muted); font: inherit; font-size: 13.5px; font-weight: 700; text-align: left; cursor: pointer; }
+.ip-steps li button:disabled { cursor: not-allowed; opacity: .6; }
+.ip-steps-dot { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--iv-surface-2); color: var(--iv-muted); font-size: 13px; }
+.ip-steps li.is-current button { border-color: var(--iv-accent); color: var(--iv-text); box-shadow: 0 0 0 3px var(--iv-accent-soft); }
+.ip-steps li.is-current .ip-steps-dot { background: var(--iv-accent); color: var(--iv-on-accent); }
+.ip-steps li.is-done button { color: var(--iv-text); }
+.ip-steps li.is-done .ip-steps-dot { background: var(--iv-success); color: var(--iv-surface); }
+
+.ip-step-body { display: grid; gap: 18px; }
+.ip-step-footer { display: grid; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid var(--iv-border); }
+.ip-step-footer > div { display: flex; justify-content: space-between; gap: 12px; }
+.ip-step-footer .iv-error { margin: 0; }
+
+.ip-field { display: grid; gap: 6px; color: var(--iv-text); font-size: 14px; font-weight: 700; }
+.ip-field :is(input, select, textarea) { font-weight: 400; }
+.ip-fieldset { display: grid; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ip-fieldset legend { margin-bottom: 8px; padding: 0; color: var(--iv-text); font-size: 14px; font-weight: 700; }
+.ip-fieldset legend small { margin-left: 6px; color: var(--iv-muted); font-size: 12.5px; font-weight: 500; }
+.ip-fieldset.is-inline legend { margin-bottom: 6px; }
+
+.ip-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.ip-choices.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ip-choices.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ip-choice { position: relative; display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); color: var(--iv-text); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+.ip-choice:hover { border-color: var(--iv-accent); }
+.ip-choice.is-selected { border-color: var(--iv-accent); background: var(--iv-accent-soft); box-shadow: 0 0 0 2px var(--iv-accent-soft); }
+.ip-choice.is-compact { padding: 12px; }
+.ip-choice-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--iv-surface-2); color: var(--iv-accent); font-size: 17px; }
+.ip-choice.is-selected .ip-choice-icon { background: var(--iv-accent); color: var(--iv-on-accent); }
+.ip-choice strong { display: block; font-size: 14.5px; }
+.ip-choice small { display: block; margin-top: 3px; color: var(--iv-muted); font-size: 12.5px; line-height: 1.4; }
+.ip-choice-check { position: absolute; top: 10px; right: 10px; color: var(--iv-accent); }
+
+.ip-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ip-chip { padding: 8px 14px; border: 1px solid var(--iv-border); border-radius: 999px; background: var(--iv-surface); color: var(--iv-text); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.ip-chip:hover { border-color: var(--iv-accent); }
+.ip-chip.is-selected { border-color: var(--iv-accent); background: var(--iv-accent); color: var(--iv-on-accent); }
+.ip-chip-row.is-small .ip-chip { padding: 5px 11px; font-size: 12.5px; }
+.ip-segmented { width: fit-content; }
+
+.ip-stepper { display: flex; }
+.ip-stepper button { display: grid; place-items: center; width: 42px; border: 1px solid var(--iv-border-strong); background: var(--iv-surface-2); color: var(--iv-text); cursor: pointer; }
+.ip-stepper button:first-child { border-radius: 10px 0 0 10px; }
+.ip-stepper button:last-child { border-radius: 0 10px 10px 0; }
+.ip-stepper input { flex: 1; min-width: 0; border-radius: 0 !important; border-left: 0 !important; border-right: 0 !important; text-align: center; }
+
+.ip-more { border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface-2); }
+.ip-more > summary { padding: 12px 14px; color: var(--iv-text); font-size: 14px; font-weight: 700; cursor: pointer; }
+.ip-more > summary small { margin-left: 6px; color: var(--iv-muted); font-weight: 500; }
+.ip-more[open] { display: grid; gap: 12px; padding-bottom: 14px; }
+.ip-more[open] > :not(summary) { margin: 0 14px; }
+
+.ip-incentive { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--iv-success-border); border-radius: 12px; background: var(--iv-success-soft); color: var(--iv-text); }
+.ip-incentive > svg { flex: none; margin-top: 3px; color: var(--iv-success); }
+.ip-incentive strong { font-size: 14px; }
+.ip-incentive p { margin: 3px 0 0; font-size: 13.5px; line-height: 1.5; }
+.ip-hint { display: flex; gap: 8px; margin: 0; color: var(--iv-muted); font-size: 13px; line-height: 1.45; }
+.ip-hint svg { flex: none; margin-top: 2px; }
+
+.ip-tariff-browser { height: 560px; overflow: hidden; border: 1px solid var(--iv-border); border-radius: 14px; background: var(--iv-surface); }
+.ip-tariff-browser .oc-hs-toolbar { padding: 12px 16px; }
+.ip-tariff-chosen { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border: 1px solid var(--iv-success-border); border-radius: 14px; background: var(--iv-success-soft); }
+.ip-tariff-chosen-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--iv-success); color: var(--iv-surface); }
+.ip-tariff-chosen > div { flex: 1; min-width: 0; }
+.ip-tariff-chosen small { display: block; color: var(--iv-muted); font-size: 12.5px; }
+.ip-tariff-chosen strong { display: block; margin: 2px 0; color: var(--iv-text); font-family: ui-monospace, Consolas, monospace; font-size: 22px; }
+.ip-tariff-chosen p { margin: 0 0 4px; color: var(--iv-text); font-size: 15px; font-weight: 600; line-height: 1.4; }
+
+.ip-money-input.is-large input { font-size: 20px; font-weight: 700; padding-top: 12px; padding-bottom: 12px; }
+.ip-value-summary { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface-2); }
+.ip-value-summary > div { display: flex; justify-content: space-between; gap: 12px; color: var(--iv-muted); font-size: 14px; }
+.ip-value-summary > div b { color: var(--iv-text); font-variant-numeric: tabular-nums; }
+.ip-value-summary > div.is-total { padding-top: 8px; border-top: 1px solid var(--iv-border); color: var(--iv-text); font-weight: 700; }
+.ip-value-summary > div.is-total b { color: var(--iv-accent-strong); font-size: 18px; }
+.ip-value-summary small { color: var(--iv-muted); font-size: 12.5px; line-height: 1.45; }
+
+.ip-doc-progress { height: 6px; overflow: hidden; border-radius: 999px; background: var(--iv-surface-2); }
+.ip-doc-progress span { display: block; height: 100%; border-radius: inherit; background: var(--iv-success); transition: width .2s ease; }
+.ip-drops { display: grid; gap: 12px; }
+.ip-drop { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--iv-border); border-radius: 14px; background: var(--iv-surface); }
+.ip-drop.is-done { border-color: var(--iv-success-border); }
+.ip-drop.is-dragging { border-color: var(--iv-accent); box-shadow: 0 0 0 3px var(--iv-accent-soft); }
+.ip-drop.is-invalid { border-color: var(--iv-danger-border); }
+.ip-drop-head { display: flex; gap: 12px; align-items: flex-start; }
+.ip-drop-head strong { display: block; color: var(--iv-text); font-size: 14.5px; }
+.ip-drop-head strong b { color: var(--iv-danger); }
+.ip-drop-head small { display: block; color: var(--iv-muted); font-size: 12.5px; }
+.ip-drop-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--iv-accent-soft); color: var(--iv-accent); font-size: 17px; }
+.ip-drop.is-done .ip-drop-icon { background: var(--iv-success-soft); color: var(--iv-success); }
+.ip-drop-file { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--iv-surface-2); }
+.ip-drop-file img { width: 48px; height: 48px; flex: none; border-radius: 8px; object-fit: cover; }
+.ip-drop-type { display: grid; place-items: center; width: 48px; height: 48px; flex: none; border-radius: 8px; background: var(--iv-surface); color: var(--iv-accent); font-size: 22px; }
+.ip-drop-file > span:not(.ip-drop-type) { flex: 1; min-width: 0; }
+.ip-drop-file strong { display: block; overflow: hidden; color: var(--iv-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.ip-drop-file small { color: var(--iv-muted); font-size: 12.5px; }
+.ip-drop-zone { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px; border: 1.5px dashed var(--iv-border-strong); border-radius: 12px; background: transparent; color: var(--iv-muted); font: inherit; font-size: 13.5px; cursor: pointer; }
+.ip-drop-zone:hover, .ip-drop.is-dragging .ip-drop-zone { border-color: var(--iv-accent); color: var(--iv-text); background: var(--iv-accent-soft); }
+.ip-drop-zone strong { color: var(--iv-text); }
+.ip-drop .iv-error { margin: 0; }
+
+.ip-checklist-button { display: grid; grid-template-columns: 20px 1fr; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ip-checklist-button:hover strong { color: var(--iv-accent); }
+.ip-checklist-button span { min-width: 0; }
+
+@media (max-width: 900px) {
+  .ip-steps li button > span:last-child { display: none; }
+  .ip-steps li button { justify-content: center; }
+  .ip-choices.is-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ip-tariff-browser { height: auto; }
+  .ip-tariff-browser .oc-hs-body { grid-template-columns: 1fr; }
+  .ip-tariff-browser .oc-hs-list { max-height: 360px; border-right: 0; border-bottom: 1px solid var(--iv-border); }
+}
+@media (max-width: 560px) { .ip-choices.is-two, .ip-choices.is-four { grid-template-columns: 1fr; } .ip-tariff-chosen { flex-wrap: wrap; } .importer-form .importer-two { grid-template-columns: 1fr; } }
+
+.ip-wizard .ip-checklist li { display: block; }
+
+/* The tariff browser keeps its own compact search box inside the importer form. */
+.ip-page .importer-form label.oc-search { display: flex; gap: 0; }
+.ip-page .importer-form .oc-search input { width: auto; height: 38px; min-height: 0; padding: 0 10px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.ip-page .importer-form .ip-stepper input { min-height: 44px; }
+.ip-tariff-browser .oc-hs-body { min-height: 0; }
+.ip-tariff-browser .oc-hs-detail { min-height: 0; overflow-y: auto; }
+
+/* ---------- Product step: group cards, category details, brand switch ---------- */
+.ip-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+.ip-cat {
+  position: relative; display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 10px 12px;
+  border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); color: var(--iv-text);
+  font: inherit; font-size: 13.5px; font-weight: 600; line-height: 1.3; text-align: left; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.ip-cat:hover { border-color: var(--iv-accent); transform: translateY(-1px); box-shadow: var(--iv-shadow); }
+.ip-cat.is-selected { border-color: var(--iv-accent); background: var(--iv-accent-soft); box-shadow: 0 0 0 1px var(--iv-accent) inset; }
+.ip-cat-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--iv-surface-2); color: var(--iv-accent); font-size: 17px; }
+.ip-cat.is-selected .ip-cat-icon { background: var(--iv-accent); color: var(--iv-on-accent); }
+.ip-cat-label { flex: 1; min-width: 0; }
+.ip-cat-check { flex: none; color: var(--iv-accent); font-size: 16px; }
+
+.ip-specs { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--iv-border); border-radius: 14px; background: linear-gradient(180deg, var(--iv-accent-soft), var(--iv-surface) 90px); }
+.ip-specs > header { display: flex; align-items: flex-start; gap: 12px; }
+.ip-specs > header > div { flex: 1; min-width: 0; }
+.ip-specs h3 { margin: 0; color: var(--iv-text); font-size: 15.5px; font-weight: 700; }
+.ip-specs header p { margin: 3px 0 0; color: var(--iv-muted); font-size: 13px; line-height: 1.45; }
+.ip-specs-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--iv-accent); color: var(--iv-on-accent); font-size: 19px; }
+.ip-specs-count { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 5px 10px; border: 1px solid var(--iv-border); border-radius: 999px; background: var(--iv-surface); color: var(--iv-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.ip-specs-count.is-done { border-color: var(--iv-success-border); background: var(--iv-success-soft); color: var(--iv-success); }
+.ip-specs-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; }
+.ip-spec { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.ip-spec.is-choice { grid-column: 1 / -1; }
+.ip-spec-label { display: flex; align-items: baseline; gap: 8px; color: var(--iv-text); font-size: 13px; font-weight: 700; }
+.ip-spec-label small { color: var(--iv-muted); font-size: 12px; font-weight: 500; }
+.ip-spec-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.ip-spec-option {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border: 1px solid var(--iv-border); border-radius: 999px;
+  background: var(--iv-surface); color: var(--iv-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+}
+.ip-spec-option:hover { border-color: var(--iv-accent); color: var(--iv-accent); }
+.ip-spec-option.is-selected { border-color: var(--iv-accent); background: var(--iv-accent); color: var(--iv-on-accent); font-weight: 600; }
+.ip-spec-option.is-other:not(.is-selected) { border-style: dashed; color: var(--iv-muted); }
+.ip-spec-option svg { font-size: 13px; }
+.ip-spec-box {
+  display: flex; align-items: center; min-height: 44px; border: 1px solid var(--iv-border-strong); border-radius: 10px; background: var(--iv-surface);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ip-spec-box:focus-within { border-color: var(--iv-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--iv-accent) 16%, transparent); }
+.ip-page .importer-form .ip-spec-box input, .importer-form .ip-spec-box input:not([type=checkbox]) { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 12px; box-shadow: none; }
+.importer-form .ip-spec-box input:focus-visible { outline: 0; }
+.ip-spec-box em { flex: none; align-self: stretch; display: grid; place-items: center; padding: 0 12px; border-left: 1px solid var(--iv-border); border-radius: 0 10px 10px 0; background: var(--iv-surface-2); color: var(--iv-muted); font-size: 12.5px; font-style: normal; font-weight: 700; }
+.ip-page .importer-form input.ip-spec-input, .importer-form input.ip-spec-input { max-width: 420px; }
+
+.ip-brand { display: grid; gap: 14px; }
+.ip-brand-switch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 620px; }
+.ip-brand-switch button {
+  position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--iv-border); border-radius: 12px;
+  background: var(--iv-surface); color: var(--iv-text); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease;
+}
+.ip-brand-switch button:hover { border-color: var(--iv-accent); }
+.ip-brand-switch button.is-selected { border-color: var(--iv-accent); background: var(--iv-accent-soft); box-shadow: 0 0 0 1px var(--iv-accent) inset; }
+.ip-brand-switch strong { display: block; font-size: 14px; }
+.ip-brand-switch small { display: block; margin-top: 2px; color: var(--iv-muted); font-size: 12.5px; font-weight: 500; }
+.ip-brand-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--iv-surface-2); color: var(--iv-accent); font-size: 16px; }
+.ip-brand-switch button.is-selected .ip-brand-icon { background: var(--iv-accent); color: var(--iv-on-accent); }
+.ip-brand-check { margin-left: auto; flex: none; color: var(--iv-accent); font-size: 16px; }
+.ip-brand-body { display: grid; gap: 12px; }
+.ip-brand-picks { display: grid; gap: 7px; }
+.ip-brand-picks > span { color: var(--iv-muted); font-size: 12px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.ip-brand-note { display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 11px 13px; border-radius: 10px; background: var(--iv-surface-2); color: var(--iv-muted); font-size: 13px; line-height: 1.5; }
+.ip-brand-note svg { flex: none; margin-top: 2px; color: var(--iv-accent); }
+.importer-form .iv-field-error { display: block; margin-top: -4px; color: var(--iv-danger); font-size: 12.5px; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .ip-cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ip-specs { padding: 14px; }
+  .ip-specs-grid, .ip-brand-switch { grid-template-columns: 1fr; }
+}
+
+/* Stack results above the line detail whenever the browser itself is narrow (sidebar + summary on laptop screens). */
+.ip-tariff-browser { container-type: inline-size; }
+@container (max-width: 700px) {
+  .ip-tariff-browser .oc-hs-body { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+  .ip-tariff-browser .oc-hs-list { max-height: 340px; border-right: 0; border-bottom: 1px solid var(--iv-border); }
+  .ip-tariff-browser .oc-hs-detail { overflow: visible; }
+  .ip-tariff-browser .oc-hs-detail-scroll { max-height: none; overflow: visible; }
+  /* The pinned button sits right under the list here, so the copy under the row is not needed. */
+  .ip-tariff-browser .hs-tree-pick { display: none; }
+  .ip-tariff-browser .oc-hs-list .hs-tree-branch.is-selected > .hs-tree-row { border-bottom-color: var(--iv-accent); border-radius: 12px; }
+}
