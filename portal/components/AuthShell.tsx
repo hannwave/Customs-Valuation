@@ -22,8 +22,8 @@ export function AuthShell({ children, signup = false, compact = false }: { child
       <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
     </section>}
     <section className="auth-side"><div className="auth-topbar">{signup ? <Link href="/login" className="back-link"><FiArrowLeft/>{t("auth.back", "Back to sign in")}</Link> : <span className="portal-label">{t("auth.portal", "CUSTOMS VALUATION PORTAL")}</span>}<div style={{ display: "flex", alignItems: "center", gap: "16px" }}><ThemeToggle/><LanguageSelect/></div></div>
-      {compact && <div className="compact-auth-header"><Brand compact variant="dark"/><span>Employee application</span></div>}
-      <div className="auth-card"><div className="auth-card-brand"><CustomsLogo/></div>{children}</div>
+      {compact && <div className="compact-auth-header"><Link href="/" className="auth-home-link" aria-label="Back to the home page"><Brand compact variant="dark"/></Link><span>Employee application</span></div>}
+      <div className="auth-card"><div className="auth-card-brand"><Link href="/" className="auth-home-link" aria-label="Back to the home page"><CustomsLogo decorative/></Link></div>{children}</div>
       <footer className="auth-footer"><span>© 2026 Ethiopia Customs Commission</span><span><FiShield aria-hidden="true"/>{t("auth.authorized", "For authorized personnel")}</span></footer>
     </section>
   </div>;
