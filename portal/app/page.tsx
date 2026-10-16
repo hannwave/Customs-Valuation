@@ -2,37 +2,53 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import dynamic from "next/dynamic";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import {
-  FiActivity, FiArrowRight, FiBarChart2, FiBell, FiCheck, FiCpu, FiDollarSign, FiFileText, FiGlobe,
-  FiLayers, FiLock, FiLogIn, FiMapPin, FiMenu, FiSearch, FiUser, FiUserCheck, FiUserPlus, FiUsers, FiX,
-} from "react-icons/fi";
+import { FiArrowRight, FiBarChart2, FiCheck, FiExternalLink, FiFileText, FiGlobe, FiLayers, FiLogIn, FiMapPin, FiMenu, FiUser, FiUserPlus, FiX } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
 import { LandingLanguageSelect } from "@/components/LandingLanguageSelect";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { HEAD_OFFICE, type NetworkRegion } from "@/components/landing/network";
+import { LiveIcon, type AnimatedIcon } from "@/components/landing/LiveIcon";
+import { ActivityIcon } from "@/components/landing/icons/activity";
+import { BellIcon } from "@/components/landing/icons/bell";
+import { CpuIcon } from "@/components/landing/icons/cpu";
+import { DollarSignIcon } from "@/components/landing/icons/dollar-sign";
+import { EarthIcon } from "@/components/landing/icons/earth";
+import { FileTextIcon } from "@/components/landing/icons/file-text";
+import { LayersIcon } from "@/components/landing/icons/layers";
+import { LockIcon } from "@/components/landing/icons/lock";
+import { MapPinIcon } from "@/components/landing/icons/map-pin";
+import { SearchIcon } from "@/components/landing/icons/search";
+import { UserCheckIcon } from "@/components/landing/icons/user-check";
+import { UserPlusIcon } from "@/components/landing/icons/user-plus";
+import { UsersIcon } from "@/components/landing/icons/users";
 import { importerApiBase } from "@/lib/importer";
 
-const CustomsNetworkMap = dynamic(() => import("@/components/landing/CustomsNetworkMap"), { ssr: false, loading: () => <div className="lp-map-loading">Loading map…</div> });
-
-// Representative regional centres (as on the organisation map) until branches carry their own coordinates.
+// Representative regional centres until branches carry their own coordinates.
 const REGION_CENTERS: Record<string, readonly [number, number]> = {
   ADDIS_ABABA: [9.03, 38.74], AFAR: [11.75, 40.75], AMHARA: [11.5, 38.5], BENISHANGUL_GUMUZ: [10.75, 35.8], CENTRAL_ETHIOPIA: [8.2, 38.3],
   DIRE_DAWA: [9.6, 41.85], GAMBELA: [8.25, 34.6], HARARI: [9.31, 42.13], OROMIA: [7.55, 39.0], SIDAMA: [6.7, 38.4], SOMALI: [6.5, 44.5],
   SOUTH_ETHIOPIA: [6.0, 37.5], SOUTH_WEST_ETHIOPIA_PEOPLES: [7.0, 35.6], TIGRAY: [14.1, 38.5],
 };
+const HEAD_OFFICE_QUERY = "Ethiopian Customs Commission, Addis Ababa";
 
 type Region = { id: string; name: string; officialCode: string };
 type Branch = { id: string; name: string; parentLocationId: string | null };
+type NetworkRegion = { code: string; name: string; branches: string[]; center: readonly [number, number] };
 
-/** Loads the public region and branch lists for the office map. */
+/** Google Maps embed (no API key): the head office by name, or a region centred and zoomed. */
+const mapUrl = (region: NetworkRegion | null) => region
+  ? `https://maps.google.com/maps?q=${region.center[0]},${region.center[1]}&z=7&output=embed`
+  : `https://maps.google.com/maps?q=${encodeURIComponent(HEAD_OFFICE_QUERY)}&z=14&output=embed`;
+const mapLink = (region: NetworkRegion | null) => region
+  ? `https://www.google.com/maps/search/?api=1&query=${region.center[0]},${region.center[1]}`
+  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(HEAD_OFFICE_QUERY)}`;
+
+/** Loads the public region and branch lists for the offices section. */
 function useCustomsNetwork() {
   const [regions, setRegions] = useState<NetworkRegion[] | null>(null);
-  const [boundaries, setBoundaries] = useState<unknown>(null);
   useEffect(() => {
     let active = true;
     const json = <T,>(url: string) => fetch(url).then(response => (response.ok ? (response.json() as Promise<T>) : Promise.reject()));
@@ -45,10 +61,37 @@ function useCustomsNetwork() {
         })));
       })
       .catch(() => { if (active) setRegions([]); });
-    fetch("/maps/ethiopia-adm1.geojson").then(response => (response.ok ? response.json() : null)).then(data => { if (active) setBoundaries(data); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
-  return { regions, boundaries };
+  return regions;
+}
+
+/** A card whose animated icon replays every time the card is hovered or focused. */
+function useReplay() {
+  const [play, setPlay] = useState(0);
+  const replay = () => setPlay(count => count + 1);
+  return { play, handlers: { onMouseEnter: replay, onFocus: replay } };
+}
+
+function Step({ icon, title, text, index }: { icon: AnimatedIcon; title: string; text: string; index: number }) {
+  const { play, handlers } = useReplay();
+  return <li className="lp-step" {...handlers}>
+    <span className="lp-step-num">{String(index + 1).padStart(2, "0")}</span>
+    <span className="lp-step-icon"><LiveIcon icon={icon} play={play} delay={index * 180} /></span>
+    <h3>{title}</h3><p>{text}</p>
+  </li>;
+}
+
+function Feature({ icon, title, text, index }: { icon: AnimatedIcon; title: string; text: string; index: number }) {
+  const { play, handlers } = useReplay();
+  return <article className="lp-feature" tabIndex={-1} {...handlers}>
+    <span className="lp-feature-icon"><LiveIcon icon={icon} play={play} delay={(index % 3) * 150} /></span>
+    <h3>{title}</h3><p>{text}</p>
+  </article>;
+}
+
+function PortalIcon({ icon, play }: { icon: AnimatedIcon; play: number }) {
+  return <span className="lp-portal-icon"><LiveIcon icon={icon} size={26} play={play} /></span>;
 }
 
 export default function LandingPage() {
@@ -57,47 +100,104 @@ export default function LandingPage() {
   const menuButton = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-  const { regions, boundaries } = useCustomsNetwork();
+  const importerCard = useReplay();
+  const staffCard = useReplay();
+  const regions = useCustomsNetwork();
 
   useEffect(() => {
     if (!menuOpen) return;
     const dismiss = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        menuButton.current?.focus();
-      }
+      if (event.key === "Escape") { setMenuOpen(false); menuButton.current?.focus(); }
     };
     document.addEventListener("keydown", dismiss);
     return () => document.removeEventListener("keydown", dismiss);
   }, [menuOpen]);
 
+  // Page choreography. Everything is skipped for people who ask for reduced motion; the page is complete without it.
   useLayoutEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     gsap.registerPlugin(ScrollTrigger);
     const context = gsap.context(() => {
-      gsap.from(".lp-hero-copy > *", { y: 18, autoAlpha: 0, duration: 0.6, stagger: 0.08, ease: "power2.out" });
-      [".lp-step", ".lp-portal", ".lp-feature", ".lp-office-panel", ".lp-cta-inner > *"].forEach(selector => {
-        gsap.from(selector, { y: 16, autoAlpha: 0, duration: 0.5, stagger: 0.07, ease: "power2.out", scrollTrigger: { trigger: selector, start: "top 88%", once: true } });
+      // Header slides in, then gains a shadow once the page scrolls.
+      gsap.from(".lp-nav", { yPercent: -100, duration: 0.7, ease: "power3.out" });
+      ScrollTrigger.create({ start: 24, end: "max", toggleClass: { targets: ".lp-nav", className: "is-scrolled" } });
+
+      // Hero: the film settles in, the headline rises line by line, then the rest follows.
+      const hero = gsap.timeline({ defaults: { ease: "power3.out" } });
+      hero.from(".lp-hero-scene", { scale: 1.14, duration: 2.4, ease: "power2.out" }, 0)
+        .from(".lp-kicker", { x: -24, autoAlpha: 0, duration: 0.6 }, 0.25)
+        .from(".lp-kicker span", { scaleX: 0, transformOrigin: "left center", duration: 0.8 }, 0.45)
+        .from(".lp-line-inner", { yPercent: 110, duration: 0.9, stagger: 0.12 }, 0.35)
+        .from(".lp-lead", { y: 24, autoAlpha: 0, duration: 0.7 }, 0.75)
+        .from(".lp-hero-actions .lp-btn", { y: 22, scale: 0.94, autoAlpha: 0, duration: 0.6, stagger: 0.1, ease: "back.out(1.7)" }, 0.9)
+        .from(".lp-hero-proof li", { y: 16, autoAlpha: 0, duration: 0.5, stagger: 0.1 }, 1.1)
+        .from(".lp-hero-motto", { autoAlpha: 0, x: -16, duration: 0.6 }, 1.3)
+        .from(".lp-hero-caption", { x: 60, autoAlpha: 0, duration: 0.8 }, 1.2);
+
+      // Scrolling past the hero: the film drifts slower than the page and the copy lifts away.
+      gsap.to(".lp-hero-scene", { yPercent: 14, ease: "none", scrollTrigger: { trigger: ".lp-hero", start: "top top", end: "bottom top", scrub: true } });
+      gsap.to(".lp-hero-copy", { y: -70, autoAlpha: 0.15, ease: "none", scrollTrigger: { trigger: ".lp-hero", start: "35% top", end: "bottom top", scrub: true } });
+
+      // Section headings.
+      gsap.utils.toArray<HTMLElement>(".lp-section-head").forEach(head => {
+        gsap.from(head.children, { y: 34, autoAlpha: 0, duration: 0.8, stagger: 0.1, ease: "power3.out", scrollTrigger: { trigger: head, start: "top 85%", once: true } });
       });
+
+      // Journey: steps rise in turn while a gold line draws across them as you scroll.
+      gsap.from(".lp-step", { y: 50, autoAlpha: 0, duration: 0.8, stagger: 0.12, ease: "power3.out", scrollTrigger: { trigger: ".lp-steps", start: "top 82%", once: true } });
+      gsap.fromTo(".lp-steps-progress", { scaleX: 0 }, { scaleX: 1, ease: "none", scrollTrigger: { trigger: ".lp-steps", start: "top 75%", end: "bottom 45%", scrub: 0.6 } });
+
+      // Portals slide in from either side; their checklists tick in.
+      gsap.from(".lp-portal.is-importer", { x: -80, rotate: -2, autoAlpha: 0, duration: 1, ease: "power3.out", scrollTrigger: { trigger: ".lp-portals", start: "top 80%", once: true } });
+      gsap.from(".lp-portal.is-staff", { x: 80, rotate: 2, autoAlpha: 0, duration: 1, ease: "power3.out", scrollTrigger: { trigger: ".lp-portals", start: "top 80%", once: true } });
+      gsap.from(".lp-portal li", { x: -14, autoAlpha: 0, duration: 0.45, stagger: 0.06, delay: 0.45, ease: "power2.out", scrollTrigger: { trigger: ".lp-portals", start: "top 80%", once: true } });
+
+      // Features pop in as a grid.
+      gsap.from(".lp-feature", { y: 46, scale: 0.94, autoAlpha: 0, duration: 0.7, stagger: { each: 0.09, grid: "auto", from: "start" }, ease: "power3.out", scrollTrigger: { trigger: ".lp-features", start: "top 82%", once: true } });
+
+      // Offices: text and map reveal; the map unrolls from the top.
+      gsap.from(".lp-office-panel > *", { y: 26, autoAlpha: 0, duration: 0.6, stagger: 0.08, ease: "power3.out", scrollTrigger: { trigger: ".lp-offices", start: "top 80%", once: true } });
+      gsap.fromTo(".lp-map", { clipPath: "inset(0 0 100% 0 round 22px)" }, { clipPath: "inset(0 0 0% 0 round 22px)", duration: 1.2, ease: "power3.inOut", scrollTrigger: { trigger: ".lp-offices", start: "top 78%", once: true } });
+
+      // Call to action: the route artwork drifts, the text rises.
+      gsap.fromTo(".lp-cta-art", { yPercent: -10, scale: 1.1 }, { yPercent: 10, scale: 1, ease: "none", scrollTrigger: { trigger: ".lp-cta", start: "top bottom", end: "bottom top", scrub: true } });
+      gsap.from(".lp-cta-inner > *", { y: 34, autoAlpha: 0, duration: 0.8, stagger: 0.15, ease: "power3.out", scrollTrigger: { trigger: ".lp-cta", start: "top 82%", once: true } });
+      gsap.from(".lp-footer-main > div", { y: 24, autoAlpha: 0, duration: 0.6, stagger: 0.08, ease: "power2.out", scrollTrigger: { trigger: ".lp-footer", start: "top 92%", once: true } });
     }, page);
     return () => context.revert();
   }, []);
 
+  // Office counts and region chips arrive after the page mounts, so they animate once the data is in.
+  useLayoutEffect(() => {
+    if (!regions?.length || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    gsap.registerPlugin(ScrollTrigger);
+    const context = gsap.context(() => {
+      gsap.utils.toArray<HTMLElement>(".lp-count").forEach(node => {
+        const target = Number(node.dataset.value ?? 0);
+        const counter = { value: 0 };
+        gsap.to(counter, { value: target, duration: 1.4, ease: "power2.out", onUpdate: () => { node.textContent = String(Math.round(counter.value)); },
+          scrollTrigger: { trigger: node, start: "top 90%", once: true } });
+      });
+      gsap.from(".lp-region-list li", { y: 14, autoAlpha: 0, duration: 0.4, stagger: 0.035, ease: "power2.out", scrollTrigger: { trigger: ".lp-region-list", start: "top 88%", once: true } });
+    }, page);
+    return () => context.revert();
+  }, [regions]);
+
   const journey = useMemo(() => [
-    { icon: FiUserPlus, title: t("landing.journey.s1Title", "Register and get verified"), text: t("landing.journey.s1", "Importers, businesses and customs agents open an account with their licence, TIN and ID. Officers in their region verify it.") },
-    { icon: FiFileText, title: t("landing.journey.s2Title", "Declare the goods"), text: t("landing.journey.s2", "Describe the item, the price paid, freight and insurance, and upload the invoice, packing list and certificate of origin.") },
-    { icon: FiCpu, title: t("landing.journey.s3Title", "Documents are checked"), text: t("landing.journey.s3", "An AI document scanner reads every upload and flags files that do not match the declaration for the officer.") },
-    { icon: FiSearch, title: t("landing.journey.s4Title", "Classified and valued"), text: t("landing.journey.s4", "The officer confirms the HS tariff line and the customs value, backed by international price evidence.") },
-    { icon: FiDollarSign, title: t("landing.journey.s5Title", "Official assessment"), text: t("landing.journey.s5", "Duties and taxes are computed from ERCA tariff rates and the importer receives the official assessment invoice.") },
+    { icon: UserPlusIcon as AnimatedIcon, title: t("landing.journey.s1Title", "Register and get verified"), text: t("landing.journey.s1", "Importers, businesses and customs agents open an account with their licence, TIN and ID. Officers in their region verify it.") },
+    { icon: FileTextIcon as AnimatedIcon, title: t("landing.journey.s2Title", "Declare the goods"), text: t("landing.journey.s2", "Describe the item, the price paid, freight and insurance, and upload the invoice, packing list and certificate of origin.") },
+    { icon: CpuIcon as AnimatedIcon, title: t("landing.journey.s3Title", "Documents are checked"), text: t("landing.journey.s3", "An AI document scanner reads every upload and flags files that do not match the declaration for the officer.") },
+    { icon: SearchIcon as AnimatedIcon, title: t("landing.journey.s4Title", "Classified and valued"), text: t("landing.journey.s4", "The officer confirms the HS tariff line and the customs value, backed by international price evidence.") },
+    { icon: DollarSignIcon as AnimatedIcon, title: t("landing.journey.s5Title", "Official assessment"), text: t("landing.journey.s5", "Duties and taxes are computed from ERCA tariff rates and the importer receives the official assessment invoice.") },
   ], [t]);
 
   const features = useMemo(() => [
-    { icon: FiCpu, title: t("landing.features.f1Title", "AI document checks"), text: t("landing.features.f1", "Invoices, licences and IDs are read automatically and flagged for tampering, expiry, wrong names or numbers.") },
-    { icon: FiLayers, title: t("landing.features.f2Title", "ERCA tariff and taxes"), text: t("landing.features.f2", "Every national tariff line with its duty, excise, VAT, withholding and surtax rates, applied to the assessment.") },
-    { icon: FiGlobe, title: t("landing.features.f3Title", "International price evidence"), text: t("landing.features.f3", "Market and manufacturer prices, converted to birr, give officers a defensible reference value.") },
-    { icon: FiActivity, title: t("landing.features.f4Title", "Complete audit trail"), text: t("landing.features.f4", "Every decision, revision and document scan is recorded with who did it, where and why.") },
-    { icon: FiLock, title: t("landing.features.f5Title", "Regional access control"), text: t("landing.features.f5", "Officers and administrators see only the offices and cases their role and region allow.") },
-    { icon: FiBell, title: t("landing.features.f6Title", "Live notifications"), text: t("landing.features.f6", "Importers hear the moment an officer verifies, requests information or issues an assessment.") },
+    { icon: CpuIcon as AnimatedIcon, title: t("landing.features.f1Title", "AI document checks"), text: t("landing.features.f1", "Invoices, licences and IDs are read automatically and flagged for tampering, expiry, wrong names or numbers.") },
+    { icon: LayersIcon as AnimatedIcon, title: t("landing.features.f2Title", "ERCA tariff and taxes"), text: t("landing.features.f2", "Every national tariff line with its duty, excise, VAT, withholding and surtax rates, applied to the assessment.") },
+    { icon: EarthIcon as AnimatedIcon, title: t("landing.features.f3Title", "International price evidence"), text: t("landing.features.f3", "Market and manufacturer prices, converted to birr, give officers a defensible reference value.") },
+    { icon: ActivityIcon as AnimatedIcon, title: t("landing.features.f4Title", "Complete audit trail"), text: t("landing.features.f4", "Every decision, revision and document scan is recorded with who did it, where and why.") },
+    { icon: LockIcon as AnimatedIcon, title: t("landing.features.f5Title", "Regional access control"), text: t("landing.features.f5", "Officers and administrators see only the offices and cases their role and region allow.") },
+    { icon: BellIcon as AnimatedIcon, title: t("landing.features.f6Title", "Live notifications"), text: t("landing.features.f6", "Importers hear the moment an officer verifies, requests information or issues an assessment.") },
   ], [t]);
 
   const branchCount = regions?.reduce((sum, region) => sum + region.branches.length, 0) ?? 0;
@@ -137,7 +237,10 @@ export default function LandingPage() {
       <div className="lp-wrap lp-hero-inner">
         <div className="lp-hero-copy">
           <p className="lp-kicker">{t("landing.hero.kicker", "Importer & Customs Portal")}<span aria-hidden="true" /></p>
-          <h1 id="lp-hero-title"><span>{t("landing.hero.titleA", "Declare with confidence.")}</span><em>{t("landing.hero.titleB", "Track every step.")}</em></h1>
+          <h1 id="lp-hero-title">
+            <span className="lp-line"><span className="lp-line-inner">{t("landing.hero.titleA", "Declare with confidence.")}</span></span>
+            <em className="lp-line"><span className="lp-line-inner">{t("landing.hero.titleB", "Track every step.")}</span></em>
+          </h1>
           <p className="lp-lead">{t("landing.hero.lead", "Register as an importer, submit your goods and documents, and follow your declaration through review to an official duty and tax assessment.")}</p>
           <div className="lp-hero-actions">
             <Link href="/importer/register" className="lp-btn is-primary is-large">{t("landing.hero.register", "Register as an Importer")}<FiArrowRight aria-hidden="true" /></Link>
@@ -157,8 +260,10 @@ export default function LandingPage() {
     <section className="lp-section" id="how">
       <div className="lp-wrap">
         <header className="lp-section-head"><p className="lp-eyebrow">{t("landing.journey.eyebrow", "How it works")}</p><h2>{t("landing.journey.title", "From declaration to official invoice")}</h2><p>{t("landing.journey.subtitle", "Five steps, the same for every importer, with each decision recorded.")}</p></header>
-        <ol className="lp-steps">{journey.map(({ icon: Icon, title, text }, index) => <li className="lp-step" key={title}>
-          <span className="lp-step-num">{String(index + 1).padStart(2, "0")}</span><span className="lp-step-icon"><Icon aria-hidden="true" /></span><h3>{title}</h3><p>{text}</p></li>)}</ol>
+        <div className="lp-steps-track">
+          <span className="lp-steps-progress" aria-hidden="true" />
+          <ol className="lp-steps">{journey.map((step, index) => <Step key={step.title} {...step} index={index} />)}</ol>
+        </div>
       </div>
     </section>
 
@@ -166,15 +271,15 @@ export default function LandingPage() {
       <div className="lp-wrap">
         <header className="lp-section-head"><p className="lp-eyebrow">{t("landing.portals.eyebrow", "Two portals, one process")}</p><h2>{t("landing.portals.title", "Built for importers and for Customs")}</h2></header>
         <div className="lp-portals">
-          <article className="lp-portal is-importer">
-            <span className="lp-portal-icon"><FiUsers aria-hidden="true" /></span>
+          <article className="lp-portal is-importer" {...importerCard.handlers}>
+            <PortalIcon icon={UsersIcon as AnimatedIcon} play={importerCard.play} />
             <h3>{t("landing.portals.importerTitle", "Importer portal")}</h3>
             <p>{t("landing.portals.importerText", "For businesses, individuals and licensed customs agents bringing goods into Ethiopia.")}</p>
             <ul>{[t("landing.portals.i1", "Register once, verified by your regional office"), t("landing.portals.i2", "Declare goods and upload documents online"), t("landing.portals.i3", "Track every declaration and answer officer requests"), t("landing.portals.i4", "Open, print or download the official invoice")].map(item => <li key={item}><FiCheck aria-hidden="true" />{item}</li>)}</ul>
             <div className="lp-portal-actions"><Link href="/importer/register" className="lp-btn is-primary"><FiUserPlus aria-hidden="true" />{t("landing.portals.importerCta", "Create importer account")}</Link><Link href="/login" className="lp-link">{t("landing.portals.importerSignIn", "I already have an account")}<FiArrowRight aria-hidden="true" /></Link></div>
           </article>
-          <article className="lp-portal is-staff">
-            <span className="lp-portal-icon"><FiUserCheck aria-hidden="true" /></span>
+          <article className="lp-portal is-staff" {...staffCard.handlers}>
+            <PortalIcon icon={UserCheckIcon as AnimatedIcon} play={staffCard.play} />
             <h3>{t("landing.portals.staffTitle", "Customs workspace")}</h3>
             <p>{t("landing.portals.staffText", "For Customs Officers, regional Customs Administrators and System Administrators.")}</p>
             <ul>{[t("landing.portals.s1", "Verify importers with scanned-document flags"), t("landing.portals.s2", "Review declarations, classify and value goods"), t("landing.portals.s3", "Assess duties and taxes and issue the invoice"), t("landing.portals.s4", "Manage offices, staff and the full audit trail")].map(item => <li key={item}><FiCheck aria-hidden="true" />{item}</li>)}</ul>
@@ -184,28 +289,10 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <section className="lp-section lp-trade" aria-labelledby="lp-trade-title">
-      <div className="lp-wrap lp-trade-grid">
-        <div className="lp-trade-copy">
-          <p className="lp-eyebrow">{t("landing.trade.eyebrow", "Connected to a world of opportunity")}</p>
-          <h2 id="lp-trade-title">{t("landing.trade.title", "Keeping Ethiopia’s trade moving.")}</h2>
-          <p>{t("landing.trade.text", "From the first document to the final assessment, a clearer customs journey helps you focus on what comes next for your business.")}</p>
-          <a href="#how" className="lp-link">{t("landing.trade.cta", "Explore the declaration process")}<FiArrowRight aria-hidden="true" /></a>
-        </div>
-        <figure className="lp-trade-film">
-          <video controls playsInline preload="none" poster="/images/landing/inland-terminal.png" aria-label={t("landing.trade.videoLabel", "Ethiopian inland container terminal video")} aria-describedby="lp-film-caption">
-            <source src="/images/landing/inland-terminal.mp4" type="video/mp4" />
-            <a href="/images/landing/inland-terminal.mp4">{t("landing.trade.videoFallback", "Watch the port video")}</a>
-          </video>
-          <figcaption id="lp-film-caption"><FiMapPin aria-hidden="true" />{t("landing.trade.caption", "A new perspective on Ethiopian trade")}</figcaption>
-        </figure>
-      </div>
-    </section>
-
     <section className="lp-section lp-features-section" id="features">
       <div className="lp-wrap">
         <header className="lp-section-head"><p className="lp-eyebrow">{t("landing.features.eyebrow", "What the system does")}</p><h2>{t("landing.features.title", "Evidence and controls behind every assessment")}</h2></header>
-        <div className="lp-features">{features.map(({ icon: Icon, title, text }) => <article className="lp-feature" key={title}><span className="lp-feature-icon"><Icon aria-hidden="true" /></span><h3>{title}</h3><p>{text}</p></article>)}</div>
+        <div className="lp-features">{features.map((feature, index) => <Feature key={feature.title} {...feature} index={index} />)}</div>
       </div>
     </section>
 
@@ -214,16 +301,24 @@ export default function LandingPage() {
         <div className="lp-office-panel">
           <p className="lp-eyebrow">{t("landing.offices.eyebrow", "Customs offices")}</p>
           <h2>{t("landing.offices.title", "A network across every region")}</h2>
-          <p>{t("landing.offices.text", "Your declarations and verification are handled by the office in your region. Choose a region to see its branches.")}</p>
-          <dl className="lp-office-stats"><div><dt>{t("landing.offices.regions", "Regions & city administrations")}</dt><dd>{regions ? regions.length : "–"}</dd></div><div><dt>{t("landing.offices.branches", "Active branches")}</dt><dd>{regions ? branchCount : "–"}</dd></div></dl>
+          <p>{t("landing.offices.text", "Your declarations and verification are handled by the office in your region. Choose a region to see it on the map.")}</p>
+          <dl className="lp-office-stats">
+            <div><dt>{t("landing.offices.regions", "Regions & city administrations")}</dt><dd className="lp-count" data-value={regions?.length ?? 0}>{regions ? regions.length : "–"}</dd></div>
+            <div><dt>{t("landing.offices.branches", "Active branches")}</dt><dd className="lp-count" data-value={branchCount}>{regions ? branchCount : "–"}</dd></div>
+          </dl>
           <ul className="lp-region-list">
+            <li><button type="button" className={selectedRegion === null ? "is-active" : ""} aria-pressed={selectedRegion === null} onClick={() => setSelectedRegion(null)}>
+              <FiMapPin aria-hidden="true" /><span>{t("landing.offices.hq", "Head office")}</span><small>HQ</small></button></li>
             {(regions ?? []).map(region => <li key={region.code}><button type="button" className={region.code === selectedRegion ? "is-active" : ""} aria-pressed={region.code === selectedRegion} onClick={() => setSelectedRegion(current => current === region.code ? null : region.code)}>
               <FiMapPin aria-hidden="true" /><span>{region.name}</span><small>{region.branches.length}</small></button></li>)}
           </ul>
           {selected && <div className="lp-region-detail"><strong>{selected.name}</strong><span>{selected.branches.length ? selected.branches.join(" · ") : t("landing.offices.regional", "Regional office")}</span></div>}
-          <p className="lp-office-hq"><FiMapPin aria-hidden="true" /><span><b>{t("landing.offices.hq", "Head office")}</b> · Ethiopian Customs Commission, Addis Ababa ({HEAD_OFFICE[0].toFixed(3)}, {HEAD_OFFICE[1].toFixed(3)})</span></p>
+          <div className="lp-office-hq"><span className="lp-office-hq-icon"><LiveIcon icon={MapPinIcon as AnimatedIcon} size={18} /></span><span><b>{t("landing.offices.hq", "Head office")}</b> · Ethiopian Customs Commission, Addis Ababa</span></div>
         </div>
-        <div className="lp-map">{regions && <CustomsNetworkMap regions={regions} boundaries={boundaries} selected={selectedRegion} onSelect={setSelectedRegion} />}{!regions && <div className="lp-map-loading">Loading map…</div>}</div>
+        <div className="lp-map">
+          <iframe key={selected?.code ?? "hq"} title={selected ? `${selected.name} on Google Maps` : "Ethiopian Customs Commission head office on Google Maps"} src={mapUrl(selected)} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+          <a className="lp-map-open" href={mapLink(selected)} target="_blank" rel="noopener noreferrer"><FiExternalLink aria-hidden="true" />{t("landing.offices.openMap", "Open in Google Maps")}</a>
+        </div>
       </div>
     </section>
 
