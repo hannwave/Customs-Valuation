@@ -17,7 +17,17 @@ public sealed record DeclarationScanContext(
 /// <summary>What the importer registered, to compare a scanned verification document against.</summary>
 public sealed record VerificationScanContext(
     string Kind, IReadOnlyList<string> Names, string Tin, IReadOnlyList<string> Numbers,
-    bool DuplicateWithinCase = false, bool UsedByAnotherImporter = false);
+    bool DuplicateWithinCase = false, bool UsedByAnotherImporter = false,
+    VerificationProfileFacts? Profile = null, IReadOnlyList<VerificationSibling>? Siblings = null, DateOnly? Today = null);
+
+/// <summary>The registration details each verification document is checked against.</summary>
+public sealed record VerificationProfileFacts(
+    string TradeLicenseNumber = "", string BusinessRegistrationNumber = "", string VatNumber = "", string AgentLicenseNumber = "",
+    string IdType = "", string IdNumber = "", string Nationality = "", string City = "", string Woreda = "", string AddressLine = "",
+    DateOnly? RegisteredExpiry = null);
+
+/// <summary>What another of the same importer's documents was read as, for cross-document checks.</summary>
+public sealed record VerificationSibling(string Kind, string Holder, string Tin);
 
 /// <summary>
 /// Turns the OCR reading of one document into a flag for the officer. It is a triage aid, not a decision:
@@ -84,6 +94,13 @@ public static class DocumentScanAnalyzer
     {
         foreach (var key in keys) if (fields.TryGetValue(key, out var value) && !Missing(value)) return value;
         return "";
+    }
+
+    /// <summary>The holder name and TIN read from a stored scan, for comparing the importer's documents with each other.</summary>
+    public static VerificationSibling Sibling(string kind, string text)
+    {
+        var fields = ParseFields(text);
+        return new(kind, Value(fields, "holder name", "name", "company name", "holder"), Value(fields, "tin", "tax identification number"));
     }
 
     private static string Normal(string value) => Regex.Replace(value.ToLowerInvariant(), @"[^\p{L}\p{N}/ ]+", " ");
@@ -232,6 +249,8 @@ public static class DocumentScanAnalyzer
         var fields = ParseFields(text);
         var findings = new List<ScanFinding>();
         var expected = IdentityTypes.First(t => t.Code == context.Kind);
+        var profile = context.Profile ?? new VerificationProfileFacts();
+        var today = context.Today ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var declaredType = Value(fields, "document type", "type");
         var title = Value(fields, "title", "document title", "heading");
         var holder = Value(fields, "holder name", "name", "company name", "holder");
@@ -258,27 +277,213 @@ public static class DocumentScanAnalyzer
             : detected is not null ? new("Document type", Fail, $"Uploaded as a {expected.Label.ToLowerInvariant()}, but it reads as a {detected.Label.ToLowerInvariant()}.")
             : new("Document type", Warn, $"Could not confirm this is a {expected.Label.ToLowerInvariant()}."));
 
+        AddAuthenticity(findings, fields, context.Kind);
+
         if (holder.Length > 0 && context.Names.Count > 0)
         {
-            var holderWords = Words(holder).ToHashSet();
-            var matched = context.Names.Where(n => n.Length > 0).Any(name => { var words = Words(name).ToArray(); return words.Length > 0 && words.Count(holderWords.Contains) >= Math.Min(2, words.Length); });
+            var matched = context.Names.Any(name => SameName(holder, name));
             findings.Add(matched ? new("Name", Pass, $"Issued to {Shorten(holder)}.") : new("Name", Fail, $"Issued to {Shorten(holder)}, which does not match the registered {context.Names.First(n => n.Length > 0)}."));
         }
         else findings.Add(new("Name", Warn, "No holder name could be read."));
 
-        if (Digits(context.Tin).Length > 0 && Digits(tin).Length > 0)
-            findings.Add(Digits(tin) == Digits(context.Tin) ? new("TIN", Pass, $"TIN {tin}, as registered.") : new("TIN", Fail, $"The document shows TIN {tin}; the importer registered {context.Tin}."));
+        if (Digits(tin).Length > 0)
+        {
+            if (Digits(context.Tin).Length > 0)
+                findings.Add(Digits(tin) == Digits(context.Tin) ? new("TIN", Pass, $"TIN {tin}, as registered.") : new("TIN", Fail, $"The document shows TIN {tin}; the importer registered {context.Tin}."));
+            if (!ImporterVerification.IsValidTin(Digits(tin)))
+                findings.Add(new("TIN format", Warn, $"TIN {tin} is not the 10-digit format Ethiopian TINs use."));
+        }
         else if (context.Kind == "TIN_CERTIFICATE") findings.Add(new("TIN", Warn, "No TIN could be read from the certificate."));
 
-        var numbers = context.Numbers.Select(Digits).Where(n => n.Length >= 4).ToArray();
-        if (numbers.Length > 0 && Digits(number).Length >= 4)
-            findings.Add(numbers.Contains(Digits(number)) ? new("Registration number", Pass, $"{number} matches the registration.") : new("Registration number", Warn, $"{number} does not match the number the importer entered."));
-
-        if (expiry.Length > 0 && DateTime.TryParse(expiry, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var until))
-            findings.Add(until.Date < DateTime.UtcNow.Date ? new("Validity", Fail, $"Expired on {until:d MMM yyyy}.") : new("Validity", Pass, $"Valid until {until:d MMM yyyy}."));
+        AddNumberCheck(findings, context, profile, number, expected.Label);
+        AddDateChecks(findings, fields, context.Kind, profile, expiry, declaredType, today);
+        AddIssuerCheck(findings, Value(fields, "issuing authority", "issued by", "issuer", "authority"), context.Kind, expected.Label);
+        if (context.Kind == "IDENTITY_DOCUMENT") AddIdentityChecks(findings, fields, profile, number, $"{declaredType} {title}", today);
+        if (context.Kind is "PROOF_OF_RESIDENCE" or "TRADE_LICENSE" or "COMMERCIAL_REGISTRATION") AddAddressCheck(findings, Value(fields, "address", "business address", "holder address"), profile);
+        AddConsistency(findings, context, holder, tin);
 
         AddReuse(findings, context.DuplicateWithinCase, context.UsedByAnotherImporter, "registration");
         return Verdict(findings, detected?.Label ?? "Official document (untitled)", typeMatches, expected.Label);
+    }
+
+    // Documents a government office issues are expected to carry its stamp or seal; passports and ID cards use printed security features instead.
+    private static readonly HashSet<string> StampedKinds = ["TRADE_LICENSE", "TIN_CERTIFICATE", "COMMERCIAL_REGISTRATION", "VAT_CERTIFICATE", "AGENT_LICENSE", "AUTHORIZATION_LETTER"];
+
+    /// <summary>Signs that the file is not a faithful copy of a real original: edits, sample copies, screenshots, a missing stamp or signature.</summary>
+    private static void AddAuthenticity(List<ScanFinding> findings, Dictionary<string, string> fields, string kind)
+    {
+        var altered = Value(fields, "signs of alteration", "alteration", "tampering");
+        if (altered.Length > 0 && !IsNo(altered)) findings.Add(new("Tampering", Fail, $"Possible editing: {Shorten(altered.TrimEnd('.'))}."));
+        else if (fields.ContainsKey("signs of alteration")) findings.Add(new("Tampering", Pass, "No visible signs of editing."));
+
+        if (IsYes(Value(fields, "sample or specimen", "specimen")))
+            findings.Add(new("Sample copy", Fail, "Marked as a sample, specimen, void, copy or draft, or is a blank template."));
+        if (IsYes(Value(fields, "screen capture", "screenshot")))
+            findings.Add(new("Original copy", Warn, "A screenshot or photo of a screen, not a scan or photo of the original."));
+
+        var stamp = Value(fields, "official stamp or seal", "stamp", "seal");
+        if (StampedKinds.Contains(kind) && stamp.Length > 0)
+            findings.Add(IsNo(stamp) ? new("Stamp or seal", Warn, "No official stamp or seal is visible.") : new("Stamp or seal", Pass, "An official stamp or seal is visible."));
+
+        var signature = Value(fields, "signature", "signed");
+        if (kind == "AUTHORIZATION_LETTER" && signature.Length > 0)
+            findings.Add(IsNo(signature) ? new("Signature", Fail, "The authorisation letter is not signed.") : new("Signature", Pass, "The letter is signed."));
+    }
+
+    private static readonly Dictionary<string, Func<VerificationProfileFacts, string>> RegisteredNumber = new()
+    {
+        ["TRADE_LICENSE"] = p => p.TradeLicenseNumber, ["COMMERCIAL_REGISTRATION"] = p => p.BusinessRegistrationNumber, ["VAT_CERTIFICATE"] = p => p.VatNumber,
+        ["AGENT_LICENSE"] = p => p.AgentLicenseNumber, ["IDENTITY_DOCUMENT"] = p => p.IdNumber,
+    };
+
+    /// <summary>Compares the number on the page with the number the importer entered for this document type, falling back to any number they entered.</summary>
+    private static void AddNumberCheck(List<ScanFinding> findings, VerificationScanContext context, VerificationProfileFacts profile, string number, string label)
+    {
+        if (Alnum(number).Length < 4) return;
+        var registered = RegisteredNumber.TryGetValue(context.Kind, out var pick) ? pick(profile) : "";
+        if (Alnum(registered).Length >= 4)
+        {
+            var same = Alnum(number) == Alnum(registered) || (Digits(number).Length >= 4 && Digits(number) == Digits(registered));
+            findings.Add(same ? new("Registration number", Pass, $"{number} matches the {label.ToLowerInvariant()} number the importer entered.")
+                : new("Registration number", context.Kind == "IDENTITY_DOCUMENT" ? Fail : Warn, $"The document shows {number}; the importer entered {registered}."));
+            return;
+        }
+        var numbers = context.Numbers.Select(Digits).Where(n => n.Length >= 4).ToArray();
+        if (numbers.Length > 0 && Digits(number).Length >= 4)
+            findings.Add(numbers.Contains(Digits(number)) ? new("Registration number", Pass, $"{number} matches the registration.") : new("Registration number", Warn, $"{number} does not match the number the importer entered."));
+    }
+
+    private static void AddDateChecks(List<ScanFinding> findings, Dictionary<string, string> fields, string kind, VerificationProfileFacts profile, string expiryText, string declaredType, DateOnly today)
+    {
+        var expiry = ParseDate(expiryText);
+        var issued = ParseDate(Value(fields, "issue date", "date of issue", "issued on", "issued"));
+        if (expiry is { } until)
+        {
+            var days = until.DayNumber - today.DayNumber;
+            findings.Add(days < 0 ? new("Validity", Fail, $"Expired on {until:d MMM yyyy}.")
+                : days <= 30 ? new("Validity", Warn, $"Expires on {until:d MMM yyyy}, in {days} day{(days == 1 ? "" : "s")}.")
+                : new("Validity", Pass, $"Valid until {until:d MMM yyyy}."));
+            if (profile.RegisteredExpiry is { } entered && Math.Abs(entered.DayNumber - until.DayNumber) > 1)
+                findings.Add(new("Expiry date entered", Warn, $"The document expires {until:d MMM yyyy}; the importer entered {entered:d MMM yyyy}."));
+        }
+        if (issued is { } on)
+        {
+            if (on.DayNumber > today.DayNumber + 1) findings.Add(new("Issue date", Fail, $"Issued on {on:d MMM yyyy}, which is in the future."));
+            else if (expiry is { } end && on > end) findings.Add(new("Issue date", Fail, $"Issued on {on:d MMM yyyy}, after its own expiry date."));
+            else if (kind == "PROOF_OF_RESIDENCE" && Regex.IsMatch(declaredType, @"bill|utility|electric|water|telephone", RegexOptions.IgnoreCase) && today.DayNumber - on.DayNumber > 92)
+                findings.Add(new("Issue date", Warn, $"Issued on {on:d MMM yyyy}; a utility bill used as proof of address is normally from the last 3 months."));
+            else findings.Add(new("Issue date", Info, $"Issued on {on:d MMM yyyy}."));
+        }
+    }
+
+    // Keywords of the offices that issue each document in Ethiopia; identity documents and foreign papers vary too much to check.
+    private static readonly Dictionary<string, (string Expected, string[] Keywords)> Issuers = new()
+    {
+        ["TRADE_LICENSE"] = ("the Ministry of Trade or a regional trade bureau", ["trade", "commerce", "industry", "investment"]),
+        ["COMMERCIAL_REGISTRATION"] = ("the Ministry of Trade or a regional trade bureau", ["trade", "commerce", "industry", "investment", "registrar"]),
+        ["TIN_CERTIFICATE"] = ("the Ministry of Revenues or a revenue bureau", ["revenue", "erca", "tax"]),
+        ["VAT_CERTIFICATE"] = ("the Ministry of Revenues or a revenue bureau", ["revenue", "erca", "tax"]),
+        ["AGENT_LICENSE"] = ("the Ethiopian Customs Commission", ["customs", "erca", "revenue"]),
+    };
+
+    private static void AddIssuerCheck(List<ScanFinding> findings, string issuer, string kind, string label)
+    {
+        if (!Issuers.TryGetValue(kind, out var rule)) { if (issuer.Length > 0) findings.Add(new("Issuing authority", Info, $"Issued by {Shorten(issuer)}.")); return; }
+        if (issuer.Length == 0) { findings.Add(new("Issuing authority", Info, $"No issuing office could be read; a {label.ToLowerInvariant()} is normally issued by {rule.Expected}.")); return; }
+        var normal = Normal(issuer);
+        findings.Add(rule.Keywords.Any(k => normal.Contains(k, StringComparison.Ordinal)) ? new("Issuing authority", Pass, $"Issued by {Shorten(issuer)}.")
+            : new("Issuing authority", Warn, $"Issued by {Shorten(issuer)}; a {label.ToLowerInvariant()} is normally issued by {rule.Expected}."));
+    }
+
+    private static readonly (string Code, string Label, string Pattern)[] IdKinds =
+    [
+        ("PASSPORT", "passport", @"passport"),
+        ("RESIDENCE_PERMIT", "residence permit", @"residence permit|resident permit|residence card|work permit"),
+        ("KEBELE_ID", "kebele ID", @"kebele"),
+        ("FAYDA", "Fayda national ID", @"fayda|national id|national identity|digital id"),
+    ];
+
+    private static void AddIdentityChecks(List<ScanFinding> findings, Dictionary<string, string> fields, VerificationProfileFacts profile, string number, string typeText, DateOnly today)
+    {
+        var read = IdKinds.FirstOrDefault(k => Regex.IsMatch(typeText, k.Pattern, RegexOptions.IgnoreCase));
+        var registered = IdKinds.FirstOrDefault(k => k.Code == profile.IdType);
+        if (read.Code is not null && registered.Code is not null)
+            findings.Add(read.Code == registered.Code ? new("ID type", Pass, $"A {read.Label}, as registered.") : new("ID type", Warn, $"Reads as a {read.Label}; the importer registered a {registered.Label}."));
+
+        var idType = read.Code ?? profile.IdType;
+        var normalized = ImporterVerification.NormalizeIdentifier(number);
+        if (idType.Length > 0 && normalized.Length >= 4 && !ImporterVerification.IsValidIdNumber(idType, normalized))
+            findings.Add(new("ID number format", Warn, $"{number} is not in the usual {IdKinds.First(k => k.Code == idType).Label} number format."));
+
+        var nationality = Value(fields, "nationality", "citizenship");
+        if (nationality.Length > 0 && profile.Nationality.Length > 0)
+            findings.Add(SameCountry(nationality, profile.Nationality) || Normal(nationality).Contains(Normal(profile.Nationality).Trim(), StringComparison.Ordinal) || Normal(profile.Nationality).Contains(Normal(nationality).Trim(), StringComparison.Ordinal)
+                ? new("Nationality", Pass, $"{nationality}, as registered.") : new("Nationality", Warn, $"The document shows {nationality}; the importer registered {profile.Nationality}."));
+
+        if (ParseDate(Value(fields, "date of birth", "birth date", "dob")) is { } born)
+        {
+            var age = today.Year - born.Year - (today < born.AddYears(today.Year - born.Year) ? 1 : 0);
+            if (born > today || age > 110) findings.Add(new("Date of birth", Warn, $"The date of birth {born:d MMM yyyy} is not plausible."));
+            else if (age < 18) findings.Add(new("Date of birth", Warn, $"The holder is {age}, under 18 (born {born:d MMM yyyy})."));
+        }
+    }
+
+    private static void AddAddressCheck(List<ScanFinding> findings, string address, VerificationProfileFacts profile)
+    {
+        var registered = new[] { profile.City, profile.Woreda, profile.AddressLine }.Where(v => !string.IsNullOrWhiteSpace(v)).ToArray();
+        if (address.Length == 0 || registered.Length == 0) return;
+        var words = Words(address).ToHashSet();
+        var compact = Normal(address).Replace(" ", "");
+        var matched = registered.Any(part => { var partWords = Words(part).ToArray(); return (partWords.Length > 0 && partWords.All(words.Contains)) || (Normal(part).Replace(" ", "").Length >= 4 && compact.Contains(Normal(part).Replace(" ", ""), StringComparison.Ordinal)); });
+        findings.Add(matched ? new("Address", Pass, $"{Shorten(address)}, matching the registered address.")
+            : new("Address", Warn, $"The document shows {Shorten(address)}; the importer registered {string.Join(", ", registered.Where(v => v != profile.AddressLine).DefaultIfEmpty(registered[0]))}."));
+    }
+
+    // Identity documents and proof of address name a person; the others name the business, so only like is compared with like.
+    private static readonly HashSet<string> PersonKinds = ["IDENTITY_DOCUMENT", "PROOF_OF_RESIDENCE", "AUTHORIZATION_LETTER"];
+
+    /// <summary>The same importer's documents should agree with each other on the TIN and on the business name.</summary>
+    private static void AddConsistency(List<ScanFinding> findings, VerificationScanContext context, string holder, string tin)
+    {
+        var siblings = context.Siblings ?? [];
+        if (siblings.Count == 0) return;
+        var problems = new List<ScanFinding>();
+        var compared = 0;
+        foreach (var other in siblings)
+        {
+            var label = IdentityTypes.FirstOrDefault(t => t.Code == other.Kind)?.Label.ToLowerInvariant() ?? other.Kind;
+            if (Digits(tin).Length >= 8 && Digits(other.Tin).Length >= 8)
+            {
+                compared++;
+                if (Digits(tin) != Digits(other.Tin)) problems.Add(new("Other documents", Fail, $"TIN {tin} differs from the {label} ({other.Tin})."));
+            }
+            if (holder.Length > 0 && other.Holder.Length > 0 && PersonKinds.Contains(context.Kind) == PersonKinds.Contains(other.Kind))
+            {
+                compared++;
+                if (!SameName(holder, other.Holder)) problems.Add(new("Other documents", Warn, $"Issued to {Shorten(holder)}, but the {label} names {Shorten(other.Holder)}."));
+            }
+        }
+        if (problems.Count > 0) findings.AddRange(problems);
+        else if (compared > 0) findings.Add(new("Other documents", Pass, "Agrees with the importer's other documents on name and TIN."));
+    }
+
+    private static bool SameName(string a, string b)
+    {
+        var aWords = Words(a).ToHashSet();
+        var bWords = Words(b).ToArray();
+        return bWords.Length > 0 && aWords.Count > 0 && bWords.Count(aWords.Contains) >= Math.Min(2, Math.Min(bWords.Length, aWords.Count));
+    }
+
+    private static bool IsYes(string value) => Regex.IsMatch(value.Trim(), @"^(yes|y|true)\b", RegexOptions.IgnoreCase);
+    private static bool IsNo(string value) => Missing(value) || Regex.IsMatch(value.Trim(), @"^(no|n|false|none( visible| found)?)\b", RegexOptions.IgnoreCase);
+    private static string Alnum(string value) => new(value.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+
+    private static readonly string[] DateFormats = ["yyyy-MM-dd", "yyyy/MM/dd", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "d MMM yyyy", "d MMMM yyyy", "MMM d, yyyy", "MMMM d, yyyy", "dd MMM yyyy"];
+    private static DateOnly? ParseDate(string value)
+    {
+        if (value.Length == 0) return null;
+        if (DateTime.TryParseExact(value.Trim(), DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var exact)) return DateOnly.FromDateTime(exact);
+        return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var parsed) ? DateOnly.FromDateTime(parsed) : null;
     }
 
     private static void AddReuse(List<ScanFinding> findings, bool withinCase, bool otherImporter, string scope)

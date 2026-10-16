@@ -41,7 +41,17 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
         new("holder name", "The person or company the document is issued to."),
         new("tin", "Taxpayer identification number."),
         new("registration number", "Licence, registration, certificate or ID number."),
-        new("expiry date", "Expiry or valid-until date, as YYYY-MM-DD."),
+        new("issuing authority", "The government office or authority that issued the document."),
+        new("issue date", "Date the document was issued, as YYYY-MM-DD in the Gregorian calendar; convert Ethiopian-calendar dates."),
+        new("expiry date", "Expiry or valid-until date, as YYYY-MM-DD in the Gregorian calendar; convert Ethiopian-calendar dates."),
+        new("address", "Address of the holder or business as printed."),
+        new("nationality", "Nationality of the holder; identity documents only."),
+        new("date of birth", "Holder's date of birth as YYYY-MM-DD in the Gregorian calendar; identity documents only."),
+        new("official stamp or seal", "yes if an official stamp, seal or hologram is visible, otherwise no."),
+        new("signature", "yes if the document is signed, otherwise no."),
+        new("signs of alteration", "Visible signs of editing or tampering, such as mismatched fonts, text pasted over, erased or covered areas or misaligned numbers. none if there are none, otherwise describe briefly."),
+        new("sample or specimen", "yes if the document is marked SAMPLE, SPECIMEN, VOID, COPY or DRAFT, or is a blank template; otherwise no."),
+        new("screen capture", "yes if this is a screenshot or a photo of a computer or phone screen rather than of the paper or card itself; otherwise no."),
     ];
 
     internal const string Instructions = "Write none for a field that is not on the page. Keep every value short and copy numbers exactly as printed.";
@@ -186,8 +196,17 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
         var names = await ImporterNames(db, profile.AccountId, ct);
         var duplicate = await db.ImporterProfileDocuments.AsNoTracking().AnyAsync(d => d.ProfileId == profile.Id && d.Id != document.Id && d.Sha256 == document.Sha256, ct);
         var foreign = await db.ImporterProfileDocuments.AsNoTracking().AnyAsync(d => d.Sha256 == document.Sha256 && d.ProfileId != profile.Id, ct);
+        // Finished scans of the importer's other current files, to check the documents agree with each other.
+        var siblings = await db.DocumentScans.AsNoTracking()
+            .Where(s => s.Source == DocumentScanSources.Verification && s.OwnerId == profile.Id && s.DocumentId != document.Id && s.Status == DocumentScanStatus.Completed
+                && db.ImporterProfileDocuments.Any(d => d.Id == s.DocumentId && d.Sha256 == s.Sha256))
+            .Select(s => new { s.Kind, s.ExtractedText }).ToListAsync(ct);
+        var facts = new VerificationProfileFacts(profile.TradeLicenseNumber, profile.BusinessRegistrationNumber, profile.VatNumber, profile.AgentLicenseNumber,
+            profile.IdType, profile.IdNumber, profile.Nationality, profile.City, profile.Woreda, profile.AddressLine,
+            document.Kind switch { "TRADE_LICENSE" => profile.TradeLicenseExpiry, "AGENT_LICENSE" => profile.AgentLicenseExpiry, _ => null });
         return DocumentScanAnalyzer.AnalyzeVerificationDocument(result.Text, new VerificationScanContext(document.Kind, names, profile.Tin,
-            [profile.TradeLicenseNumber, profile.BusinessRegistrationNumber, profile.VatNumber, profile.AgentLicenseNumber, profile.IdNumber], duplicate, foreign));
+            [profile.TradeLicenseNumber, profile.BusinessRegistrationNumber, profile.VatNumber, profile.AgentLicenseNumber, profile.IdNumber], duplicate, foreign,
+            facts, siblings.Select(s => DocumentScanAnalyzer.Sibling(s.Kind, s.ExtractedText)).ToList()));
     }
 
     private static void Record(DocumentScan scan, OcrResult result)

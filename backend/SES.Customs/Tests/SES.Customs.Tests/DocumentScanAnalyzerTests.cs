@@ -179,6 +179,80 @@ public sealed class DocumentScanAnalyzerTests
         Assert.Contains(verdict.Findings, f => f.Check == "Validity" && f.Result == DocumentScanAnalyzer.Fail);
     }
 
+    private static readonly DateOnly Today = new(2026, 10, 16);
+
+    private static VerificationScanContext Detailed(string kind, VerificationProfileFacts? facts = null, IReadOnlyList<VerificationSibling>? siblings = null) =>
+        Business(kind) with
+        {
+            Profile = facts ?? new VerificationProfileFacts(TradeLicenseNumber: "TL/AA/14/123456", IdType: "FAYDA", IdNumber: "123456789012", Nationality: "Ethiopian", City: "Addis Ababa", Woreda: "Bole"),
+            Siblings = siblings, Today = Today,
+        };
+
+    private const string GoodLicence = "document type: trade licence\ntitle: Business Licence\nholder name: Addis Digital Trading PLC\nregistration number: TL/AA/14/123456\n" +
+        "issuing authority: Addis Ababa Trade Bureau\nissue date: 2026-01-10\nexpiry date: 2027-07-07\naddress: Bole, Addis Ababa\nofficial stamp or seal: yes\nsigns of alteration: none\nsample or specimen: no\nscreen capture: no";
+
+    [Fact]
+    public void CompleteMatchingLicenceIsHealthy()
+    {
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(GoodLicence, Detailed("TRADE_LICENSE"));
+        Assert.Equal(DocumentScanFlags.Healthy, verdict.Flag);
+        Assert.DoesNotContain(verdict.Findings, f => f.Result is DocumentScanAnalyzer.Fail or DocumentScanAnalyzer.Warn);
+    }
+
+    [Theory]
+    [InlineData("signs of alteration: none", "signs of alteration: numbers in the licence number use a different font", "Tampering")]
+    [InlineData("sample or specimen: no", "sample or specimen: yes", "Sample copy")]
+    [InlineData("issue date: 2026-01-10", "issue date: 2027-01-10", "Issue date")]
+    public void ForgerySignsAreFailures(string original, string replacement, string check)
+    {
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(GoodLicence.Replace(original, replacement), Detailed("TRADE_LICENSE"));
+        Assert.Equal(DocumentScanFlags.Suspicious, verdict.Flag);
+        Assert.Contains(verdict.Findings, f => f.Check == check && f.Result == DocumentScanAnalyzer.Fail);
+    }
+
+    [Theory]
+    [InlineData("official stamp or seal: yes", "official stamp or seal: no", "Stamp or seal")]
+    [InlineData("screen capture: no", "screen capture: yes", "Original copy")]
+    [InlineData("expiry date: 2027-07-07", "expiry date: 2026-10-30", "Validity")]
+    [InlineData("issuing authority: Addis Ababa Trade Bureau", "issuing authority: Kebele 03 Administration", "Issuing authority")]
+    [InlineData("address: Bole, Addis Ababa", "address: Piassa, Hawassa", "Address")]
+    [InlineData("registration number: TL/AA/14/123456", "registration number: TL/AA/14/999999", "Registration number")]
+    public void WeakerSignsAreWarnings(string original, string replacement, string check)
+    {
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(GoodLicence.Replace(original, replacement), Detailed("TRADE_LICENSE"));
+        Assert.Contains(verdict.Findings, f => f.Check == check && f.Result == DocumentScanAnalyzer.Warn);
+    }
+
+    [Fact]
+    public void IdentityDocumentChecksTypeNumberAndAge()
+    {
+        var text = "document type: passport\ntitle: Passport\nholder name: Selam Tesfaye\nregistration number: EP1234567\nnationality: Kenyan\ndate of birth: 2010-02-01\nexpiry date: 2030-01-01";
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(text, Detailed("IDENTITY_DOCUMENT"));
+        Assert.Contains(verdict.Findings, f => f.Check == "ID type" && f.Result == DocumentScanAnalyzer.Warn);
+        Assert.Contains(verdict.Findings, f => f.Check == "Registration number" && f.Result == DocumentScanAnalyzer.Fail);
+        Assert.Contains(verdict.Findings, f => f.Check == "Nationality" && f.Result == DocumentScanAnalyzer.Warn);
+        Assert.Contains(verdict.Findings, f => f.Check == "Date of birth" && f.Result == DocumentScanAnalyzer.Warn);
+    }
+
+    [Fact]
+    public void TinDisagreeingWithAnotherDocumentFails()
+    {
+        var text = "document type: TIN certificate\ntitle: Taxpayer Registration Certificate\nholder name: Addis Digital Trading PLC\ntin: 0012345678\nissuing authority: Ministry of Revenues";
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(text, Detailed("TIN_CERTIFICATE", siblings: [new("TRADE_LICENSE", "Addis Digital Trading PLC", "0087654321")]));
+        Assert.Contains(verdict.Findings, f => f.Check == "Other documents" && f.Result == DocumentScanAnalyzer.Fail);
+
+        var agreeing = DocumentScanAnalyzer.AnalyzeVerificationDocument(text, Detailed("TIN_CERTIFICATE", siblings: [new("TRADE_LICENSE", "Addis Digital Trading PLC", "0012345678")]));
+        Assert.Contains(agreeing.Findings, f => f.Check == "Other documents" && f.Result == DocumentScanAnalyzer.Pass);
+    }
+
+    [Fact]
+    public void UnsignedAuthorisationLetterFails()
+    {
+        var text = "document type: authorisation letter\ntitle: Letter of Authority\nholder name: Selam Tesfaye\nregistration number: none\nsignature: no";
+        var verdict = DocumentScanAnalyzer.AnalyzeVerificationDocument(text, Detailed("AUTHORIZATION_LETTER"));
+        Assert.Contains(verdict.Findings, f => f.Check == "Signature" && f.Result == DocumentScanAnalyzer.Fail);
+    }
+
     [Fact]
     public void PhotoUploadedAsIdIsUnrelated()
     {
