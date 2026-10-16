@@ -17,7 +17,7 @@ export function AuthShell({ children, signup = false, compact = false }: { child
   const { t } = useTranslation();
   return <div className={`auth-page ${signup ? "registration-page" : ""} ${compact ? "compact-auth-page" : ""}`}>
     {!compact && <section className="auth-hero" aria-label="Customs valuation workspace">
-      <Brand/>
+      <Link href="/" className="auth-home-link" aria-label="Back to the home page"><Brand/></Link>
       <div className="auth-hero-copy"><span className="hero-kicker">{t("auth.trade", "FACILITATING TRADE. PROTECTING OUR FUTURE.")}</span><h2>{t("auth.heroFirst", "Secure borders.")}<br/><span>{t("auth.heroSecond", "Prosperous nation.")}</span></h2><p>{t("auth.heroBody", "Better evidence. Informed decisions. A shared workspace for the people moving Ethiopian trade forward.")}</p></div>
       <div className="auth-hero-bottom"><div className="auth-pillars"><span><FiShield/><b>{t("auth.secure", "Accountable operations")}</b></span><span><FiTruck/><b>{t("auth.efficient", "Efficient trade")}</b></span></div><div className="auth-hero-footer">ETHIOPIA CUSTOMS COMMISSION</div></div>
     </section>}

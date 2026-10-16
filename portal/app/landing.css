@@ -428,3 +428,4 @@ html[lang="am"] .lp-kicker, html[lang="am"] .lp-hero-motto { letter-spacing: .04
   .lp-step, .lp-feature, .lp-step-icon, .lp-feature-icon { transition: none; }
   .lp-step:hover, .lp-feature:hover { transform: none; }
 }
+.lp-footer-brand { display: inline-block; color: inherit; text-decoration: none; }

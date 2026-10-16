@@ -2289,3 +2289,4 @@ textarea[aria-invalid="true"]{border-color:#dc2626!important;box-shadow:0 0 0 2p
 .phase2-reference-workspace .phase2-case-meta { overflow-wrap: anywhere; font-size: 12px; gap: 8px; }
 .audit-page :focus-visible, .audit-native-dialog :focus-visible, .phase2-reference-workspace :focus-visible { outline: 3px solid #2781d5; outline-offset: 3px; }
 @media(max-width:720px) { .audit-native-dialog .audit-media-section, .audit-native-dialog .audit-detail-summary { grid-template-columns: 1fr; } .audit-native-dialog .audit-detail-body { padding: 16px; } .audit-pagination { flex-wrap: wrap; gap: 8px; } .phase2-reference-workspace .phase2-dashboard-grid { display: flex; flex-direction: column; } }
+.auth-home-link { display: inline-flex; color: inherit; text-decoration: none; }

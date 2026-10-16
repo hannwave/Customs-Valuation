@@ -203,12 +203,21 @@ export default function LandingPage() {
   const branchCount = regions?.reduce((sum, region) => sum + region.branches.length, 0) ?? 0;
   const selected = regions?.find(region => region.code === selectedRegion) ?? null;
   const close = () => setMenuOpen(false);
+  // The logo takes you back to the top of the landing page (we are already on it, so the link alone would do nothing).
+  const goHome = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    setMenuOpen(false);
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+    window.history.replaceState(null, "", "/");
+    document.getElementById("home")?.focus({ preventScroll: true });
+  };
 
   return <main className="lp" ref={page}>
     <a className="lp-skip-link" href="#home">{t("landing.nav.skip", "Skip to content")}</a>
     <header className="lp-nav">
       <div className="lp-wrap lp-nav-inner">
-        <Link href="/" className="lp-brand" aria-label="Ethiopian Customs Commission home"><span className="lp-brand-on-light"><Brand variant="dark" /></span><span className="lp-brand-on-dark"><Brand variant="light" /></span></Link>
+        <Link href="/#home" className="lp-brand" aria-label="Ethiopian Customs Commission home" onClick={goHome}><span className="lp-brand-on-light"><Brand variant="dark" /></span><span className="lp-brand-on-dark"><Brand variant="light" /></span></Link>
         <nav id="lp-navigation" className={menuOpen ? "is-open" : ""} aria-label="Main navigation">
           <a href="#how" onClick={close}>{t("landing.nav.how", "How it works")}</a>
           <a href="#portals" onClick={close}>{t("landing.nav.portals", "Portals")}</a>
@@ -332,7 +341,7 @@ export default function LandingPage() {
 
     <footer className="lp-footer">
       <div className="lp-wrap lp-footer-main">
-        <div><Brand variant="light" /><p>{t("landing.footer.portal", "Customs Valuation & Declaration Portal")}</p></div>
+        <div><a href="/#home" className="lp-footer-brand" aria-label="Back to the top" onClick={goHome}><Brand variant="light" /></a><p>{t("landing.footer.portal", "Customs Valuation & Declaration Portal")}</p></div>
         <div><h4>{t("landing.footer.importers", "Importers")}</h4><Link href="/importer/register">{t("landing.footer.register", "Register")}</Link><Link href="/login">{t("landing.footer.signIn", "Sign in")}</Link><a href="#how">{t("landing.footer.how", "How it works")}</a></div>
         <div><h4>{t("landing.footer.staff", "Customs staff")}</h4><Link href="/login">{t("landing.footer.staffSignIn", "Staff sign in")}</Link><Link href="/signup">{t("landing.footer.apply", "Apply for access")}</Link><a href="#offices">{t("landing.footer.offices", "Offices")}</a></div>
         <div><h4>{t("landing.footer.commission", "Commission")}</h4><Link href="/about">{t("landing.footer.about", "About")}</Link><Link href="/contact">{t("landing.footer.contact", "Contact")}</Link></div>
