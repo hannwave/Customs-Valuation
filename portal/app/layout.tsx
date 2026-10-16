@@ -17,6 +17,7 @@ import "./invoice.css";
 import "./landing.css";
 import "./toast.css";
 import "./document-scan.css";
+import "./notice.css";
 import Providers from "./providers";
 import { AppLayout } from "@/components/AppLayout";
 export const metadata: Metadata = { title: "Ethiopia Customs | Customs Valuation Portal", description: "Evidence-led customs valuation, tariff classification, and price intelligence for Ethiopia.", icons: { icon: [{ url: "/images/customs-logo-dark.png", type: "image/png", media: "(prefers-color-scheme: light)" }, { url: "/images/customs-logo-light.png", type: "image/png", media: "(prefers-color-scheme: dark)" }] } };

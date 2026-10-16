@@ -90,17 +90,24 @@ export function ScanReport({ scan, title, fileName, onClose, onRescan, busy }: {
   </div>, document.body);
 }
 
-/** One line above the document list when the scanner flagged something. */
-export function ScanAlert({ scans, labels }: { scans: DocumentScans | undefined; labels: Record<string, string> }) {
+/** A short notice when the scanner flagged something: a one-line title and a chip per flagged file (which opens its report when onOpen is given). */
+export function ScanAlert({ scans, labels, onOpen }: { scans: DocumentScans | undefined; labels: Record<string, string>; onOpen?: (kind: string) => void }) {
   const flagged = flaggedScans(scans);
   if (flagged.length === 0) {
-    if (isScanRunning(scans)) return <p className="ds-alert is-neutral"><FiLoader className="ds-spin" aria-hidden="true" />The document scanner is still reading {Object.values(scans ?? {}).filter(s => s.status === "PENDING" || s.status === "SCANNING").length === 1 ? "one file" : "these files"}.</p>;
+    const running = Object.values(scans ?? {}).filter(s => s.status === "PENDING" || s.status === "SCANNING").length;
+    if (isScanRunning(scans)) return <div className="ds-alert is-neutral"><FiLoader className="ds-spin" aria-hidden="true" /><span><b>Scanning {running === 1 ? "1 document" : `${running} documents`}…</b></span></div>;
     const scanned = Object.values(scans ?? {}).filter(s => s.status === "COMPLETED");
-    return scanned.length > 0 && scanned.length === Object.keys(scans ?? {}).length ? <p className="ds-alert is-success"><FiCheckCircle aria-hidden="true" />The scanner found nothing unusual in these documents.</p> : null;
+    return scanned.length > 0 && scanned.length === Object.keys(scans ?? {}).length ? <div className="ds-alert is-success"><FiCheckCircle aria-hidden="true" /><span><b>Documents look right</b></span></div> : null;
   }
   const unrelated = flagged.some(scan => scan.flag === "UNRELATED");
-  return <p className={`ds-alert is-${unrelated ? "danger" : "warning"}`} role="status">{unrelated ? <FiXOctagon aria-hidden="true" /> : <FiAlertTriangle aria-hidden="true" />}
-    <span><b>Scanner flagged {flagged.length === 1 ? "1 document" : `${flagged.length} documents`}:</b> {flagged.map(scan => `${labels[scan.kind] ?? scan.kind} (${scanState(scan).label.toLowerCase()})`).join(", ")}. Open the {flagged.length === 1 ? "file" : "files"} before deciding.</span></p>;
+  return <div className={`ds-alert is-${unrelated ? "danger" : "warning"}`} role="status">{unrelated ? <FiXOctagon aria-hidden="true" /> : <FiAlertTriangle aria-hidden="true" />}
+    <span><b>{flagged.length === 1 ? "1 document needs a closer look" : `${flagged.length} documents need a closer look`}</b>
+      <span className="ds-alert-files">{flagged.map(scan => {
+        const label = labels[scan.kind] ?? scan.kind; const tone = scan.flag === "UNRELATED" ? " is-danger" : "";
+        return onOpen
+          ? <button key={scan.kind} type="button" className={`ds-alert-file${tone}`} onClick={() => onOpen(scan.kind)} title={`${scanState(scan).label} — open the scan report`}><i aria-hidden="true" />{label}</button>
+          : <span key={scan.kind} className={`ds-alert-file${tone}`} title={scanState(scan).label}><i aria-hidden="true" />{label}</span>;
+      })}</span></span></div>;
 }
 
 /** Keeps a case's scans fresh: polls while any scan is still running and offers a rescan. */

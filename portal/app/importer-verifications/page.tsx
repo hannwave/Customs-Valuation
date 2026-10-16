@@ -191,7 +191,7 @@ export default function ImporterVerificationsPage() {
           </section>
 
           <section><h3>Documents <small>{profile.documents.length}</small></h3>
-            <ScanAlert scans={scans} labels={Object.fromEntries(Object.entries(documentLabels).map(([kind, item]) => [kind, item.label]))} />
+            <ScanAlert scans={scans} labels={Object.fromEntries(Object.entries(documentLabels).map(([kind, item]) => [kind, item.label]))} onOpen={setReportKind} />
             <ul className="iv-doc-list">{profile.documents.map(document => { const scan = scans?.[document.kind];
               return <li key={document.kind}>
               <div><strong>{documentLabels[document.kind]?.label ?? document.kind}</strong><small>{document.fileName} · {Math.max(1, Math.round(document.size / 1024))} KB</small>

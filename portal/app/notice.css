@@ -1,0 +1,58 @@
+/*
+ * One quiet look for every inline notice: officer callouts (oc-callout), verification callouts (iv-callout),
+ * importer banners (ip-banner) and scanner alerts (ds-alert). A plain card with a thin border; the tone shows
+ * only in the small icon tile, so the title and text stay readable and the page stays calm.
+ * Loaded after the page stylesheets so it overrides their older coloured variants.
+ */
+.oc-callout, .iv-callout, .ip-banner, .ds-alert {
+  --nt-tone: var(--iv-muted); --nt-soft: var(--iv-surface-2);
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 12px; margin: 0;
+  padding: 12px 14px; border: 1px solid var(--iv-border); border-radius: 12px;
+  background: var(--iv-surface); color: var(--iv-text); font-size: 13.5px; line-height: 1.5;
+}
+.oc-callout.is-info, .iv-callout, .ip-banner.is-info { --nt-tone: var(--iv-accent); --nt-soft: var(--iv-accent-soft); }
+.oc-callout.is-warning, .iv-callout.is-warning, .ip-banner.is-warning, .ds-alert.is-warning { --nt-tone: var(--iv-warning); --nt-soft: var(--iv-warning-soft); }
+.oc-callout.is-danger, .ip-banner.is-danger, .ds-alert.is-danger { --nt-tone: var(--iv-danger); --nt-soft: var(--iv-danger-soft); }
+.ip-banner.is-success, .ds-alert.is-success { --nt-tone: var(--iv-success); --nt-soft: var(--iv-success-soft); }
+
+/* The icon becomes a small tinted tile; it is the only coloured part of the notice. */
+.oc-callout > svg, .iv-callout > svg, .ip-banner > svg, .ds-alert > svg {
+  flex: none; box-sizing: content-box; width: 16px; height: 16px; margin: 0; padding: 6px;
+  border-radius: 8px; background: var(--nt-soft); color: var(--nt-tone); font-size: 16px;
+}
+.oc-callout > div, .ip-banner > div, .ds-alert > span { flex: 1 1 220px; min-width: 0; padding-top: 3px; }
+.oc-callout:not(:has(> div)), .iv-callout:not(:has(> div)), .ds-alert:not(:has(> span)) { align-items: center; }
+
+.oc-callout strong, .iv-callout strong, .ip-banner strong, .ds-alert b { display: block; color: var(--iv-text); font-size: 14px; font-weight: 650; }
+.oc-callout p, .iv-callout p, .ip-banner p { margin: 2px 0 0; color: var(--iv-muted); line-height: 1.5; }
+.oc-callout.is-warning p, .oc-callout.is-danger p, .oc-callout.is-info p, .iv-callout p { color: var(--iv-muted); }
+
+.ip-banner-action, .ip-banner-link { align-self: center; }
+
+/* Scanner alert: a short title and one chip per flagged file that opens its report. */
+.ds-alert { margin-bottom: 12px; }
+.ds-alert-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ds-alert-file {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--iv-border); border-radius: 999px;
+  background: var(--iv-surface-2); color: var(--iv-text); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.ds-alert-file i { width: 7px; height: 7px; border-radius: 50%; background: var(--iv-warning); }
+.ds-alert-file.is-danger i { background: var(--iv-danger); }
+.ds-alert-file:hover { border-color: var(--iv-accent); color: var(--iv-accent); }
+.ds-alert-file:focus-visible { outline: 2px solid var(--iv-accent); outline-offset: 2px; }
+span.ds-alert-file { cursor: default; }
+span.ds-alert-file:hover { border-color: var(--iv-border); color: var(--iv-text); }
+
+/* Verification callouts mix an icon, bold lead-in and running text on one line, so they flow as text. */
+.iv-callout { display: block; }
+.iv-callout > svg { display: inline-block; margin: 0 8px 0 0; vertical-align: -9px; }
+.iv-callout > svg + strong { display: inline; }
+.ds-alert > svg.ds-spin { padding: 0; margin: 6px; background: none; }
+
+/* The older stylesheets tint each tone with two-class selectors; restate the plain card at the same weight. */
+.oc-callout.is-info, .oc-callout.is-warning, .oc-callout.is-danger,
+.iv-callout.is-warning,
+.ip-banner.is-info, .ip-banner.is-warning, .ip-banner.is-danger, .ip-banner.is-success,
+.ds-alert.is-warning, .ds-alert.is-danger, .ds-alert.is-success, .ds-alert.is-neutral {
+  border-color: var(--iv-border); border-left-width: 1px; background: var(--iv-surface); color: var(--iv-text);
+}

@@ -89,7 +89,7 @@ export default function ImporterCasePage() {
 
     <div className="oc-case-grid">
       <div className="oc-case-main">
-        {active === "review" && flaggedScans(scans).length > 0 && <ScanAlert scans={scans} labels={declarationDocumentLabels} />}
+        {active === "review" && flaggedScans(scans).length > 0 && <ScanAlert scans={scans} labels={declarationDocumentLabels} onOpen={setReportKind} />}
         {active === "review" && <ReviewStep data={data} onSaved={saved} onError={failed} />}
         {active === "valuation" && (stage === "valuation" ? <ValuationStep data={data} onSaved={saved} onError={failed} />
           : <section className="oc-card"><span className="oc-eyebrow">Customs value</span><h2>{data.valuation ? formatMoney(data.valuation.selectedReferenceValue, data.valuation.currency) : "—"}</h2><p className="oc-muted">{data.valuation?.valuationMethod}{data.valuation?.justification ? ` — ${data.valuation.justification}` : ""}</p>
