@@ -96,8 +96,8 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
             .OrderBy(x => x.Rank).ThenBy(x => x.Scan.QueuedAt).Select(x => x.Scan).FirstOrDefaultAsync(ct);
         if (next is null) return false;
 
-        var ocr = scope.ServiceProvider.GetRequiredService<OcrClient>();
-        if (!await ocr.ReadyAsync(ct)) { logger.LogInformation("OCR service is not ready; document scans wait."); await Task.Delay(TimeSpan.FromSeconds(60), ct); return false; }
+        var ocr = scope.ServiceProvider.GetRequiredService<IOcrClient>();
+        if (!await ocr.ReadyAsync(ct)) { logger.LogInformation("OCR service ({Engine}) is not ready; document scans wait.", ocr.GetType().Name); await Task.Delay(TimeSpan.FromSeconds(60), ct); return false; }
         await ScanAsync(db, ocr, next, ct);
         return true;
     }
@@ -120,7 +120,7 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task ScanAsync(CustomsDbContext db, OcrClient ocr, DocumentScan scan, CancellationToken ct)
+    private async Task ScanAsync(CustomsDbContext db, IOcrClient ocr, DocumentScan scan, CancellationToken ct)
     {
         var settings = options.Value;
         scan.Status = DocumentScanStatus.Scanning; scan.StartedAt = DateTimeOffset.UtcNow; scan.Attempts++; scan.Error = "";
@@ -158,7 +158,7 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
         }
     }
 
-    private static async Task<ScanVerdict?> ScanDeclarationDocumentAsync(CustomsDbContext db, OcrClient ocr, DocumentScan scan, CancellationToken ct)
+    private static async Task<ScanVerdict?> ScanDeclarationDocumentAsync(CustomsDbContext db, IOcrClient ocr, DocumentScan scan, CancellationToken ct)
     {
         var document = await db.ImporterDocuments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == scan.DocumentId && d.Sha256 == scan.Sha256, ct);
         var declaration = await db.ImporterDeclarations.AsNoTracking().FirstOrDefaultAsync(d => d.Id == scan.OwnerId, ct);
@@ -176,7 +176,7 @@ public sealed class DocumentScanWorker(IServiceScopeFactory scopes, IOptions<Ocr
             declaration.OriginCountryCode, declaration.OriginCountryName, declaration.Quantity, declaration.Unit, declaration.InvoiceAmount, declaration.InvoiceCurrency, names, duplicate, foreign));
     }
 
-    private static async Task<ScanVerdict?> ScanVerificationDocumentAsync(CustomsDbContext db, OcrClient ocr, DocumentScan scan, CancellationToken ct)
+    private static async Task<ScanVerdict?> ScanVerificationDocumentAsync(CustomsDbContext db, IOcrClient ocr, DocumentScan scan, CancellationToken ct)
     {
         var document = await db.ImporterProfileDocuments.AsNoTracking().FirstOrDefaultAsync(d => d.Id == scan.DocumentId && d.Sha256 == scan.Sha256, ct);
         var profile = await db.ImporterProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == scan.OwnerId, ct);

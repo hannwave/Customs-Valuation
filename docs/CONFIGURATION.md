@@ -50,6 +50,16 @@ dotnet user-secrets set "SerpApi:ApiKey" "YOUR_SERPAPI_KEY" `
 
 Optional settings are `SerpApi:DefaultMarket`, `SerpApi:DefaultLanguage` and `SerpApi:BaseUrl`. The API suppresses informational HttpClient URL logs because SerpAPI authenticates through a query parameter.
 
+## Gemini document scanner
+
+Importer uploads are scanned by Google Gemini when `Gemini:ApiKey` is set (`Ocr:Provider` defaults to `Auto`; set it to `Local` to use the self-hosted engine at `Ocr:BaseUrl` instead). On a new machine, put the key file you were given (`gemini.secrets.json`, git-ignored) in the repository root and run:
+
+```powershell
+.\scripts\setup-gemini.ps1
+```
+
+The script stores the key in user-secrets and checks that the main and fallback models answer. Restart the API afterwards. Optional settings are `Gemini:Model` (default `gemini-flash-latest`), `Gemini:FallbackModel` (default `gemini-flash-lite-latest`, used when the main model is out of quota or busy) and `Gemini:TimeoutSeconds`. Free-tier keys have small daily quotas and Google may use free-tier uploads to improve its products; enable billing on the key before scanning real importer documents.
+
 ## Apify manufacturer prices
 
 Set `APIFY_API_TOKEN` on the API server, or put `Apify:ApiToken` in the API project's ignored `appsettings.Local.json`. The token is never sent to the portal. The officer can search a known brand automatically or enter an official manufacturer domain or direct product URL.

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactElement } from "react";
-import { FiAlertTriangle, FiCheckCircle, FiChevronDown, FiClock, FiInfo, FiLoader, FiRefreshCw, FiSlash, FiXOctagon } from "react-icons/fi";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { createPortal } from "react-dom";
+import { FiAlertTriangle, FiCheckCircle, FiChevronRight, FiClock, FiInfo, FiLoader, FiRefreshCw, FiSlash, FiX, FiXOctagon } from "react-icons/fi";
 import { toast } from "@/lib/toast";
 import { badgeState, flaggedScans, isScanRunning, loadScans, rescanDocument, scanState, type DocumentScan, type DocumentScans, type ScanBadge, type ScanResult } from "@/lib/document-scan";
 
@@ -13,12 +14,12 @@ const resultIcon: Record<ScanResult, ReactElement> = { pass: <FiCheckCircle />, 
 const fieldLabel = (field: string) => field.replace(/^\w/, c => c.toUpperCase()).replace(/\bhs\b/i, "HS").replace(/\btin\b/i, "TIN");
 const duration = (ms?: number | null) => !ms ? "" : ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`;
 
-/** Small verdict pill for one document. */
-export function ScanPill({ scan, onClick, open }: { scan: DocumentScan | undefined; onClick?: () => void; open?: boolean }) {
+/** Small verdict pill for one document; with onClick it opens the scan report. */
+export function ScanPill({ scan, onClick }: { scan: DocumentScan | undefined; onClick?: () => void }) {
   const state = scanState(scan);
-  const content = <>{stateIcon[state.key]}<span>{state.label}</span>{onClick && <FiChevronDown className="ds-caret" aria-hidden="true" />}</>;
+  const content = <>{stateIcon[state.key]}<span>{state.label}</span>{onClick && <FiChevronRight className="ds-caret" aria-hidden="true" />}</>;
   return onClick
-    ? <button type="button" className={`ds-pill is-${state.tone}${open ? " is-open" : ""}`} onClick={onClick} aria-expanded={open} title={state.hint}>{content}</button>
+    ? <button type="button" className={`ds-pill is-${state.tone}`} onClick={onClick} aria-haspopup="dialog" title="Open the scan report">{content}</button>
     : <span className={`ds-pill is-${state.tone}`} title={state.hint}>{content}</span>;
 }
 
@@ -29,29 +30,64 @@ export function ScanQueueBadge({ badge }: { badge: ScanBadge }) {
   return <span className={`ds-pill is-${state.tone} is-compact`} title={state.hint}>{stateIcon[state.key]}<span>{state.label}</span></span>;
 }
 
-/** What the scanner concluded and why, with the fields it read off the page. */
-export function ScanDetail({ scan, onRescan, busy }: { scan: DocumentScan | undefined; onRescan?: () => void; busy?: boolean }) {
+const resultOrder: Record<ScanResult, number> = { fail: 0, warn: 1, info: 2, pass: 3 };
+
+/**
+ * The full scan report for one document in a panel over the page, so the narrow document list only carries the verdict pill.
+ * Closes on Escape, the close button or a click outside.
+ */
+export function ScanReport({ scan, title, fileName, onClose, onRescan, busy }: { scan: DocumentScan | undefined; title: string; fileName?: string; onClose: () => void; onRescan?: () => void; busy?: boolean }) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    closeButton.current?.focus();
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = overflow; previous?.focus?.(); };
+  }, [onClose]);
+
   const state = scanState(scan);
   const done = scan?.status === "COMPLETED";
-  return <div className={`ds-detail is-${state.tone}`}>
-    <p className="ds-summary">{done ? scan.summary : state.hint}{scan?.status === "FAILED" && scan.error ? ` (${scan.error})` : ""}</p>
-    {done && <>
-      <div className="ds-meta">
-        {scan.detectedType && <span>Reads as <b>{scan.detectedType}</b></span>}
-        {typeof scan.score === "number" && <span className="ds-score" title="How well the document matches what was expected"><i style={{ width: `${scan.score}%` }} />Match {scan.score}%</span>}
+  const findings = [...(scan?.findings ?? [])].sort((a, b) => resultOrder[a.result] - resultOrder[b.result]);
+  const attention = findings.filter(f => f.result === "fail" || f.result === "warn");
+  const fine = findings.filter(f => f.result === "pass" || f.result === "info");
+  const row = (finding: (typeof findings)[number], index: number) =>
+    <li key={index} className={`is-${finding.result}`}><span className="ds-r-icon">{resultIcon[finding.result]}</span><div><strong>{finding.check}</strong><span>{finding.detail}</span></div></li>;
+
+  return createPortal(<div className="ds-report-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <aside className="ds-report" role="dialog" aria-modal="true" aria-labelledby="ds-report-title">
+      <header className="ds-report-head">
+        <div><span className="ds-report-eyebrow">Document scan</span><h2 id="ds-report-title">{title}</h2>{fileName && <small>{fileName}</small>}</div>
+        <button type="button" ref={closeButton} className="ds-report-close" onClick={onClose} aria-label="Close scan report"><FiX aria-hidden="true" /></button>
+      </header>
+
+      <div className="ds-report-body">
+        <section className={`ds-verdict is-${state.tone}`}>
+          <span className="ds-verdict-icon" aria-hidden="true">{stateIcon[state.key]}</span>
+          <div>
+            <strong>{state.label}</strong>
+            <p>{done ? scan.summary : state.hint}{scan?.status === "FAILED" && scan.error ? ` (${scan.error})` : ""}</p>
+          </div>
+          {done && (scan.detectedType || typeof scan.score === "number") && <dl className="ds-verdict-facts">
+            {scan.detectedType && <div><dt>Reads as</dt><dd>{scan.detectedType}</dd></div>}
+            {typeof scan.score === "number" && <div><dt>Match</dt><dd><span className="ds-score" title="How well the document matches what was expected"><i style={{ width: `${scan.score}%` }} />{scan.score}%</span></dd></div>}
+          </dl>}
+        </section>
+
+        {attention.length > 0 && <section className="ds-report-section"><h3>Needs attention <small>{attention.length}</small></h3><ul className="ds-checks">{attention.map(row)}</ul></section>}
+        {fine.length > 0 && <section className="ds-report-section"><h3>{attention.length ? "Other checks" : "Checks"} <small>{fine.length}</small></h3><ul className="ds-checks is-quiet">{fine.map(row)}</ul></section>}
+
+        {done && !!scan.extracted?.length && <section className="ds-report-section"><h3>What the scanner read</h3>
+          <dl className="ds-read">{scan.extracted.map(item => <div key={item.field}><dt>{fieldLabel(item.field)}</dt><dd>{item.value}</dd></div>)}</dl></section>}
       </div>
-      {!!scan.findings?.length && <ul className="ds-findings">{scan.findings.map((finding, index) =>
-        <li key={index} className={`is-${finding.result}`}>{resultIcon[finding.result]}<div><strong>{finding.check}</strong><span>{finding.detail}</span></div></li>)}</ul>}
-      {!!scan.extracted?.length && <details className="ds-extracted"><summary>What the scanner read</summary>
-        <dl>{scan.extracted.map(item => <div key={item.field}><dt>{fieldLabel(item.field)}</dt><dd>{item.value}</dd></div>)}</dl></details>}
-    </>}
-    <footer>
-      <small>{done && scan.completedAt ? <>Scanned {new Date(scan.completedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{scan.processingMs ? ` · ${duration(scan.processingMs)}` : ""}</>
-        : scan?.status === "PENDING" && scan.nextAttemptAt ? <>Next try {new Date(scan.nextAttemptAt).toLocaleTimeString(undefined, { timeStyle: "short" })}</>
-        : scan?.status === "SCANNING" && scan.startedAt ? <>Started {new Date(scan.startedAt).toLocaleTimeString(undefined, { timeStyle: "short" })}</> : "A triage aid — always confirm against the document itself."}</small>
-      {onRescan && (scan?.status === "COMPLETED" || scan?.status === "FAILED") && <button type="button" onClick={onRescan} disabled={busy}><FiRefreshCw aria-hidden="true" className={busy ? "ds-spin" : ""} />{busy ? "Queuing…" : "Scan again"}</button>}
-    </footer>
-  </div>;
+
+      <footer className="ds-report-foot">
+        <small>{done && scan.completedAt ? <>Scanned {new Date(scan.completedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{scan.processingMs ? ` · ${duration(scan.processingMs)}` : ""}<br /></> : null}A triage aid — always confirm against the document itself.</small>
+        {onRescan && (scan?.status === "COMPLETED" || scan?.status === "FAILED") && <button type="button" onClick={onRescan} disabled={busy}><FiRefreshCw aria-hidden="true" className={busy ? "ds-spin" : ""} />{busy ? "Queuing…" : "Scan again"}</button>}
+      </footer>
+    </aside>
+  </div>, document.body);
 }
 
 /** One line above the document list when the scanner flagged something. */

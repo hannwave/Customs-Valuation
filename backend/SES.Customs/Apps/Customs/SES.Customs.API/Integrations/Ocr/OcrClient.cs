@@ -7,6 +7,8 @@ public sealed class OcrOptions
 {
     public const string SectionName = "Ocr";
     public bool Enabled { get; set; } = true;
+    /// <summary>"Gemini", "Local" (the self-hosted engine at BaseUrl) or "Auto": Gemini when Gemini:ApiKey is set, otherwise Local.</summary>
+    public string Provider { get; set; } = "Auto";
     public string BaseUrl { get; set; } = "http://62.84.187.195:4000";
     /// <summary>The engine reads on CPU, so one page can take several minutes.</summary>
     public int TimeoutMinutes { get; set; } = 30;
@@ -22,8 +24,15 @@ public class OcrException(string message) : Exception(message);
 /// <summary>The engine could not open the file itself (corrupt, empty or not really a PDF/image); retrying will not help.</summary>
 public sealed class OcrUnreadableFileException(string message) : OcrException(message);
 
+/// <summary>Reads named fields from one document and returns them as "name: value" lines.</summary>
+public interface IOcrClient
+{
+    Task<bool> ReadyAsync(CancellationToken ct);
+    Task<OcrResult> ReadFieldsAsync(byte[] content, string contentType, string fileName, IReadOnlyList<OcrField> fields, string instructions, CancellationToken ct);
+}
+
 /// <summary>Client for the OCR service: sends one document and asks only for the named fields, which is far faster than a full transcription.</summary>
-public sealed class OcrClient(HttpClient http)
+public sealed class OcrClient(HttpClient http) : IOcrClient
 {
     public async Task<bool> ReadyAsync(CancellationToken ct)
     {

@@ -33,6 +33,7 @@ builder.Logging.AddSimpleConsole();
 // information logs to ensure the private key is never written to application logs.
 builder.Logging.AddFilter("System.Net.Http.HttpClient.SerpApiClient", LogLevel.Warning);
 builder.Logging.AddFilter("System.Net.Http.HttpClient.OcrClient", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.GeminiOcrClient", LogLevel.Warning);
 var demo = builder.Configuration.GetValue<bool>("Skeleton:UseDemoData");
 if (demo && !builder.Environment.IsDevelopment())
     throw new InvalidOperationException("Demo data is permitted only in Development.");
@@ -97,6 +98,16 @@ builder.Services.AddHttpClient<SES.Customs.API.Integrations.Ocr.OcrClient>((serv
     var o = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SES.Customs.API.Integrations.Ocr.OcrOptions>>().Value;
     client.BaseAddress = new Uri(o.BaseUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromMinutes(Math.Max(1, o.TimeoutMinutes));
+});
+builder.Services.Configure<SES.Customs.API.Integrations.Ocr.GeminiOptions>(builder.Configuration.GetSection(SES.Customs.API.Integrations.Ocr.GeminiOptions.SectionName));
+builder.Services.AddHttpClient<SES.Customs.API.Integrations.Ocr.GeminiOcrClient>((services, client) =>
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(10, services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SES.Customs.API.Integrations.Ocr.GeminiOptions>>().Value.TimeoutSeconds)));
+builder.Services.AddTransient<SES.Customs.API.Integrations.Ocr.IOcrClient>(services =>
+{
+    var provider = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SES.Customs.API.Integrations.Ocr.OcrOptions>>().Value.Provider;
+    var geminiKey = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SES.Customs.API.Integrations.Ocr.GeminiOptions>>().Value.ApiKey;
+    var gemini = provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase) || (provider.Equals("Auto", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(geminiKey));
+    return gemini ? services.GetRequiredService<SES.Customs.API.Integrations.Ocr.GeminiOcrClient>() : services.GetRequiredService<SES.Customs.API.Integrations.Ocr.OcrClient>();
 });
 builder.Services.AddHostedService<SES.Customs.API.Services.DocumentScanning.DocumentScanWorker>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>

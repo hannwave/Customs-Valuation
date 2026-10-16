@@ -28,7 +28,7 @@ function ToastCard({ item, sound, onToggleSound }: { item: ToastItem; sound: boo
     onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
     <span className="feedback-toast-icon" aria-hidden="true"><Icon /></span>
     <div className="feedback-toast-copy">
-      {item.href ? <Link className="feedback-toast-link" href={item.href} onClick={close}>{body}</Link> : body}
+      {item.href ? <Link className="feedback-toast-link" href={item.href} onClick={() => { item.onOpen?.(); close(); }}>{body}</Link> : body}
       {item.action && <button className="feedback-toast-retry" type="button" onClick={() => { item.action?.onClick(); close(); }}>{item.action.label}</button>}
     </div>
     <div className="feedback-toast-tools">

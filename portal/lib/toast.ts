@@ -15,6 +15,8 @@ export type ToastOptions = {
   duration?: number;
   action?: { label: string; onClick: () => void };
   href?: string;
+  /** Called when the person follows the toast's link. */
+  onOpen?: () => void;
   /** Called when the toast closes, by the person or by its timer. */
   onDismiss?: () => void;
   silent?: boolean;

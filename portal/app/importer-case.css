@@ -273,27 +273,43 @@
 
 /* Importer portal: notification bell */
 .ip-bell { position: relative; }
-.ip-bell-button { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--iv-border); border-radius: 10px; background: var(--iv-surface); color: var(--iv-text); font-size: 18px; cursor: pointer; }
-.ip-bell-button:hover { border-color: var(--iv-accent); color: var(--iv-accent); }
+.ip-bell-button { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--iv-border); border-radius: 12px; background: var(--iv-surface); color: var(--iv-text); font-size: 18px; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.ip-bell-button:hover, .ip-bell-button.is-open { border-color: var(--iv-accent); background: var(--iv-accent-soft); color: var(--iv-accent); }
+.ip-bell-button:focus-visible { outline: 2px solid var(--iv-accent); outline-offset: 2px; }
 .ip-bell-count { position: absolute; top: -6px; right: -6px; min-width: 19px; height: 19px; padding: 0 5px; border: 2px solid var(--iv-surface); border-radius: 999px; background: #d63b2b; color: #fff; font-size: 10.5px; font-weight: 800; line-height: 15px; text-align: center; }
-.ip-bell-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 120; width: min(400px, calc(100vw - 32px)); max-height: 70vh; overflow: hidden auto; border: 1px solid var(--iv-border); border-radius: 14px; background: var(--iv-surface); color: var(--iv-text); box-shadow: 0 20px 50px #0b1b2e33; }
-.ip-bell-panel header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--iv-border); background: var(--iv-surface); }
-.ip-bell-panel header button { border: 0; background: none; color: var(--iv-accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-.ip-bell-panel ul { list-style: none; margin: 0; padding: 0; }
-.ip-bell-panel li a { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--iv-border); color: inherit; text-decoration: none; }
-.ip-bell-panel li a:hover { background: var(--iv-surface-2); }
-.ip-bell-panel li.is-unread a { background: var(--iv-accent-soft); }
-.ip-bell-panel li.is-unread strong::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--iv-accent); vertical-align: 2px; }
-.ip-bell-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--iv-surface-2); font-size: 16px; }
+.ip-bell-panel { position: absolute; right: 0; top: calc(100% + 10px); z-index: 120; display: flex; flex-direction: column; width: min(380px, calc(100vw - 32px)); max-height: min(520px, 72vh); overflow: hidden; border: 1px solid var(--iv-border); border-radius: 16px; background: var(--iv-surface); color: var(--iv-text); box-shadow: 0 24px 60px #0b1b2e2e, 0 4px 12px #0b1b2e14; transform-origin: top right; animation: ip-bell-in .16s ease-out; }
+.ip-bell-panel header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--iv-border); }
+.ip-bell-panel header > div { display: flex; align-items: center; gap: 8px; }
+.ip-bell-panel header strong { font-size: 15px; }
+.ip-bell-pill { padding: 2px 8px; border-radius: 999px; background: var(--iv-accent-soft); color: var(--iv-accent); font-size: 11.5px; font-weight: 700; }
+.ip-bell-panel header button { padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: var(--iv-muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.ip-bell-panel header button:hover { background: var(--iv-surface-2); color: var(--iv-accent); }
+.ip-bell-panel ul { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 6px; }
+.ip-bell-panel li { position: relative; border-radius: 12px; }
+.ip-bell-panel li + li { margin-top: 2px; }
+.ip-bell-panel li:hover, .ip-bell-panel li:focus-within { background: var(--iv-surface-2); }
+.ip-bell-panel li a { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; padding: 10px 40px 10px 10px; border-radius: 12px; color: inherit; text-decoration: none; }
+.ip-bell-panel li a:focus-visible { outline: 2px solid var(--iv-accent); outline-offset: -2px; }
+.ip-bell-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--iv-surface-2); font-size: 16px; }
 .ip-bell-icon.is-success { background: var(--iv-success-soft); color: var(--iv-success); }
 .ip-bell-icon.is-danger { background: var(--iv-danger-soft); color: var(--iv-danger); }
 .ip-bell-icon.is-warning { background: var(--iv-warning-soft); color: var(--iv-warning); }
 .ip-bell-icon.is-info { background: var(--iv-accent-soft); color: var(--iv-accent); }
-.ip-bell-copy { display: grid; gap: 3px; min-width: 0; }
-.ip-bell-copy strong { font-size: 13.5px; }
-.ip-bell-copy span { color: var(--iv-text); font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.ip-bell-copy small { color: var(--iv-muted); font-size: 12px; }
-.ip-bell-empty { margin: 0; padding: 22px 16px; color: var(--iv-muted); font-size: 13.5px; text-align: center; }
+.ip-bell-copy { display: grid; gap: 2px; min-width: 0; padding-top: 1px; }
+.ip-bell-copy strong { overflow: hidden; font-size: 13.5px; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.ip-bell-copy span { color: var(--iv-muted); font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ip-bell-copy small { margin-top: 2px; color: var(--iv-muted); font-size: 11.5px; opacity: .85; }
+.ip-bell-dismiss { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 8px; background: none; color: var(--iv-muted); font-size: 14px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.ip-bell-panel li:hover .ip-bell-dismiss, .ip-bell-panel li:focus-within .ip-bell-dismiss { opacity: 1; }
+.ip-bell-dismiss:hover { background: var(--iv-border); color: var(--iv-text); }
+.ip-bell-dismiss:focus-visible { opacity: 1; outline: 2px solid var(--iv-accent); outline-offset: 1px; }
+@media (hover: none) { .ip-bell-dismiss { opacity: 1; } }
+.ip-bell-empty { display: grid; justify-items: center; gap: 6px; padding: 32px 24px 34px; text-align: center; }
+.ip-bell-empty > span { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 4px; border-radius: 50%; background: var(--iv-success-soft); color: var(--iv-success); font-size: 22px; }
+.ip-bell-empty strong { font-size: 14.5px; }
+.ip-bell-empty p { max-width: 250px; margin: 0; color: var(--iv-muted); font-size: 13px; line-height: 1.5; }
+@keyframes ip-bell-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ip-bell-panel { animation: none; } }
 
 /* Importer portal: price paid input, five-step tracker, assessment notice */
 .ip-money-input { display: flex; }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FiAlertTriangle, FiArrowRight, FiBriefcase, FiCalendar, FiCheck, FiClock, FiMapPin, FiPauseCircle, FiPlayCircle, FiRefreshCw, FiSearch, FiSlash, FiUser, FiX, FiMessageSquare } from "react-icons/fi";
 import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
-import { ScanAlert, ScanDetail, ScanPill, ScanQueueBadge, useDocumentScans } from "@/components/officer/DocumentScan";
+import { ScanAlert, ScanPill, ScanQueueBadge, ScanReport, useDocumentScans } from "@/components/officer/DocumentScan";
 import type { DocumentScans, ScanBadge } from "@/lib/document-scan";
 import { ToastMessage } from "@/components/Toaster";
 import { PageHeader } from "@/components/importer/PortalParts";
@@ -51,7 +51,8 @@ export default function ImporterVerificationsPage() {
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Detail | null>(null);
   const { scans, busy: scanBusy, rescan } = useDocumentScans(detail ? `/importer-verifications/${detail.profile.id}/document-scans` : null, detail?.documentScans);
-  const [scanOpen, setScanOpen] = useState<Record<string, boolean>>({});
+  const [reportKind, setReportKind] = useState("");
+  const closeReport = useCallback(() => setReportKind(""), []);
   const [opening, setOpening] = useState("");
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [note, setNote] = useState("");
@@ -191,11 +192,11 @@ export default function ImporterVerificationsPage() {
 
           <section><h3>Documents <small>{profile.documents.length}</small></h3>
             <ScanAlert scans={scans} labels={Object.fromEntries(Object.entries(documentLabels).map(([kind, item]) => [kind, item.label]))} />
-            <ul className="iv-doc-list">{profile.documents.map(document => { const scan = scans?.[document.kind]; const flagged = scan?.flag === "SUSPICIOUS" || scan?.flag === "UNRELATED"; const open = scanOpen[document.kind] ?? flagged;
+            <ul className="iv-doc-list">{profile.documents.map(document => { const scan = scans?.[document.kind];
               return <li key={document.kind}>
               <div><strong>{documentLabels[document.kind]?.label ?? document.kind}</strong><small>{document.fileName} · {Math.max(1, Math.round(document.size / 1024))} KB</small>
-                <ScanPill scan={scan} open={open} onClick={() => setScanOpen(current => ({ ...current, [document.kind]: !open }))} /></div>
-              {open && <div className="iv-doc-scan"><ScanDetail scan={scan} busy={scanBusy === document.kind} onRescan={() => void rescan(document.kind, `/importer-verifications/${profile.id}/documents/${document.kind}/rescan`)} /></div>}
+                <ScanPill scan={scan} onClick={() => setReportKind(document.kind)} /></div>
+              {reportKind === document.kind && <ScanReport scan={scan} title={documentLabels[document.kind]?.label ?? document.kind} fileName={document.fileName} onClose={closeReport} busy={scanBusy === document.kind} onRescan={() => void rescan(document.kind, `/importer-verifications/${profile.id}/documents/${document.kind}/rescan`)} />}
               <ImporterDocumentPreview path={`/importer-verifications/${profile.id}/documents/${document.kind}`} kind={document.kind} label={documentLabels[document.kind]?.label ?? document.kind} contentType={document.contentType} fileName={document.fileName} />
             </li>; })}</ul>
           </section>

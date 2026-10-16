@@ -8,7 +8,7 @@ import { FeedbackToast } from "@/components/FeedbackToast";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ImporterDocumentPreview } from "@/components/ImporterDocumentPreview";
 import { FinalStep } from "@/components/officer/FinalStep";
-import { ScanAlert, ScanDetail, ScanPill, useDocumentScans } from "@/components/officer/DocumentScan";
+import { ScanAlert, ScanPill, ScanReport, useDocumentScans } from "@/components/officer/DocumentScan";
 import { ReviewStep } from "@/components/officer/ReviewStep";
 import { StatusBadge } from "@/components/officer/StatusBadge";
 import { TaxStep } from "@/components/officer/TaxStep";
@@ -33,7 +33,9 @@ export default function ImporterCasePage() {
   const [error, setError] = useState(""); const [success, setSuccess] = useState(""); const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const { scans, busy: scanBusy, rescan } = useDocumentScans(`/importer-declarations/${id}/document-scans`, data?.documentScans);
-  const [scanOpen, setScanOpen] = useState<Record<string, boolean>>({});
+  const [reportKind, setReportKind] = useState("");
+
+  const closeReport = useCallback(() => setReportKind(""), []);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -106,12 +108,11 @@ export default function ImporterCasePage() {
         </section>
         <section className="oc-card oc-side-card">
           <h3 className="oc-subtitle"><FiFileText aria-hidden="true" />Documents <small>{d.documents.length}</small></h3>
-          <ScanAlert scans={scans} labels={declarationDocumentLabels} />
           <ul className="oc-doc-list">{d.documents.map(document => { const label = declarationDocumentLabels[document.kind] ?? document.kind;
-            const scan = scans?.[document.kind]; const flagged = scan?.flag === "SUSPICIOUS" || scan?.flag === "UNRELATED"; const open = scanOpen[document.kind] ?? flagged;
+            const scan = scans?.[document.kind];
             return <li key={document.kind}><div className="ds-doc-head"><div><strong>{label}</strong><small>{document.fileName} · {Math.max(1, Math.round(document.size / 1024))} KB</small></div>
-              <ScanPill scan={scan} open={open} onClick={() => setScanOpen(current => ({ ...current, [document.kind]: !open }))} /></div>
-              {open && <ScanDetail scan={scan} busy={scanBusy === document.kind} onRescan={() => void rescan(document.kind, `/importer-declarations/${d.id}/documents/${document.kind}/rescan`)} />}
+              <ScanPill scan={scan} onClick={() => setReportKind(document.kind)} /></div>
+              {reportKind === document.kind && <ScanReport scan={scan} title={label} fileName={document.fileName} onClose={closeReport} busy={scanBusy === document.kind} onRescan={() => void rescan(document.kind, `/importer-declarations/${d.id}/documents/${document.kind}/rescan`)} />}
               <ImporterDocumentPreview declarationId={d.id} kind={document.kind} label={label} contentType={document.contentType} fileName={document.fileName} /></li>; })}</ul>
         </section>
         <section className="oc-card oc-side-card">

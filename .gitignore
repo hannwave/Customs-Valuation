@@ -15,3 +15,4 @@ work/
 
 # Local build/test output
 .validation/
+**/gemini.secrets.json
