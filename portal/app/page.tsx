@@ -162,7 +162,7 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <section className="lp-section is-tinted" id="portals">
+    <section className="lp-section is-blue" id="portals">
       <div className="lp-wrap">
         <header className="lp-section-head"><p className="lp-eyebrow">{t("landing.portals.eyebrow", "Two portals, one process")}</p><h2>{t("landing.portals.title", "Built for importers and for Customs")}</h2></header>
         <div className="lp-portals">
