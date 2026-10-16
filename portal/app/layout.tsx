@@ -14,6 +14,7 @@ import "./importer-profile.css";
 import "./valuation-evidence.css";
 import "./page-skeleton.css";
 import "./invoice.css";
+import "./landing.css";
 import "./toast.css";
 import "./document-scan.css";
 import Providers from "./providers";

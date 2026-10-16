@@ -7,8 +7,9 @@ import {
   documentFieldNames, documentLabels, documentsByType, idTypeLabels, importerApi, importerApiBase, importerTypes, residencyLabels,
   type ImporterDocumentKind, type ImporterProfile, type ImporterRegion, type ImporterType,
 } from "@/lib/importer";
-import { idNumberHint, idNumberMaxLength, idNumberProblem, phoneProblem, restrictIdNumber, restrictPhone, restrictTin, tinProblem } from "@/lib/importer-validation";
+import { idNumberHint, idNumberMaxLength, idNumberProblem, phoneHint, phoneMaxLength, phoneProblem, restrictIdNumber, restrictPhone, restrictTin, tinProblem } from "@/lib/importer-validation";
 import { ToastMessage } from "@/components/Toaster";
+import { citiesFor, findCity, joinWoreda, OTHER_TOWN, splitWoreda } from "@/lib/ethiopia-places";
 
 type Mode = "register" | "verify";
 type Draft = {
@@ -80,6 +81,19 @@ export function ImporterVerificationForm({ mode, existing, onRegistered, onSubmi
       .filter(item => item.name !== item.code).sort((a, b) => a.code === "ET" ? -1 : b.code === "ET" ? 1 : a.name.localeCompare(b.name));
   }, []);
 
+  const regionCode = regions.find(region => region.id === draft.regionLocationId)?.officialCode;
+  const cities = citiesFor(regionCode);
+  const cityEntry = findCity(regionCode, draft.city);
+  const [otherTown, setOtherTown] = useState(false);
+  const typedTown = otherTown || (!!draft.city && regions.length > 0 && !cityEntry);
+  const { subCity, woreda: woredaOnly } = splitWoreda(cityEntry, draft.woreda);
+  const woredaOptions = cityEntry?.subCities ? cityEntry.subCities.find(item => item.name === subCity)?.woredas ?? [] : cityEntry?.woredas ?? [];
+  const chooseRegion = (id: string) => { setOtherTown(false); setDraft(current => ({ ...current, regionLocationId: id, city: "", woreda: "" })); setError(""); };
+  const chooseCity = (value: string) => {
+    if (value === OTHER_TOWN) { setOtherTown(true); setDraft(current => ({ ...current, city: "", woreda: "" })); }
+    else { setOtherTown(false); setDraft(current => ({ ...current, city: value, woreda: "" })); }
+    setError("");
+  };
   const type = draft.importerType || null;
   const docs = type ? documentsByType[type] : { required: [], optional: [] };
   const uploaded = (kind: ImporterDocumentKind) => existing?.importerType === type ? existing?.documents.find(d => d.kind === kind) : undefined;
@@ -117,7 +131,9 @@ export function ImporterVerificationForm({ mode, existing, onRegistered, onSubmi
     if (index === 2) {
       if (formatErrors.phone) return formatErrors.phone;
       if (!draft.regionLocationId) return "Choose your region. Officers in that region will verify your account.";
-      if (draft.city.trim().length < 2) return "Enter the city or town.";
+      if (draft.city.trim().length < 2) return typedTown ? "Enter the city or town." : "Choose the city or town.";
+      if (cityEntry?.subCities && !subCity) return "Choose the sub-city.";
+      if (cityEntry && (cityEntry.subCities || cityEntry.woredas) && !woredaOnly) return cityEntry.subCities ? "Choose the woreda." : "Choose the kebele.";
     }
     if (index === 3) {
       const missing = docs.required.filter(kind => !files[kind] && !uploaded(kind));
@@ -222,15 +238,34 @@ export function ImporterVerificationForm({ mode, existing, onRegistered, onSubmi
     </div>}
 
     {step === 2 && <div className="iv-grid">
-      <Field label="Mobile phone" error={fieldError("phone")} hint="Ethiopian mobile (09…, 07… or +251…) or + country code if abroad." required>{input("phone", { type: "tel", inputMode: "tel", autoComplete: "tel", placeholder: "+251911234567", maxLength: 16 })}</Field>
+      <Field label="Mobile phone" error={fieldError("phone")} hint={`${phoneHint(draft.phone)}Ethiopian mobile (09…, 07… or +251…) or + country code if abroad.`} required>{input("phone", { type: "tel", inputMode: "tel", autoComplete: "tel", placeholder: "+251911234567", maxLength: phoneMaxLength(draft.phone) })}</Field>
       <Field label="Region" hint="Customs Officers in this region will verify your account." required>
-        <select value={draft.regionLocationId} onChange={event => set("regionLocationId", event.target.value)} disabled={!regions.length}>
+        <select value={draft.regionLocationId} onChange={event => chooseRegion(event.target.value)} disabled={!regions.length}>
           <option value="">{regions.length ? "Choose your region" : regionError || "Loading regions…"}</option>
           {regions.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
         </select>
       </Field>
-      <Field label="City or town" required>{input("city", { autoComplete: "address-level2", maxLength: 120 })}</Field>
-      <Field label="Sub-city / woreda">{input("woreda", { maxLength: 120 })}</Field>
+      <Field label="City or town" hint={!draft.regionLocationId ? "Choose the region first." : undefined} required>
+        <select value={typedTown ? OTHER_TOWN : draft.city} onChange={event => chooseCity(event.target.value)} disabled={!draft.regionLocationId}>
+          <option value="">{draft.regionLocationId ? "Choose the city or town" : "Choose the region first"}</option>
+          {cities.map(city => <option key={city.name} value={city.name}>{city.name}</option>)}
+          {draft.regionLocationId && <option value={OTHER_TOWN}>Another town (type it)</option>}
+        </select>
+      </Field>
+      {typedTown && <Field label="Town name" required>{input("city", { autoComplete: "address-level2", maxLength: 120, placeholder: "Type the city or town" })}</Field>}
+      {cityEntry?.subCities && <Field label="Sub-city" required>
+        <select value={subCity} onChange={event => set("woreda", joinWoreda(event.target.value, ""))}>
+          <option value="">Choose the sub-city</option>
+          {cityEntry.subCities.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
+        </select>
+      </Field>}
+      {cityEntry && (cityEntry.subCities || cityEntry.woredas) && <Field label={cityEntry.subCities ? "Woreda" : "Kebele"} hint={cityEntry.subCities && !subCity ? "Choose the sub-city first." : undefined} required>
+        <select value={woredaOnly} onChange={event => set("woreda", joinWoreda(subCity, event.target.value))} disabled={!woredaOptions.length}>
+          <option value="">{cityEntry.subCities ? (subCity ? `Choose the woreda in ${subCity}` : "Choose the sub-city first") : "Choose the kebele"}</option>
+          {woredaOptions.map(item => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </Field>}
+      {(typedTown || (cityEntry && !cityEntry.subCities && !cityEntry.woredas)) && <Field label="Sub-city, woreda or kebele">{input("woreda", { maxLength: 120 })}</Field>}
       <Field label="Street address or house number" wide>{input("addressLine", { autoComplete: "street-address", maxLength: 300 })}</Field>
     </div>}
 

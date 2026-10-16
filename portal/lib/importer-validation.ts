@@ -5,9 +5,29 @@ const digitsOnly = (value: string) => value.replace(/\D/g, "");
 /** Keeps only characters each field can legally contain and caps its length while the user types. */
 export function restrictTin(value: string) { return digitsOnly(value).slice(0, 10); }
 
+/**
+ * Longest a phone number can be for the format it starts with, so the field stops taking input once it is complete:
+ * 0911234567 (10), 251911234567 (12), +251911234567 (13), other + country codes up to 15 digits (16).
+ */
+export function phoneMaxLength(value: string) {
+  const raw = value.replace(/\s/g, "");
+  if (raw.startsWith("+251")) return 13;
+  if (raw.startsWith("+")) return 16;
+  if (raw.startsWith("251")) return 12;
+  if (raw.startsWith("0")) return 10;
+  return 16;
+}
+
 export function restrictPhone(value: string) {
   const plus = value.trimStart().startsWith("+") ? "+" : "";
-  return (plus + digitsOnly(value)).slice(0, 16);
+  const cleaned = plus + digitsOnly(value);
+  return cleaned.slice(0, phoneMaxLength(cleaned));
+}
+
+/** Character count against the expected length for the format being typed, e.g. "7/10". */
+export function phoneHint(value: string) {
+  const raw = value.replace(/\s/g, "");
+  return raw ? `${raw.length}/${phoneMaxLength(raw)} · ` : "";
 }
 
 export function restrictIdNumber(idType: string, value: string) {

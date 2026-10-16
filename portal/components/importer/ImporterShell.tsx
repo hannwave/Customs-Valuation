@@ -92,7 +92,7 @@ export function ImporterShell({ children }: { children: ReactNode }) {
   const actionNeeded = declarations?.filter(item => item.status === "INFORMATION_REQUESTED").length ?? 0;
   const state = useMemo<PortalState>(() => ({ account, accountDetails, photoUrl, setAccountDetails, reloadPhoto, profile, setProfile, declarations, reloadDeclarations, verified }),
     [account, accountDetails, photoUrl, setAccountDetails, reloadPhoto, profile, declarations, reloadDeclarations, verified]);
-  const signOut = () => { setSessionAccessToken(null); window.location.assign("/importer"); };
+  const signOut = () => { setSessionAccessToken(null); window.location.assign("/login"); };
 
   const nav = [
     { label: "OVERVIEW", links: [{ href: "/importer", label: "Dashboard", icon: FiGrid }] },

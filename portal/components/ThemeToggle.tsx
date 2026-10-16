@@ -49,21 +49,31 @@ export function ThemeToggle() {
     applyTheme(saved);
     setMounted(true);
 
+    // Print preview briefly reports a light colour scheme. Ignore changes while printing, and never overwrite the
+    // saved choice on a system change: re-read it instead, so cancelling a print leaves the theme as it was.
+    let printing = false;
+    const beforePrint = () => { printing = true; };
+    const afterPrint = () => {
+      printing = false;
+      setSystemIsDark(mediaQuery.matches);
+      const restored = getInitialTheme(); setMode(restored); applyTheme(restored);
+    };
     const handleChange = (e: MediaQueryListEvent) => {
+      if (printing) return;
       setSystemIsDark(e.matches);
-      const currentMode = (localStorage.getItem("theme-mode") as ThemeMode) || "system";
-      const remaining: ThemeMode = e.matches ? "light" : "dark";
-      if (currentMode === "system") {
-        applyTheme("system");
-      } else if (currentMode !== remaining) {
-        setMode("system");
-        localStorage.setItem("theme-mode", "system");
-        applyTheme("system");
-      }
+      const next = getInitialTheme();
+      setMode(next);
+      applyTheme(next);
     };
 
     mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    window.addEventListener("beforeprint", beforePrint);
+    window.addEventListener("afterprint", afterPrint);
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+      window.removeEventListener("beforeprint", beforePrint);
+      window.removeEventListener("afterprint", afterPrint);
+    };
   }, []);
 
   const remainingMode: ThemeMode = systemIsDark ? "light" : "dark";
