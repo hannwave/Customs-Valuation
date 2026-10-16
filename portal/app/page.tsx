@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
-  FiActivity, FiArrowRight, FiBell, FiCheck, FiCheckCircle, FiClipboard, FiCpu, FiDollarSign, FiFileText, FiGlobe,
-  FiLayers, FiLock, FiLogIn, FiMapPin, FiMenu, FiSearch, FiShield, FiUserCheck, FiUserPlus, FiUsers, FiX,
+  FiActivity, FiArrowRight, FiBarChart2, FiBell, FiCheck, FiCpu, FiDollarSign, FiFileText, FiGlobe,
+  FiLayers, FiLock, FiLogIn, FiMapPin, FiMenu, FiSearch, FiUser, FiUserCheck, FiUserPlus, FiUsers, FiX,
 } from "react-icons/fi";
 import { Brand } from "@/components/Brand";
 import { LandingLanguageSelect } from "@/components/LandingLanguageSelect";
@@ -53,16 +54,28 @@ function useCustomsNetwork() {
 export default function LandingPage() {
   const { t } = useTranslation();
   const page = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const { regions, boundaries } = useCustomsNetwork();
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButton.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", dismiss);
+    return () => document.removeEventListener("keydown", dismiss);
+  }, [menuOpen]);
 
   useLayoutEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     gsap.registerPlugin(ScrollTrigger);
     const context = gsap.context(() => {
       gsap.from(".lp-hero-copy > *", { y: 18, autoAlpha: 0, duration: 0.6, stagger: 0.08, ease: "power2.out" });
-      gsap.from(".lp-hero-visual", { y: 24, autoAlpha: 0, duration: 0.8, delay: 0.2, ease: "power2.out" });
       [".lp-step", ".lp-portal", ".lp-feature", ".lp-office-panel", ".lp-cta-inner > *"].forEach(selector => {
         gsap.from(selector, { y: 16, autoAlpha: 0, duration: 0.5, stagger: 0.07, ease: "power2.out", scrollTrigger: { trigger: selector, start: "top 88%", once: true } });
       });
@@ -92,6 +105,7 @@ export default function LandingPage() {
   const close = () => setMenuOpen(false);
 
   return <main className="lp" ref={page}>
+    <a className="lp-skip-link" href="#home">{t("landing.nav.skip", "Skip to content")}</a>
     <header className="lp-nav">
       <div className="lp-wrap lp-nav-inner">
         <Link href="/" className="lp-brand" aria-label="Ethiopian Customs Commission home"><span className="lp-brand-on-light"><Brand variant="dark" /></span><span className="lp-brand-on-dark"><Brand variant="light" /></span></Link>
@@ -105,46 +119,39 @@ export default function LandingPage() {
           <Link href="/importer/register" className="lp-nav-mobile-only" onClick={close}>{t("landing.nav.register", "Register")}</Link>
         </nav>
         <div className="lp-nav-actions">
-          <ThemeToggle />
           <LandingLanguageSelect />
           <Link href="/login" className="lp-btn is-ghost lp-nav-signin"><FiLogIn aria-hidden="true" />{t("landing.nav.signIn", "Sign in")}</Link>
           <Link href="/importer/register" className="lp-btn is-primary lp-nav-register">{t("landing.nav.register", "Register")}</Link>
-          <button className="lp-menu" type="button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="lp-navigation" onClick={() => setMenuOpen(open => !open)}>{menuOpen ? <FiX /> : <FiMenu />}</button>
+          <button ref={menuButton} className="lp-menu" type="button" aria-label={menuOpen ? t("landing.nav.close", "Close navigation") : t("landing.nav.open", "Open navigation")} aria-expanded={menuOpen} aria-controls="lp-navigation" onClick={() => setMenuOpen(open => !open)}>{menuOpen ? <FiX /> : <FiMenu />}</button>
         </div>
       </div>
     </header>
 
-    <section className="lp-hero" id="home">
-      <div className="lp-wrap lp-hero-grid">
+    <section className="lp-hero" id="home" aria-labelledby="lp-hero-title" tabIndex={-1}>
+      <div className="lp-hero-scene" aria-hidden="true">
+        <Image src="/images/landing/inland-port-fade.png" alt="" fill priority sizes="100vw" quality={90} />
+        <video className="lp-hero-video" autoPlay muted loop playsInline preload="auto" tabIndex={-1}>
+          <source src="/images/landing/hero.mp4" type="video/mp4" />
+        </video>
+      </div>
+      <div className="lp-wrap lp-hero-inner">
         <div className="lp-hero-copy">
-          <p className="lp-kicker"><span aria-hidden="true" />{t("landing.hero.kicker", "Ethiopian Customs Commission")}</p>
-          <h1>{t("landing.hero.titleA", "Declare your imports.")} <em>{t("landing.hero.titleB", "Get a fair, traceable assessment.")}</em></h1>
-          <p className="lp-lead">{t("landing.hero.lead", "One portal for importers and Customs: register and get verified, declare goods with their documents, and receive the official duty and tax assessment — every step checked, valued on evidence and recorded.")}</p>
+          <p className="lp-kicker">{t("landing.hero.kicker", "Importer & Customs Portal")}<span aria-hidden="true" /></p>
+          <h1 id="lp-hero-title"><span>{t("landing.hero.titleA", "Declare with confidence.")}</span><em>{t("landing.hero.titleB", "Track every step.")}</em></h1>
+          <p className="lp-lead">{t("landing.hero.lead", "Register as an importer, submit your goods and documents, and follow your declaration through review to an official duty and tax assessment.")}</p>
           <div className="lp-hero-actions">
-            <Link href="/importer/register" className="lp-btn is-primary is-large"><FiUserPlus aria-hidden="true" />{t("landing.hero.register", "Register as an importer")}<FiArrowRight aria-hidden="true" /></Link>
-            <Link href="/login" className="lp-btn is-outline is-large"><FiLogIn aria-hidden="true" />{t("landing.hero.signIn", "Sign in")}</Link>
+            <Link href="/importer/register" className="lp-btn is-primary is-large">{t("landing.hero.register", "Register as an Importer")}<FiArrowRight aria-hidden="true" /></Link>
+            <Link href="/login" className="lp-btn is-outline is-large"><FiUser aria-hidden="true" />{t("landing.hero.signIn", "Sign In")}</Link>
           </div>
           <ul className="lp-hero-proof">
-            <li><FiCheckCircle aria-hidden="true" />{t("landing.hero.p1", "Importers, businesses and customs agents")}</li>
-            <li><FiCheckCircle aria-hidden="true" />{t("landing.hero.p2", "ERCA tariff rates built in")}</li>
-            <li><FiCheckCircle aria-hidden="true" />{t("landing.hero.p3", "Official assessment invoice")}</li>
+            <li><FiFileText aria-hidden="true" />{t("landing.hero.p1", "Verified registration")}</li>
+            <li><FiLayers aria-hidden="true" />{t("landing.hero.p2", "Track your declaration")}</li>
+            <li><FiBarChart2 aria-hidden="true" />{t("landing.hero.p3", "Official assessment")}</li>
           </ul>
-        </div>
-
-        <div className="lp-hero-visual" aria-hidden="true">
-          <div className="lp-mock">
-            <div className="lp-mock-head"><div><small>Declaration</small><strong>IMP-20261016-4F2A</strong></div><span className="lp-chip is-success"><FiCheck />Assessed</span></div>
-            <div className="lp-mock-item"><span className="lp-mock-icon"><FiClipboard /></span><div><strong>Smartphones, 5G · 120 pcs</strong><small>HS 8517.13 · Origin China · CIF</small></div></div>
-            <ol className="lp-mock-steps">
-              {["Submitted", "Documents checked", "Classified", "Valued", "Assessed"].map((step, index) => <li key={step} className={index < 5 ? "is-done" : ""}><span>{index + 1}</span>{step}</li>)}
-            </ol>
-            <div className="lp-mock-scan"><FiCpu /><span>Document scanner: <b>commercial invoice looks right</b></span></div>
-            <div className="lp-mock-total"><div><small>Customs value (CIF)</small><strong>ETB 2,486,400</strong></div><div><small>Duties &amp; taxes payable</small><strong className="is-accent">ETB 1,042,118</strong></div></div>
-          </div>
-          <div className="lp-float is-a"><FiBell /><span><b>Assessment issued</b><small>Your invoice is ready</small></span></div>
-          <div className="lp-float is-b"><FiShield /><span><b>Verified importer</b><small>Addis Ababa region</small></span></div>
+          <p className="lp-hero-motto"><span aria-hidden="true" />{t("landing.hero.motto", "Secure borders. Prosperous nation.")}</p>
         </div>
       </div>
+      <div className="lp-hero-caption"><FiGlobe aria-hidden="true" /><span>{t("landing.hero.caption", "From declaration to assessment.")}</span></div>
     </section>
 
     <section className="lp-section" id="how">
@@ -177,7 +184,25 @@ export default function LandingPage() {
       </div>
     </section>
 
-    <section className="lp-section" id="features">
+    <section className="lp-section lp-trade" aria-labelledby="lp-trade-title">
+      <div className="lp-wrap lp-trade-grid">
+        <div className="lp-trade-copy">
+          <p className="lp-eyebrow">{t("landing.trade.eyebrow", "Connected to a world of opportunity")}</p>
+          <h2 id="lp-trade-title">{t("landing.trade.title", "Keeping Ethiopia’s trade moving.")}</h2>
+          <p>{t("landing.trade.text", "From the first document to the final assessment, a clearer customs journey helps you focus on what comes next for your business.")}</p>
+          <a href="#how" className="lp-link">{t("landing.trade.cta", "Explore the declaration process")}<FiArrowRight aria-hidden="true" /></a>
+        </div>
+        <figure className="lp-trade-film">
+          <video controls playsInline preload="none" poster="/images/landing/inland-terminal.png" aria-label={t("landing.trade.videoLabel", "Ethiopian inland container terminal video")} aria-describedby="lp-film-caption">
+            <source src="/images/landing/inland-terminal.mp4" type="video/mp4" />
+            <a href="/images/landing/inland-terminal.mp4">{t("landing.trade.videoFallback", "Watch the port video")}</a>
+          </video>
+          <figcaption id="lp-film-caption"><FiMapPin aria-hidden="true" />{t("landing.trade.caption", "A new perspective on Ethiopian trade")}</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section className="lp-section lp-features-section" id="features">
       <div className="lp-wrap">
         <header className="lp-section-head"><p className="lp-eyebrow">{t("landing.features.eyebrow", "What the system does")}</p><h2>{t("landing.features.title", "Evidence and controls behind every assessment")}</h2></header>
         <div className="lp-features">{features.map(({ icon: Icon, title, text }) => <article className="lp-feature" key={title}><span className="lp-feature-icon"><Icon aria-hidden="true" /></span><h3>{title}</h3><p>{text}</p></article>)}</div>
@@ -203,6 +228,7 @@ export default function LandingPage() {
     </section>
 
     <section className="lp-cta">
+      <Image className="lp-cta-art" src="/images/landing/ethiopia-trade-routes.png" alt="" fill sizes="100vw" aria-hidden="true" />
       <div className="lp-wrap lp-cta-inner">
         <div><h2>{t("landing.cta.title", "Ready to declare your goods?")}</h2><p>{t("landing.cta.text", "Registration takes about ten minutes with your licence, TIN certificate and ID ready.")}</p></div>
         <div className="lp-cta-actions"><Link href="/importer/register" className="lp-btn is-light is-large"><FiUserPlus aria-hidden="true" />{t("landing.cta.register", "Register as an importer")}</Link><Link href="/login" className="lp-btn is-outline-light is-large"><FiLogIn aria-hidden="true" />{t("landing.cta.signIn", "Sign in")}</Link></div>
@@ -216,7 +242,7 @@ export default function LandingPage() {
         <div><h4>{t("landing.footer.staff", "Customs staff")}</h4><Link href="/login">{t("landing.footer.staffSignIn", "Staff sign in")}</Link><Link href="/signup">{t("landing.footer.apply", "Apply for access")}</Link><a href="#offices">{t("landing.footer.offices", "Offices")}</a></div>
         <div><h4>{t("landing.footer.commission", "Commission")}</h4><Link href="/about">{t("landing.footer.about", "About")}</Link><Link href="/contact">{t("landing.footer.contact", "Contact")}</Link></div>
       </div>
-      <div className="lp-wrap lp-footer-bottom"><span>{t("landing.footer.copyright", "© 2026 Ethiopia Customs Commission")}</span><span>{t("landing.footer.tagline", "Secure borders. Prosperous nation.")}</span></div>
+      <div className="lp-wrap lp-footer-bottom"><span>{t("landing.footer.copyright", "© 2026 Ethiopia Customs Commission")}</span><span>{t("landing.footer.tagline", "Secure borders. Prosperous nation.")}</span><div className="lp-footer-theme"><span>{t("landing.footer.appearance", "Appearance")}</span><ThemeToggle /></div></div>
     </footer>
   </main>;
 }

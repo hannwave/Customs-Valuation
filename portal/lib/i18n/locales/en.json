@@ -1,4 +1,26 @@
 {
+  "landing": {
+    "nav": {
+      "how": "How it works", "portals": "Portals", "offices": "Offices", "about": "About", "contact": "Contact",
+      "signIn": "Sign In", "register": "Register", "skip": "Skip to content", "open": "Open navigation", "close": "Close navigation"
+    },
+    "hero": {
+      "kicker": "Importer & Customs Portal",
+      "titleA": "Declare with confidence.",
+      "titleB": "Track every step.",
+      "lead": "Register as an importer, submit your goods and documents, and follow your declaration through review to an official duty and tax assessment.",
+      "register": "Register as an Importer", "signIn": "Sign In",
+      "p1": "Verified registration", "p2": "Track your declaration", "p3": "Official assessment",
+      "motto": "Secure borders. Prosperous nation.", "caption": "From declaration to assessment."
+    },
+    "trade": {
+      "eyebrow": "Connected to a world of opportunity", "title": "Keeping Ethiopia’s trade moving.",
+      "text": "From the first document to the final assessment, a clearer customs journey helps you focus on what comes next for your business.",
+      "cta": "Explore the declaration process", "videoLabel": "Ethiopian inland container terminal video",
+      "videoFallback": "Watch the port video", "caption": "A new perspective on Ethiopian trade"
+    },
+    "footer": { "appearance": "Appearance" }
+  },
   "title": "Customs reference workspace",
   "subtitle": "HS classification and valuation decision support",
   "dashboard": "Valuation search",
